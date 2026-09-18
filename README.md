@@ -16,7 +16,7 @@
 <p align="center">
   <img alt="Status" src="https://img.shields.io/badge/status-in%20development-eab308?style=flat-square">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square"></a>
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0f0f14?style=flat-square">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0f0f14?style=flat-square">
   <img alt="GPU" src="https://img.shields.io/badge/GPU-NVIDIA%20CUDA%20%7C%20Apple%20Metal-76B900?style=flat-square">
   <img alt="Stack" src="https://img.shields.io/badge/stack-Vue%203%20%2B%20FastAPI-a855f7?style=flat-square">
   <img alt="UI languages" src="https://img.shields.io/badge/UI-EN%20%2F%20RU-ec4899?style=flat-square">
@@ -283,6 +283,14 @@ need occasional manual fixing up (a bumped commit pin) if audio.cpp's `dev`
 branch drifts upstream; the default release-based path is pinned to a fixed
 tag instead, so it doesn't drift on its own.
 
+**On Linux (NVIDIA CUDA):**
+```sh
+./setup_linux.sh
+```
+Builds audio.cpp with its native Linux CUDA backend, installs ACE-Step and Demucs in isolated environments, downloads the model weights, and writes `backend/.env`. It expects git, Python 3.11/3.12, uv, Node.js 20.19+ (or 22.12+), npm, CMake, ffmpeg, and a CUDA toolkit with nvcc plus cuBLAS/cuFFT development headers. The NVIDIA driver is deliberately not installed or modified.
+
+Tool paths are overrideable (`UV_BIN`, `NODE_BIN`, `NPM_BIN`, `CMAKE_BIN`, `NVCC_BIN`, `CUDA_TOOLKIT_PREFIX`, `CUDA_LIB_DIR`). On multi-GPU hosts, `ACE_STEP_DEVICE=0 YUE2_DEVICE=1 ./setup_linux.sh` pins the engines separately; leave both unset for default device selection. Validated end-to-end on Ubuntu 24.04 x86_64 with NVIDIA CUDA.
+
 ### Step 2: run
 
 ```cmd
@@ -297,6 +305,8 @@ prod_run.bat
 Builds the client via `npm run build` and serves the finished SPA bundle together with the API at [http://127.0.0.1:9000](http://127.0.0.1:9000).
 
 Stem separation's `demucs` uv project is set up by `setup_models.bat` above; the `htdemucs` weights themselves download automatically on first use.
+
+**On Linux:** `./prod_run_linux.sh` builds the frontend and serves the SPA and API on `0.0.0.0:9000` by default. Override with `REMIQORA_HOST` / `REMIQORA_PORT`.
 
 **On macOS:** `./dev.sh` and `./prod_run.sh` are the equivalents — same
 behavior, except the backend/frontend run as background jobs of the script
@@ -326,7 +336,7 @@ CUDA_BIN_DIR=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin
 
 ## Known limitations
 
-- ACE-Step and YuE2 can't run at the same time — one GPU for both, the orchestrator switches between them mutually exclusively.
+- ACE-Step and YuE2 may remain running at the same time. On multi-GPU Linux hosts, `ACE_STEP_DEVICE` and `YUE2_DEVICE` can pin them to separate GPUs; on a single constrained GPU, running both simultaneously may exceed available VRAM.
 - MIDI transcription requires YuE2 specifically to be active (the MuScriptor model loads into its process).
-- Windows (NVIDIA CUDA) and macOS/Apple Silicon (Metal/MPS) are supported — `.bat`/`.ps1` scripts for the former, `.sh` scripts for the latter. No Linux scripts yet, though the backend itself has no Windows-only code left blocking it.
+- Windows (NVIDIA CUDA), macOS/Apple Silicon (Metal/MPS), and Linux x86_64 (NVIDIA CUDA) have setup/run paths. Linux builds audio.cpp from source and therefore requires a CUDA development toolkit in addition to the NVIDIA driver.
 - The macOS/Metal path is newer and less battle-tested than the Windows/CUDA one; expect it to be slower. By default it installs a prebuilt YuE2 binary pinned to a fixed release tag (no compiler needed); `--from-source` instead builds the same `dev` commit Windows uses, and may occasionally need that pin bumped if `dev` drifts.
