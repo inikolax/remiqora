@@ -7,6 +7,7 @@ export interface Yue2ModelSpecConfig {
   path: string
   task: string
   mode: string
+  model_spec_override?: string
 }
 
 export interface OrchestratorConfig {
