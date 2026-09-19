@@ -3,4 +3,4 @@ uvicorn[standard]>=0.32
 httpx>=0.27
 pydantic>=2.9
 python-multipart>=0.0.12
-python-dotenv>=1.0
+python-dotenv>=1.2.3
