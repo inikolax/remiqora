@@ -20,6 +20,8 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 IS_WINDOWS = sys.platform == "win32"
+IS_MACOS = sys.platform == "darwin"
+IS_LINUX = sys.platform.startswith("linux")
 
 
 def _env_path(name: str, default: str) -> Path:
@@ -88,14 +90,17 @@ SHEETSAGE_MODEL_PATH = _env_path(
 
 
 def yue2_specs() -> dict[str, dict[str, str]]:
+    yue2_spec = {
+        "id": "yue2",
+        "family": "yue2",
+        "path": str(YUE2_MODEL_PATH).replace("\\", "/"),
+        "task": "gen",
+        "mode": "offline",
+    }
+    if IS_LINUX:
+        yue2_spec["model_spec_override"] = str(YUE2_DIR / "model_specs" / "yue2.json").replace("\\", "/")
     return {
-        "yue2": {
-            "id": "yue2",
-            "family": "yue2",
-            "path": str(YUE2_MODEL_PATH).replace("\\", "/"),
-            "task": "gen",
-            "mode": "offline",
-        },
+        "yue2": yue2_spec,
         "sheetsage2": {
             "id": "sheetsage2",
             "family": "sheetsage2",
@@ -116,8 +121,13 @@ FFMPEG_BIN_DIR = _env_path("FFMPEG_BIN_DIR", r"E:\AI\ACE\tools\ffmpeg-shared\ffm
 CUDA_BIN_DIR = _env_path("CUDA_BIN_DIR", r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin")
 CUDA_BIN64_DIR = CUDA_BIN_DIR / "x64"
 
-ACE_STEP_API_PORT = 8001
-YUE2_SERVER_PORT = 8080
+UV_BIN = os.getenv("UV_BIN", "uv")
+ACE_STEP_DEVICE = os.getenv("ACE_STEP_DEVICE", "").strip()
+ACE_STEP_API_PORT = int(os.getenv("ACE_STEP_API_PORT", "8001"))
+YUE2_SERVER_PORT = int(os.getenv("YUE2_SERVER_PORT", "8080"))
+YUE2_SERVER_HOST = os.getenv("YUE2_SERVER_HOST", "127.0.0.1")
+YUE2_DEVICE = os.getenv("YUE2_DEVICE", "").strip()
+CUDA_LIB_DIR = _env_path("CUDA_LIB_DIR", str(CUDA_BIN_DIR.parent / "lib"))
 
 # audiocpp_server is built from source by setup_models.ps1 on Windows (CUDA
 # backend) and placed under this same build/<preset>/bin/ layout by
@@ -129,11 +139,18 @@ if IS_WINDOWS:
     _YUE2_SERVER_BIN = "audiocpp_server.exe"
     _YUE2_BACKEND = "cuda"
     _YUE2_EXTRA_PATH_DIRS = [CUDA_BIN64_DIR, CUDA_BIN_DIR]
-else:
+elif IS_MACOS:
     _YUE2_BUILD_PRESET = "macos-metal-release"
     _YUE2_SERVER_BIN = "audiocpp_server"
     _YUE2_BACKEND = "metal"
     _YUE2_EXTRA_PATH_DIRS = []
+elif IS_LINUX:
+    _YUE2_BUILD_PRESET = "linux-cuda-release"
+    _YUE2_SERVER_BIN = "audiocpp_server"
+    _YUE2_BACKEND = "cuda"
+    _YUE2_EXTRA_PATH_DIRS = [CUDA_BIN_DIR]
+else:
+    raise RuntimeError(f"Unsupported platform for YuE2: {sys.platform}")
 
 MODELS: dict[str, ModelDefinition] = {
     "ace_step": ModelDefinition(
@@ -147,13 +164,13 @@ MODELS: dict[str, ModelDefinition] = {
                 name="ace_step_api",
                 cwd=ACE_STEP_DIR,
                 cmd=[
-                    "uv", "run", "acestep-api",
+                    UV_BIN, "run", "acestep-api",
                     "--host", "127.0.0.1",
                     "--port", str(ACE_STEP_API_PORT),
                     "--lm-model-path", "acestep-5Hz-lm-1.7B",
                 ],
                 extra_path_dirs=[FFMPEG_BIN_DIR],
-                env={"PYTHONUTF8": "1"},
+                env={"PYTHONUTF8": "1", **({"CUDA_VISIBLE_DEVICES": ACE_STEP_DEVICE} if ACE_STEP_DEVICE else {})},
                 health_url=f"http://127.0.0.1:{ACE_STEP_API_PORT}/health",
                 # Model + LM weights loading onto the GPU can genuinely take
                 # a few minutes on first load / cold cache.
@@ -178,8 +195,15 @@ MODELS: dict[str, ModelDefinition] = {
                 cmd=[
                     str(YUE2_DIR / "build" / _YUE2_BUILD_PRESET / "bin" / _YUE2_SERVER_BIN),
                     "--ui", "--ui-management", "--backend", _YUE2_BACKEND,
+                    "--host", YUE2_SERVER_HOST,
+                    "--port", str(YUE2_SERVER_PORT),
+                    *(["--device", YUE2_DEVICE] if YUE2_DEVICE else []),
                 ],
                 extra_path_dirs=_YUE2_EXTRA_PATH_DIRS,
+                env=(
+                    {"LD_LIBRARY_PATH": f"{CUDA_LIB_DIR}{os.pathsep}{os.environ.get("LD_LIBRARY_PATH", "")}"}
+                    if IS_LINUX else {}
+                ),
                 health_url=f"http://127.0.0.1:{YUE2_SERVER_PORT}/health",
                 startup_timeout=300.0,
             ),

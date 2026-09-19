@@ -21,7 +21,7 @@ from .orchestrator.manager import manager
 async def lifespan(app: FastAPI):
     yield
     # Don't leave a GPU process running after the dev server is killed.
-    await manager.stop_active()
+    await manager.stop_all()
 
 
 app = FastAPI(title="Remiqora", lifespan=lifespan)

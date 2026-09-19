@@ -108,6 +108,7 @@ async function loadModelSpec(spec: Yue2ModelSpec, sessionOptions?: Record<string
     family: spec.family,
     task: spec.task,
     mode: spec.mode,
+    ...(spec.model_spec_override ? { model_spec_override: spec.model_spec_override } : {}),
     load_options: {},
     session_options: sessionOptions || {},
   })

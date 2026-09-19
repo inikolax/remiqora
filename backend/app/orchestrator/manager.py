@@ -41,17 +41,21 @@ class OrchestratorManager:
         if model_id not in MODELS:
             raise ValueError(f"unknown model '{model_id}'")
         async with self._lock:
-            current = self.state.active_model
-            if current == model_id and self.state.models[model_id].status == ModelStatus.RUNNING:
+            if self.state.models[model_id].status == ModelStatus.RUNNING:
+                self.state.active_model = model_id
                 return
-            if current is not None and current != model_id:
-                await self._stop_model(current)
             await self._start_model(model_id)
 
     async def stop_active(self) -> None:
         async with self._lock:
             if self.state.active_model is not None:
                 await self._stop_model(self.state.active_model)
+
+    async def stop_all(self) -> None:
+        async with self._lock:
+            for model_id in list(MODELS):
+                if self.state.models[model_id].status == ModelStatus.RUNNING:
+                    await self._stop_model(model_id)
 
     async def _start_model(self, model_id: str) -> None:
         definition = MODELS[model_id]
