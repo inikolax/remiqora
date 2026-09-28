@@ -63,7 +63,7 @@ async function onFileSelected(event: Event) {
       <div class="flex max-h-[80vh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-xl bg-panel p-4">
         <div class="flex items-center justify-between">
           <p class="text-sm font-medium text-text">{{ t('library.title') }}</p>
-          <button type="button" class="text-text-dim hover:text-status-failed" @click="emit('close')">✕</button>
+          <button type="button" class="text-text-dim hover:text-status-failed" :aria-label="t('common.close')" :title="t('common.close')" @click="emit('close')">✕</button>
         </div>
 
         <div class="flex items-center justify-between border-b border-border/60 pb-2">

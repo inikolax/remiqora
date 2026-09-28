@@ -757,6 +757,8 @@ onBeforeRouteLeave((_to, _from, next) => {
         <button
           type="button"
           class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full accent-gradient text-white shadow-md shadow-accent1/30 transition-all duration-200 hover:scale-110 active:scale-95"
+          :aria-label="store.playing ? t('editor.pause') : t('editor.play')"
+          :title="store.playing ? t('editor.pause') : t('editor.play')"
           @click="store.playing ? pause() : play()"
         >
           <PlayIcon v-if="!store.playing" class="w-[13px] h-[13px]" />
@@ -772,11 +774,11 @@ onBeforeRouteLeave((_to, _from, next) => {
             :value="store.project.pxPerSecond"
             @input="store.setZoom(Number(($event.target as HTMLInputElement).value))"
           />
-          <button type="button" class="px-1.5 py-0.5 rounded border border-border text-[10px] hover:bg-panel transition-colors active:scale-95" @click="fitZoom">Fit</button>
+          <button type="button" class="px-1.5 py-0.5 rounded border border-border text-[10px] hover:bg-panel transition-colors active:scale-95" :title="t('editor.fitZoomTitle')" @click="fitZoom">{{ t('editor.fitZoom') }}</button>
         </label>
-        
+
         <label class="flex items-center gap-2 text-xs text-text-dim border-l border-border/60 pl-3">
-          BPM
+          {{ t('editor.bpm') }}
           <input
             type="number"
             min="20"
@@ -791,24 +793,26 @@ onBeforeRouteLeave((_to, _from, next) => {
           type="button"
           class="rounded border px-2 py-1 text-xs font-medium"
           :class="store.project.snapEnabled ? 'border-accent1 text-accent1 bg-accent1/10' : 'border-border text-text-dim hover:bg-panel'"
+          :aria-pressed="store.project.snapEnabled"
+          :title="t('editor.snapTitle')"
           @click="store.toggleSnap()"
-          title="Snap to Grid"
         >
-          Magnet
+          {{ t('editor.snap') }}
         </button>
         <button
           type="button"
           class="rounded border px-2 py-1 text-xs font-medium"
           :class="store.project.loopRegion?.enabled ? 'border-status-done text-status-done bg-status-done/10' : 'border-border text-text-dim hover:bg-panel'"
+          :aria-pressed="!!store.project.loopRegion?.enabled"
+          :title="t('editor.loopTitle')"
           @click="store.toggleLoop()"
-          title="Toggle Loop"
         >
-          Loop
+          {{ t('editor.loop') }}
         </button>
 
         <div class="ml-auto flex items-center gap-4">
           <!-- Stereo Master Meter -->
-          <div class="flex flex-col gap-1.5 w-28" title="Master L/R Levels">
+          <div class="flex flex-col gap-1.5 w-28" :title="t('editor.masterLevels')" role="img" :aria-label="t('editor.masterLevels')">
             <!-- Left Channel -->
             <div class="flex items-center gap-1.5">
               <span class="text-[9px] font-bold text-text-dim w-2 text-right">L</span>
@@ -861,7 +865,7 @@ onBeforeRouteLeave((_to, _from, next) => {
                   @click="store.updateLaneColor(selectedLane!.id, c.id)"
                 ></button>
               </template>
-              <div v-else class="text-[9px] text-text-dim/70">Select a track to pick color</div>
+              <div v-else class="text-[9px] text-text-dim/70">{{ t('editor.selectTrackToPickColor') }}</div>
             </div>
             <!-- Ruler Area -->
             <div
@@ -942,7 +946,7 @@ onBeforeRouteLeave((_to, _from, next) => {
             <ChannelStrip
               v-if="selectedLane"
               :model-value="selectedLane.settings"
-              :label="(selectedLane?.name || '') + ' ' + t('editor.settings', 'Settings')"
+              :label="(selectedLane?.name || '') + ' ' + t('editor.settings')"
               show-pan-mute-solo
               show-meter
               :level="selectedLaneLevel.peak || 0"
@@ -951,7 +955,7 @@ onBeforeRouteLeave((_to, _from, next) => {
               @reset="store.updateLaneSettings(selectedLane!.id, defaultChannelSettings())"
             />
             <div v-else class="flex h-24 items-center justify-center rounded-xl border border-border/50 bg-panel-2/30 p-4 text-xs text-text-dim text-center w-full">
-              {{ t('editor.selectTrackToEdit', 'Select a track to edit settings') }}
+              {{ t('editor.selectTrackToEdit') }}
             </div>
           </div>
           

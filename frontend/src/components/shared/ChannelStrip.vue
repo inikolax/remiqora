@@ -161,6 +161,9 @@ const bcMix = computed({
               type="button"
               class="rounded px-1.5 py-0.5 text-[10px] font-medium transition-all hover:scale-105 active:scale-95"
               :class="muted ? 'bg-status-failed text-white shadow-[0_0_8px_var(--color-status-failed)]' : 'bg-panel text-text-dim hover:text-white'"
+              :aria-pressed="!!muted"
+              :aria-label="t('channelStrip.mute')"
+              :title="t('channelStrip.mute')"
               @click="muted = !muted"
             >
               M
@@ -169,6 +172,9 @@ const bcMix = computed({
               type="button"
               class="rounded px-1.5 py-0.5 text-[10px] font-medium transition-all hover:scale-105 active:scale-95"
               :class="solo ? 'accent-gradient text-white shadow-[0_0_8px_var(--color-accent1)]' : 'bg-panel text-text-dim hover:text-white'"
+              :aria-pressed="!!solo"
+              :aria-label="t('channelStrip.solo')"
+              :title="t('channelStrip.solo')"
               @click="solo = !solo"
             >
               S
@@ -182,8 +188,9 @@ const bcMix = computed({
           <span
             v-if="clipping"
             class="rounded bg-status-failed px-1 py-0.2 text-[9px] font-bold text-white uppercase tracking-wider animate-pulse"
+            role="status"
           >
-            CLIP
+            {{ t('channelStrip.clip') }}
           </span>
         </div>
         <input v-model.number="volume" type="range" min="0" max="1.5" step="0.01" class="w-full accent-current" />
@@ -258,8 +265,8 @@ const bcMix = computed({
             <span class="text-[9px] font-bold text-text uppercase tracking-wider">{{ t('channelStrip.modules.filter') }}</span>
           </label>
           <select v-if="filterEnabled" v-model="filterType" class="rounded bg-panel px-0.5 py-0 text-[8px] text-text border border-border/50 cursor-pointer">
-            <option value="lowpass">LP</option>
-            <option value="highpass">HP</option>
+            <option value="lowpass">{{ t('channelStrip.lowpass') }}</option>
+            <option value="highpass">{{ t('channelStrip.highpass') }}</option>
           </select>
         </div>
         <div class="flex flex-col gap-1.5 p-1.5 relative">

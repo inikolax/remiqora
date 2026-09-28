@@ -402,27 +402,40 @@ onBeforeUnmount(() => {
             type="button" 
             class="shrink-0 px-1 hover:text-white transition-transform hover:scale-110 active:scale-95"
             :class="clip.muted ? 'text-accent bg-accent/20 rounded font-bold' : ''"
+            :aria-pressed="!!clip.muted"
+            :aria-label="t('timeline.muteClip')"
+            :title="t('timeline.muteClip')"
             @pointerdown.stop
             @click="emit('toggleMute', !clip.muted)"
-            title="Mute"
           >M</button>
-          <button 
-            type="button" 
+          <button
+            type="button"
             class="shrink-0 px-1 hover:text-white transition-transform hover:scale-110 active:scale-95"
             :class="clip.solo ? 'text-accent1 bg-accent1/20 rounded font-bold' : ''"
+            :aria-pressed="!!clip.solo"
+            :aria-label="t('timeline.soloClip')"
+            :title="t('timeline.soloClip')"
             @pointerdown.stop
             @click="emit('toggleSolo', !clip.solo)"
-            title="Solo"
           >S</button>
-          <button 
-            type="button" 
+          <button
+            type="button"
             class="shrink-0 px-1 hover:text-white transition-transform hover:scale-110 active:scale-95"
             :class="clip.warpEnabled ? 'text-accent1 font-bold drop-shadow-[0_0_4px_var(--color-accent1)]' : ''"
+            :aria-pressed="!!clip.warpEnabled"
+            :aria-label="t('timeline.warpClip')"
+            :title="t('timeline.warpClip')"
             @pointerdown.stop
             @click="emit('toggleWarp', !clip.warpEnabled)"
-            title="Warp (Time-stretch)"
           >W</button>
-          <button type="button" class="shrink-0 text-text-dim hover:text-status-failed transition-colors" @pointerdown.stop @click="emit('remove')">✕</button>
+          <button
+            type="button"
+            class="shrink-0 text-text-dim hover:text-status-failed transition-colors"
+            :aria-label="t('timeline.removeClip')"
+            :title="t('timeline.removeClip')"
+            @pointerdown.stop
+            @click="emit('remove')"
+          >✕</button>
         </div>
       </div>
       <canvas ref="canvasEl" class="w-full min-h-0 flex-1"></canvas>
