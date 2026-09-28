@@ -44,11 +44,23 @@ export function useTimelineEngine() {
     applyMasterSettings(graph, project.master)
   }
 
+  /**
+   * Decodes every source the project references. A source that 404s or does
+   * not decode is left out of the map (and logged) instead of failing the whole
+   * load, so a project with one deleted track still opens; the clip shows as
+   * missing and the rest plays.
+   */
   async function decodeAll(project: TimelineProject): Promise<Map<string, AudioBuffer>> {
     const urls = new Set<string>()
     for (const lane of project.lanes) for (const clip of lane.clips) if (clip.sourceUrl) urls.add(clip.sourceUrl)
-    const entries = await Promise.all([...urls].map(async (u) => [u, await decodeStem(u)] as const))
-    return new Map(entries)
+    const list = [...urls]
+    const results = await Promise.allSettled(list.map((u) => decodeStem(u)))
+    const buffers = new Map<string, AudioBuffer>()
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') buffers.set(list[i], r.value)
+      else console.warn(`editor: could not load ${list[i]}`, r.reason)
+    })
+    return buffers
   }
 
   function toScheduledClips(project: TimelineProject, buffers: Map<string, AudioBuffer>): ScheduledClip[] {

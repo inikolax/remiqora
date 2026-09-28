@@ -92,12 +92,13 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           :placeholder="t('timeline.trackNamePlaceholder')"
           class="flex-1 min-w-0 rounded border border-transparent bg-panel/50 px-1 py-0.5 text-[11px] font-medium text-text focus:border-accent1/50 focus:bg-panel focus:outline-none transition-colors"
           @input="emit('rename', ($event.target as HTMLInputElement).value)"
+          @change="emit('dragEnd')"
         />
         <button
           type="button"
           class="w-5 h-5 flex items-center justify-center rounded text-[9px] font-medium transition-all active:scale-95"
           :class="lane.settings.muted ? 'bg-status-failed text-white shadow-[0_0_8px_var(--color-status-failed)]' : 'bg-panel text-text-dim hover:text-white'"
-          @click.stop="emit('update:settings', { ...lane.settings, muted: !lane.settings.muted })"
+          @click.stop="emit('update:settings', { ...lane.settings, muted: !lane.settings.muted }); emit('dragEnd')"
         >
           M
         </button>
@@ -105,7 +106,7 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           type="button"
           class="w-5 h-5 flex items-center justify-center rounded text-[9px] font-medium transition-all active:scale-95"
           :class="lane.settings.solo ? 'accent-gradient text-white shadow-[0_0_8px_var(--color-accent1)]' : 'bg-panel text-text-dim hover:text-white'"
-          @click.stop="emit('update:settings', { ...lane.settings, solo: !lane.settings.solo })"
+          @click.stop="emit('update:settings', { ...lane.settings, solo: !lane.settings.solo }); emit('dragEnd')"
         >
           S
         </button>
@@ -119,6 +120,7 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           min="0" max="1.5" step="0.01" 
           :value="lane.settings.volume"
           @input="emit('update:settings', { ...lane.settings, volume: Number(($event.target as HTMLInputElement).value) })"
+          @change="emit('dragEnd')"
           class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1"
           @click.stop
         />

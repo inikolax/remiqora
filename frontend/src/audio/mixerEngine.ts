@@ -684,8 +684,16 @@ export function decodeStem(url: string): Promise<AudioBuffer> {
   let entry = bufferCache.get(url)
   if (!entry) {
     entry = fetch(url)
-      .then((r) => r.arrayBuffer())
+      .then((r) => {
+        // Without this a 404 page is handed to decodeAudioData, which fails
+        // with an unhelpful decode error instead of saying the file is gone.
+        if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`)
+        return r.arrayBuffer()
+      })
       .then((buf) => getSharedAudioCtx().decodeAudioData(buf))
+    // Only successes stay cached; a failed fetch must be retried on the next
+    // attempt (the file may have been re-uploaded) rather than fail forever.
+    entry.catch(() => bufferCache.delete(url))
     bufferCache.set(url, entry)
   }
   return entry

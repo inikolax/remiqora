@@ -9,6 +9,8 @@ import { i18n } from '../i18n'
 const t = i18n.global.t
 
 const DEFAULT_PX_PER_SECOND = 40
+/** Baseline entry plus 30 undo steps. */
+const HISTORY_LIMIT = 31
 
 import { TRACK_COLORS } from '../utils/trackColors'
 
@@ -32,6 +34,16 @@ function emptyProject(): TimelineProject {
   }
 }
 
+/**
+ * Serialisation used for undo history. Zoom is view state rather than an edit,
+ * so it is left out: undoing a clip move must not also jump the zoom back, and
+ * zooming between two otherwise identical states must not count as a change.
+ */
+function serialize(project: TimelineProject): string {
+  const { pxPerSecond: _zoom, ...rest } = project
+  return JSON.stringify(rest)
+}
+
 export const useEditorStore = defineStore('editor', {
   state: () => ({
     projectId: null as number | null,
@@ -42,6 +54,8 @@ export const useEditorStore = defineStore('editor', {
     selectedClipId: null as string | null,
     selectedLaneId: null as string | null,
     dirty: false,
+    /** Bumped on every edit; lets save() tell whether edits landed while the request was in flight. */
+    revision: 0,
     loading: false,
     saving: false,
     error: null as string | null,
@@ -54,32 +68,49 @@ export const useEditorStore = defineStore('editor', {
     canRedo: (state) => state.historyIndex >= 0 && state.historyIndex < state.history.length - 1,
   },
   actions: {
+    markDirty() {
+      this.dirty = true
+      this.revision++
+    },
     snapshot() {
-      const snap = JSON.stringify(this.project)
+      const snap = serialize(this.project)
+      // Nothing changed since the last history entry (a click that selected a
+      // clip without moving it, a slider dragged back to where it started):
+      // do not spend an undo step or flag the project as unsaved.
+      if (this.historyIndex >= 0 && this.history[this.historyIndex] === snap) return
       if (this.historyIndex >= 0 && this.historyIndex < this.history.length - 1) {
         this.history.splice(this.historyIndex + 1)
       }
       this.history.push(snap)
-      if (this.history.length > 30) {
+      if (this.history.length > HISTORY_LIMIT) {
         this.history.shift()
       }
       this.historyIndex = this.history.length - 1
-      this.dirty = true
+      this.markDirty()
+    },
+    restoreHistory(index: number) {
+      const zoom = this.project.pxPerSecond
+      this.project = { ...JSON.parse(this.history[index]), pxPerSecond: zoom }
+      this.historyIndex = index
+      this.markDirty()
     },
     undo() {
       if (!this.canUndo) return
-      this.historyIndex--
-      this.project = JSON.parse(this.history[this.historyIndex])
-      this.dirty = true
+      this.restoreHistory(this.historyIndex - 1)
     },
     redo() {
       if (!this.canRedo) return
-      this.historyIndex++
-      this.project = JSON.parse(this.history[this.historyIndex])
-      this.dirty = true
+      this.restoreHistory(this.historyIndex + 1)
     },
     commitSnapshot() {
       this.snapshot()
+    },
+    clearSelection() {
+      this.selectedClipId = null
+    },
+    setProjectName(name: string) {
+      this.projectName = name
+      this.markDirty()
     },
     newProject() {
       this.projectId = null
@@ -89,7 +120,7 @@ export const useEditorStore = defineStore('editor', {
       this.playing = false
       this.selectedClipId = null
       this.selectedLaneId = null
-      this.history = [JSON.stringify(this.project)]
+      this.history = [serialize(this.project)]
       this.historyIndex = 0
       this.dirty = false
       this.error = null
@@ -106,7 +137,7 @@ export const useEditorStore = defineStore('editor', {
         this.playing = false
         this.selectedClipId = null
         this.selectedLaneId = null
-        this.history = [JSON.stringify(this.project)]
+        this.history = [serialize(this.project)]
         this.historyIndex = 0
         this.dirty = false
       } catch (e) {
@@ -115,8 +146,11 @@ export const useEditorStore = defineStore('editor', {
         this.loading = false
       }
     },
-    async save() {
+    /** Resolves to true when the project was written. Failures land in `error`. */
+    async save(): Promise<boolean> {
       this.saving = true
+      this.error = null
+      const revision = this.revision
       try {
         if (this.projectId == null) {
           const created = await projectsApi.createProject(this.projectName, this.project)
@@ -124,7 +158,12 @@ export const useEditorStore = defineStore('editor', {
         } else {
           await projectsApi.updateProject(this.projectId, { name: this.projectName, data: this.project })
         }
-        this.dirty = false
+        // Edits made while the request was in flight are still unsaved.
+        if (this.revision === revision) this.dirty = false
+        return true
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+        return false
       } finally {
         this.saving = false
       }
@@ -135,11 +174,12 @@ export const useEditorStore = defineStore('editor', {
       this.snapshot()
       return lane
     },
+    /** Live edit; the lane commits one undo step when the name field loses focus. */
     renameLane(laneId: string, name: string) {
       const lane = this.project.lanes.find((l) => l.id === laneId)
       if (lane) {
         lane.name = name
-        this.snapshot()
+        this.markDirty()
       }
     },
     removeLane(laneId: string) {
@@ -180,22 +220,28 @@ export const useEditorStore = defineStore('editor', {
           if (commit) {
             this.snapshot()
           } else {
-            this.dirty = true
+            this.markDirty()
           }
           return
         }
       }
     },
-    updateLaneSettings(laneId: string, settings: ChannelSettings) {
+    /**
+     * `commit = false` applies a slider's intermediate value without an undo
+     * step; the control emits a commit when the gesture ends.
+     */
+    updateLaneSettings(laneId: string, settings: ChannelSettings, commit = true) {
       const lane = this.project.lanes.find((l) => l.id === laneId)
       if (lane) {
         lane.settings = settings
-        this.snapshot()
+        if (commit) this.snapshot()
+        else this.markDirty()
       }
     },
-    updateMasterSettings(settings: MasterSettings) {
+    updateMasterSettings(settings: MasterSettings, commit = true) {
       this.project.master = settings
-      this.snapshot()
+      if (commit) this.snapshot()
+      else this.markDirty()
     },
     setZoom(pxPerSecond: number) {
       this.project.pxPerSecond = Math.max(5, Math.min(400, pxPerSecond))
