@@ -679,6 +679,8 @@ function generateImpulse(sampleRate: number, durationSec: number, decay: number)
 // session skips re-fetching/re-decoding the WAV files (mirrors peaksCache
 // in composables/audioPlayback.ts).
 const bufferCache = new Map<string, Promise<AudioBuffer>>()
+/** How long a failed source stays failed before the next request fetches it again. */
+const FAILED_RETRY_MS = 10_000
 
 export function decodeStem(url: string): Promise<AudioBuffer> {
   let entry = bufferCache.get(url)
@@ -691,9 +693,16 @@ export function decodeStem(url: string): Promise<AudioBuffer> {
         return r.arrayBuffer()
       })
       .then((buf) => getSharedAudioCtx().decodeAudioData(buf))
-    // Only successes stay cached; a failed fetch must be retried on the next
-    // attempt (the file may have been re-uploaded) rather than fail forever.
-    entry.catch(() => bufferCache.delete(url))
+    // A failure stays cached for FAILED_RETRY_MS, so callers that run on
+    // every edit (the editor's project watcher fires on each drag frame) get
+    // the cached rejection instead of fetching a dead URL many times a second.
+    // After that it is dropped, so a file that comes back is picked up.
+    const failed = entry
+    failed.catch(() => {
+      setTimeout(() => {
+        if (bufferCache.get(url) === failed) bufferCache.delete(url)
+      }, FAILED_RETRY_MS)
+    })
     bufferCache.set(url, entry)
   }
   return entry

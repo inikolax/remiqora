@@ -266,9 +266,17 @@ async function onPickForNewLane(payload: { sourceUrl: string; sourceLabel: strin
   pickerOpenForNewLane.value = false
   let buffer = buffers.value.get(payload.sourceUrl)
   if (!buffer) {
-    buffer = await decodeStem(payload.sourceUrl)
+    try {
+      buffer = await decodeStem(payload.sourceUrl)
+    } catch (e) {
+      // The library entry's file is gone or does not decode: say so instead
+      // of the click silently doing nothing.
+      store.error = e instanceof Error ? e.message : String(e)
+      return
+    }
     buffers.value.set(payload.sourceUrl, buffer)
   }
+  store.error = null
   const lane = store.addLane()
   store.renameLane(lane.id, payload.sourceLabel)
 
@@ -290,14 +298,18 @@ async function onPickForNewLane(payload: { sourceUrl: string; sourceLabel: strin
 let unmounted = false
 // Set when Save on a new project is about to rewrite the URL from /editor/new
 // to /editor/<id>: that is the same project, so the id watcher must not reload
-// it (which would re-decode every source and wipe the undo history).
-let skipNextIdLoad = false
+// it (which would re-decode every source and wipe the undo history). Holds the
+// id so it can only skip that exact route, and only while the store still has
+// that project.
+let skipIdLoad: string | null = null
 
 async function doSave(): Promise<void> {
   const wasNew = store.projectId == null
   const ok = await store.save()
-  if (ok && wasNew && store.projectId != null && !unmounted) {
-    skipNextIdLoad = true
+  // save() returns false when another project was opened meanwhile; the route
+  // check covers a navigation that has started but not loaded yet.
+  if (ok && wasNew && store.projectId != null && props.id === 'new' && !unmounted) {
+    skipIdLoad = String(store.projectId)
     await router.replace(`/editor/${store.projectId}`)
   }
 }
@@ -333,7 +345,12 @@ async function doExport(): Promise<void> {
   }
 }
 
+// Only the most recent load() may write buffers or clear the loading state
+// (same idea as seekToken in useTimelineEngine).
+let loadToken = 0
+
 async function load(): Promise<void> {
+  const token = ++loadToken
   pause()
   engine.teardown()
   loadingAudio.value = true
@@ -342,18 +359,21 @@ async function load(): Promise<void> {
       store.newProject()
     } else {
       await store.loadProject(Number(props.id))
+      if (token !== loadToken) return
       // The fetch failed: store.error is shown above the editor. Whatever
       // project was in the store before stays as it was (undecoded, so it does
       // not play); do not treat it as the project this URL asked for.
       if (store.error) return
     }
-    buffers.value = await engine.decodeAll(store.project)
+    const decoded = await engine.decodeAll(store.project)
+    if (token !== loadToken) return
+    buffers.value = decoded
     engine.ensureGraph(store.project.lanes.length)
     engine.applySettings(store.project)
   } catch (e) {
-    store.error = e instanceof Error ? e.message : String(e)
+    if (token === loadToken) store.error = e instanceof Error ? e.message : String(e)
   } finally {
-    loadingAudio.value = false
+    if (token === loadToken) loadingAudio.value = false
   }
 }
 
@@ -380,6 +400,7 @@ async function onDropAudio(laneId: string, payload: { file: File; timelineStart:
       originalBpm: detectedBpm || store.project.bpm || 120,
     }
     const isFirstClip = store.totalDuration === 0
+    store.error = null
     store.addClip(laneId, clip)
     
     if (isFirstClip) {
@@ -426,10 +447,9 @@ function onToggleSolo(laneId: string, payload: { clipId: string; enabled: boolea
 watch(
   () => props.id,
   () => {
-    if (skipNextIdLoad) {
-      skipNextIdLoad = false
-      return
-    }
+    const skip = skipIdLoad
+    skipIdLoad = null
+    if (skip != null && props.id === skip && store.projectId === Number(skip)) return
     void load()
   },
   { immediate: true },

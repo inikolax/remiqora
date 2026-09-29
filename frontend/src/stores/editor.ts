@@ -54,8 +54,17 @@ export const useEditorStore = defineStore('editor', {
     selectedClipId: null as string | null,
     selectedLaneId: null as string | null,
     dirty: false,
-    /** Bumped on every edit; lets save() tell whether edits landed while the request was in flight. */
-    revision: 0,
+    /** What the server has (or, for a new project, the starting state); `dirty` is measured against it. */
+    savedSnap: '',
+    savedName: '',
+    /**
+     * Bumped whenever a different project is put in the store (newProject, a
+     * loadProject that succeeded). A save that resolves after that belongs to
+     * a project that is no longer open and must not write into the store.
+     */
+    session: 0,
+    /** Bumped per loadProject/newProject call, so only the latest load may apply. */
+    loadSeq: 0,
     loading: false,
     saving: false,
     error: null as string | null,
@@ -68,16 +77,30 @@ export const useEditorStore = defineStore('editor', {
     canRedo: (state) => state.historyIndex >= 0 && state.historyIndex < state.history.length - 1,
   },
   actions: {
+    /** Live (uncommitted) edit: unsaved until the gesture commits and is compared. */
     markDirty() {
       this.dirty = true
-      this.revision++
+    },
+    /** Unsaved = the last committed state or the name differs from what was saved. */
+    refreshDirty(snap?: string) {
+      const current = snap ?? this.history[this.historyIndex] ?? serialize(this.project)
+      this.dirty = current !== this.savedSnap || this.projectName !== this.savedName
+    },
+    /** Marks `snap` / `name` as what the server has (or the clean starting point). */
+    markSaved(snap: string, name: string) {
+      this.savedSnap = snap
+      this.savedName = name
+      this.refreshDirty()
     },
     snapshot() {
       const snap = serialize(this.project)
       // Nothing changed since the last history entry (a click that selected a
       // clip without moving it, a slider dragged back to where it started):
-      // do not spend an undo step or flag the project as unsaved.
-      if (this.historyIndex >= 0 && this.history[this.historyIndex] === snap) return
+      // do not spend an undo step.
+      if (this.historyIndex >= 0 && this.history[this.historyIndex] === snap) {
+        this.refreshDirty(snap)
+        return
+      }
       if (this.historyIndex >= 0 && this.historyIndex < this.history.length - 1) {
         this.history.splice(this.historyIndex + 1)
       }
@@ -86,13 +109,14 @@ export const useEditorStore = defineStore('editor', {
         this.history.shift()
       }
       this.historyIndex = this.history.length - 1
-      this.markDirty()
+      this.refreshDirty(snap)
     },
     restoreHistory(index: number) {
+      if (!Number.isInteger(index) || index < 0 || index >= this.history.length) return
       const zoom = this.project.pxPerSecond
       this.project = { ...JSON.parse(this.history[index]), pxPerSecond: zoom }
       this.historyIndex = index
-      this.markDirty()
+      this.refreshDirty()
     },
     undo() {
       if (!this.canUndo) return
@@ -107,12 +131,16 @@ export const useEditorStore = defineStore('editor', {
     },
     clearSelection() {
       this.selectedClipId = null
+      this.selectedLaneId = null
     },
     setProjectName(name: string) {
       this.projectName = name
-      this.markDirty()
+      this.refreshDirty()
     },
     newProject() {
+      this.session++
+      this.loadSeq++
+      this.loading = false
       this.projectId = null
       this.projectName = t('storeErrors.newProject')
       this.project = emptyProject()
@@ -122,14 +150,18 @@ export const useEditorStore = defineStore('editor', {
       this.selectedLaneId = null
       this.history = [serialize(this.project)]
       this.historyIndex = 0
-      this.dirty = false
+      this.markSaved(this.history[0], this.projectName)
       this.error = null
     },
     async loadProject(id: number) {
+      const seq = ++this.loadSeq
       this.loading = true
       this.error = null
       try {
         const full = await projectsApi.getProject(id)
+        // A newer load or a new project took over while this one was fetching.
+        if (seq !== this.loadSeq) return
+        this.session++
         this.projectId = full.id
         this.projectName = full.name
         this.project = full.data
@@ -139,30 +171,40 @@ export const useEditorStore = defineStore('editor', {
         this.selectedLaneId = null
         this.history = [serialize(this.project)]
         this.historyIndex = 0
-        this.dirty = false
+        this.markSaved(this.history[0], this.projectName)
       } catch (e) {
-        this.error = e instanceof Error ? e.message : String(e)
+        if (seq === this.loadSeq) this.error = e instanceof Error ? e.message : String(e)
       } finally {
-        this.loading = false
+        if (seq === this.loadSeq) this.loading = false
       }
     },
-    /** Resolves to true when the project was written. Failures land in `error`. */
+    /**
+     * Resolves to true when the project was written and is still the one in
+     * the store. Failures land in `error`.
+     */
     async save(): Promise<boolean> {
+      const session = this.session
+      const sentSnap = serialize(this.project)
+      const sentName = this.projectName
       this.saving = true
       this.error = null
-      const revision = this.revision
       try {
         if (this.projectId == null) {
-          const created = await projectsApi.createProject(this.projectName, this.project)
+          const created = await projectsApi.createProject(sentName, this.project)
+          // Another project was opened while the request was in flight. The
+          // new record exists on the server, but its id and saved state must
+          // not be attached to the project that is open now.
+          if (session !== this.session) return false
           this.projectId = created.id
         } else {
-          await projectsApi.updateProject(this.projectId, { name: this.projectName, data: this.project })
+          await projectsApi.updateProject(this.projectId, { name: sentName, data: this.project })
+          if (session !== this.session) return false
         }
-        // Edits made while the request was in flight are still unsaved.
-        if (this.revision === revision) this.dirty = false
+        // Edits made while the request was in flight still count as unsaved.
+        this.markSaved(sentSnap, sentName)
         return true
       } catch (e) {
-        this.error = e instanceof Error ? e.message : String(e)
+        if (session === this.session) this.error = e instanceof Error ? e.message : String(e)
         return false
       } finally {
         this.saving = false
