@@ -641,6 +641,9 @@ function onTimelineWheel(e: WheelEvent) {
 }
 
 let isPanning = false
+let panClearsSelection = false
+/** Pointer travel below this still counts as a click, not a pan. */
+const PAN_CLICK_SLOP_PX = 4
 let panStartX = 0
 let panStartY = 0
 let panScrollStartX = 0
@@ -659,9 +662,11 @@ function onTimelinePointerDown(e: PointerEvent) {
     }
     
     e.preventDefault()
-    // A plain click on empty timeline drops the clip selection, so Delete, S
-    // and Ctrl+D stop acting on a clip that may have scrolled out of view.
-    if (e.button === 0 && !e.shiftKey && !isInteractive) store.clearSelection()
+    // A plain click (not a pan) on empty timeline drops the selection, so
+    // Delete, S and Ctrl+D stop acting on a clip that may have scrolled out of
+    // view. Decided on release so dragging to scroll keeps the selected track
+    // and its channel strip.
+    panClearsSelection = e.button === 0 && !e.shiftKey && !isInteractive
     isPanning = true
     panStartX = e.clientX
     panStartY = e.clientY
@@ -680,7 +685,10 @@ function onPanMove(e: PointerEvent) {
   timelineScrollEl.value.scrollTop = panScrollStartY - dy
 }
 
-function onPanEnd() {
+function onPanEnd(e: PointerEvent) {
+  const moved = Math.abs(e.clientX - panStartX) > PAN_CLICK_SLOP_PX || Math.abs(e.clientY - panStartY) > PAN_CLICK_SLOP_PX
+  if (panClearsSelection && !moved) store.clearSelection()
+  panClearsSelection = false
   isPanning = false
   window.removeEventListener('pointermove', onPanMove)
   window.removeEventListener('pointerup', onPanEnd)

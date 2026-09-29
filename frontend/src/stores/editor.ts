@@ -201,7 +201,11 @@ export const useEditorStore = defineStore('editor', {
           if (session !== this.session) return false
         }
         // Edits made while the request was in flight still count as unsaved.
-        this.markSaved(sentSnap, sentName)
+        // Compare the live project, not the last undo step: a lane rename
+        // being typed or a slider mid-drag is not in the history yet.
+        this.savedSnap = sentSnap
+        this.savedName = sentName
+        this.refreshDirty(serialize(this.project))
         return true
       } catch (e) {
         if (session === this.session) this.error = e instanceof Error ? e.message : String(e)
