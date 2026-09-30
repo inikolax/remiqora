@@ -25,7 +25,8 @@ import type { TimelineProject } from '../audio/timelineTypes'
 
 export function useTimelineEngine() {
   let graph: TimelineGraph | null = null
-  let playback: TimelinePlaybackHandle | null = null
+  /** Scheduled passes: the one playing and, while looping, the next one. */
+  let passes: TimelinePlaybackHandle[] = []
   let seekToken = 0
 
   function ensureGraph(laneCount: number): TimelineGraph {
@@ -127,26 +128,41 @@ export function useTimelineEngine() {
   }
 
   /**
-   * Schedules playback from `fromSec`. Resolves with the context time the audio
-   * starts at (the transport clock's reference), or null when a newer
-   * play/seek/stop superseded this call.
+   * Schedules playback from `fromSec`, cut at `untilSec` (a loop's end). Resolves
+   * with the context time the audio starts at (the transport clock's
+   * reference), or null when a newer play/seek/stop superseded this call.
    */
-  async function play(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, onEnded: () => void): Promise<number | null> {
+  async function play(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, onEnded: () => void, untilSec = Infinity): Promise<number | null> {
     const g = ensureGraph(project.lanes.length)
     const token = ++seekToken
     await (g.ctx as AudioContext).resume()
     if (token !== seekToken || !graph) return null // superseded by a newer play/seek, or torn down meanwhile
-    playback?.stop()
+    stopPasses()
     applySettings(project)
     const startAt = (graph.ctx as AudioContext).currentTime + 0.05
-    playback = scheduleTimeline(graph, toScheduledClips(project, buffers), fromSec, startAt, onEnded)
+    passes = [scheduleTimeline(graph, toScheduledClips(project, buffers), fromSec, startAt, onEnded, untilSec)]
     return startAt
+  }
+
+  /**
+   * Schedules one more loop pass ([fromSec, untilSec) of the timeline) to start
+   * at `ctxStartTime`, the moment the pass before it ends, so the wrap has no gap.
+   * Keeps the two newest passes; older ones have finished by then.
+   */
+  function queuePass(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, untilSec: number, ctxStartTime: number): void {
+    if (!graph) return
+    passes.push(scheduleTimeline(graph, toScheduledClips(project, buffers), fromSec, ctxStartTime, () => {}, untilSec))
+    while (passes.length > 2) passes.shift()!.stop()
+  }
+
+  function stopPasses(): void {
+    for (const p of passes) p.stop()
+    passes = []
   }
 
   function stop(): void {
     seekToken++ // invalidate any in-flight play()
-    playback?.stop()
-    playback = null
+    stopPasses()
   }
 
   function teardown(): void {
@@ -172,5 +188,5 @@ export function useTimelineEngine() {
     return getChannelLevel(graph.master)
   }
 
-  return { ensureGraph, applySettings, decodeAll, toScheduledClips, play, stop, teardown, render, getLaneLevel, getMasterLevel }
+  return { ensureGraph, applySettings, decodeAll, toScheduledClips, play, queuePass, stop, teardown, render, getLaneLevel, getMasterLevel }
 }

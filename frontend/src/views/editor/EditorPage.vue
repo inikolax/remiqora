@@ -46,6 +46,14 @@ const timelineScrollEl = ref<HTMLElement | null>(null)
 let rafId: number | null = null
 let playStartCtxTime = 0
 let playStartOffset = 0
+/** While looping: context time the current pass ends (the next one is already queued there). */
+let passEndCtxTime: number | null = null
+
+/** The enabled loop region, if playback at `sec` runs inside it (i.e. before its end). */
+function activeLoop(sec: number): { start: number; end: number } | null {
+  const r = store.project.loopRegion
+  return r?.enabled && r.end > r.start && sec < r.end ? r : null
+}
 
 function stopTicking(): void {
   if (rafId != null) cancelAnimationFrame(rafId)
@@ -55,20 +63,30 @@ function stopTicking(): void {
 }
 function tick(): void {
   const ctx = getSharedAudioCtx()
+  const prevSec = store.playheadSec
+  const loop = store.project.loopRegion
+  // Loop wrap: the next pass was scheduled to start exactly when this one ends,
+  // so the clock just moves its reference to the loop start.
+  if (passEndCtxTime != null && loop && ctx.currentTime >= passEndCtxTime) {
+    const len = loop.end - loop.start
+    if (ctx.currentTime >= passEndCtxTime + len) {
+      // Stalled (hidden tab) past the queued pass too: start over from the loop start.
+      seek(loop.start)
+      rafId = requestAnimationFrame(tick)
+      return
+    }
+    playStartOffset = loop.start
+    playStartCtxTime = passEndCtxTime
+    passEndCtxTime += len
+    engine.queuePass(store.project, buffers.value, loop.start, loop.end, passEndCtxTime)
+  }
   // Held at the start position until the scheduled audio actually begins.
   const currentTime = Math.max(playStartOffset, ctx.currentTime - playStartCtxTime + playStartOffset)
-  
-  const prevSec = store.playheadSec
-  if (store.project.loopRegion?.enabled && currentTime >= store.project.loopRegion.end) {
-    seek(store.project.loopRegion.start)
-    followPlayhead(prevSec)
-    rafId = requestAnimationFrame(tick)
-    return
-  }
 
   // The transport ends at the project end even when no source is scheduled to
   // fire onended (empty project, playing past the last clip, every clip muted).
-  if (currentTime >= store.totalDuration) {
+  // A loop that runs past the project end plays on to the loop end.
+  if (currentTime >= store.totalDuration && !activeLoop(currentTime)) {
     engine.stop()
     onEnded()
     return
@@ -95,15 +113,22 @@ function onEnded(): void {
 async function startEngine(from: number): Promise<void> {
   playStartOffset = from
   playStartCtxTime = Infinity // tick holds the playhead at `from` until the engine answers
+  passEndCtxTime = null
+  const loop = activeLoop(from)
   // No end callback: the last *scheduled* clip can end before the project does
   // (a later clip muted or not soloed), so tick() alone decides the end.
-  const startAt = await engine.play(store.project, buffers.value, from, () => {})
-  if (startAt != null) playStartCtxTime = startAt
+  const startAt = await engine.play(store.project, buffers.value, from, () => {}, loop?.end)
+  if (startAt == null) return
+  playStartCtxTime = startAt
+  if (loop) {
+    passEndCtxTime = startAt + (loop.end - from)
+    engine.queuePass(store.project, buffers.value, loop.start, loop.end, passEndCtxTime)
+  }
 }
 
 async function play(): Promise<void> {
   if (store.playing) return
-  const from = store.playheadSec >= store.totalDuration ? 0 : store.playheadSec
+  const from = store.playheadSec >= store.totalDuration && !activeLoop(store.playheadSec) ? 0 : store.playheadSec
   store.playing = true
   await startEngine(from)
   if (store.playing) startTicking()
@@ -123,11 +148,25 @@ function seek(value: number): void {
 let loopDragMode: 'start' | 'end' | 'move' | null = null
 let loopDragStartX = 0
 let loopDragStartVal = 0
+let loopDragStartKey = ''
+
+function loopKey(): string {
+  const r = store.project.loopRegion
+  return r ? `${r.enabled}:${r.start}:${r.end}` : ''
+}
+
+// Loop passes are scheduled ahead, so a loop change during playback reschedules.
+// A drag reschedules once on release: rescheduling on every pointermove would
+// keep restarting the audio before it can start.
+watch(loopKey, () => {
+  if (store.playing && !loopDragMode) seek(store.playheadSec)
+})
 
 function onLoopPointerDown(mode: 'start' | 'end' | 'move', evt: PointerEvent) {
   evt.stopPropagation()
   if (!store.project.loopRegion) return
   loopDragMode = mode
+  loopDragStartKey = loopKey()
   loopDragStartX = evt.clientX
   if (mode === 'start') loopDragStartVal = store.project.loopRegion.start
   if (mode === 'end') loopDragStartVal = store.project.loopRegion.end
@@ -158,6 +197,7 @@ function onLoopPointerUp() {
   loopDragMode = null
   window.removeEventListener('pointermove', onLoopPointerMove)
   window.removeEventListener('pointerup', onLoopPointerUp)
+  if (store.playing && loopKey() !== loopDragStartKey) seek(store.playheadSec)
   store.snapshot()
 }
 
