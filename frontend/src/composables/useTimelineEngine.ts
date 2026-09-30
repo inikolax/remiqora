@@ -9,10 +9,11 @@
  * silently orphan connected AudioNodes with no disconnect() ever firing.
  */
 import { getSharedAudioCtx } from './audioPlayback'
-import { decodeStem, getChannelLevel, getReverbImpulse } from '../audio/mixerEngine'
+import { decodeStem, disconnectChannel, getChannelLevel, getReverbImpulse } from '../audio/mixerEngine'
 import {
   applyLaneSettings,
   applyMasterSettings,
+  buildLaneChannel,
   buildTimelineGraph,
   disconnectTimelineGraph,
   effectiveLaneGain,
@@ -25,16 +26,35 @@ import type { TimelineProject } from '../audio/timelineTypes'
 
 export function useTimelineEngine() {
   let graph: TimelineGraph | null = null
+  /** Lane id for each entry of graph.lanes, in the same order. */
+  let graphLaneIds: string[] = []
   let playback: TimelinePlaybackHandle | null = null
   let seekToken = 0
 
-  function ensureGraph(laneCount: number): TimelineGraph {
+  /**
+   * Brings graph.lanes in line with the project's lanes. Channels are kept per
+   * lane id and the master is built once, so adding, removing or reordering a
+   * lane during playback leaves the sources already playing on their route.
+   * Only the channels of removed lanes are torn down.
+   */
+  function ensureGraph(laneIds: string[]): TimelineGraph {
     const ctx = getSharedAudioCtx()
-    if (!graph || graph.lanes.length !== laneCount) {
-      if (graph) disconnectTimelineGraph(graph)
-      graph = buildTimelineGraph(ctx, laneCount, getReverbImpulse(ctx.sampleRate))
+    if (!graph) {
+      graph = buildTimelineGraph(ctx, 0, getReverbImpulse(ctx.sampleRate))
+      graphLaneIds = []
     }
-    return graph
+    if (laneIds.length === graphLaneIds.length && laneIds.every((id, i) => id === graphLaneIds[i])) return graph
+    const g = graph
+    const byId = new Map(graphLaneIds.map((id, i) => [id, g.lanes[i]]))
+    g.lanes = laneIds.map((id) => {
+      const ch = byId.get(id)
+      if (!ch) return buildLaneChannel(g, getReverbImpulse(ctx.sampleRate))
+      byId.delete(id) // a repeated id gets its own channel
+      return ch
+    })
+    for (const ch of byId.values()) disconnectChannel(ch)
+    graphLaneIds = [...laneIds]
+    return g
   }
 
   function applySettings(project: TimelineProject): void {
@@ -127,7 +147,7 @@ export function useTimelineEngine() {
   }
 
   async function play(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, onEnded: () => void): Promise<void> {
-    const g = ensureGraph(project.lanes.length)
+    const g = ensureGraph(project.lanes.map((l) => l.id))
     const token = ++seekToken
     await (g.ctx as AudioContext).resume()
     if (token !== seekToken || !graph) return // superseded by a newer play/seek, or torn down meanwhile
@@ -146,6 +166,7 @@ export function useTimelineEngine() {
     stop()
     if (graph) disconnectTimelineGraph(graph)
     graph = null
+    graphLaneIds = []
   }
 
   async function render(project: TimelineProject, buffers: Map<string, AudioBuffer>, totalDurationSec: number): Promise<AudioBuffer> {

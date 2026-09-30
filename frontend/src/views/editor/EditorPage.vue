@@ -335,7 +335,7 @@ async function load(): Promise<void> {
     await store.loadProject(Number(props.id))
   }
   buffers.value = await engine.decodeAll(store.project)
-  engine.ensureGraph(store.project.lanes.length)
+  engine.ensureGraph(store.project.lanes.map((l) => l.id))
   engine.applySettings(store.project)
   loadingAudio.value = false
 }
@@ -411,7 +411,7 @@ watch(() => props.id, load, { immediate: true })
 watch(
   () => store.project,
   async () => {
-    engine.ensureGraph(store.project.lanes.length)
+    engine.ensureGraph(store.project.lanes.map((l) => l.id))
     engine.applySettings(store.project)
     
     for (const lane of store.project.lanes) {

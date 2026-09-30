@@ -5,7 +5,7 @@
  * own buildMixGraph/STEM_NAMES stay fixed at exactly 4 stems and are
  * untouched; this module is the arbitrary-lane-count counterpart.
  */
-import { applyChannelSettings, buildChannel, effectTailSeconds, getReverbImpulse } from './mixerEngine'
+import { applyChannelSettings, buildChannel, disconnectChannel, effectTailSeconds, getReverbImpulse } from './mixerEngine'
 import type { BuiltChannel, ChannelSettings, MasterSettings } from './mixerEngine'
 
 export interface TimelineGraph {
@@ -17,13 +17,16 @@ export interface TimelineGraph {
 export function buildTimelineGraph(ctx: BaseAudioContext, laneCount: number, impulse: AudioBuffer): TimelineGraph {
   const master = buildChannel(ctx, true, impulse)
   master.output.connect(ctx.destination)
-  const lanes: BuiltChannel[] = []
-  for (let i = 0; i < laneCount; i++) {
-    const ch = buildChannel(ctx, false, impulse)
-    ch.output.connect(master.input)
-    lanes.push(ch)
-  }
-  return { ctx, lanes, master }
+  const graph: TimelineGraph = { ctx, lanes: [], master }
+  for (let i = 0; i < laneCount; i++) graph.lanes.push(buildLaneChannel(graph, impulse))
+  return graph
+}
+
+/** A new lane channel feeding the graph's master. The caller places it in `graph.lanes`. */
+export function buildLaneChannel(graph: TimelineGraph, impulse: AudioBuffer): BuiltChannel {
+  const ch = buildChannel(graph.ctx, false, impulse)
+  ch.output.connect(graph.master.input)
+  return ch
 }
 
 export function effectiveLaneGain(settings: ChannelSettings, anySolo: boolean): number {
@@ -38,19 +41,6 @@ export function applyLaneSettings(graph: TimelineGraph, laneIndex: number, setti
 
 export function applyMasterSettings(graph: TimelineGraph, settings: MasterSettings): void {
   applyChannelSettings(graph.master, settings, settings.volume)
-}
-
-function disconnectChannel(ch: BuiltChannel): void {
-  ch.volumeGain.disconnect()
-  ch.eqLow.disconnect()
-  ch.eqMid.disconnect()
-  ch.eqHigh.disconnect()
-  ch.comp.disconnect()
-  ch.panner?.disconnect()
-  ch.dryGain.disconnect()
-  ch.wetGain.disconnect()
-  ch.convolver.disconnect()
-  ch.analyser?.disconnect()
 }
 
 /** Must be called when the editor closes/navigates away, same discipline as
