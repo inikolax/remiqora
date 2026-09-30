@@ -55,7 +55,8 @@ function stopTicking(): void {
 }
 function tick(): void {
   const ctx = getSharedAudioCtx()
-  const currentTime = ctx.currentTime - playStartCtxTime + playStartOffset
+  // Held at the start position until the scheduled audio actually begins.
+  const currentTime = Math.max(playStartOffset, ctx.currentTime - playStartCtxTime + playStartOffset)
   
   const prevSec = store.playheadSec
   if (store.project.loopRegion?.enabled && currentTime >= store.project.loopRegion.end) {
@@ -65,7 +66,15 @@ function tick(): void {
     return
   }
 
-  store.playheadSec = Math.min(store.totalDuration, currentTime)
+  // The transport ends at the project end even when no source is scheduled to
+  // fire onended (empty project, playing past the last clip, every clip muted).
+  if (currentTime >= store.totalDuration) {
+    engine.stop()
+    onEnded()
+    return
+  }
+
+  store.playheadSec = currentTime
   followPlayhead(prevSec)
   laneLevels.value = store.project.lanes.map((_, i) => engine.getLaneLevel(i))
   masterLevel.value = engine.getMasterLevel()
@@ -82,14 +91,22 @@ function onEnded(): void {
   stopTicking()
 }
 
+/** (Re)starts the engine at `from` and pins the transport clock to the time the audio starts. */
+async function startEngine(from: number): Promise<void> {
+  playStartOffset = from
+  playStartCtxTime = Infinity // tick holds the playhead at `from` until the engine answers
+  // No end callback: the last *scheduled* clip can end before the project does
+  // (a later clip muted or not soloed), so tick() alone decides the end.
+  const startAt = await engine.play(store.project, buffers.value, from, () => {})
+  if (startAt != null) playStartCtxTime = startAt
+}
+
 async function play(): Promise<void> {
   if (store.playing) return
   const from = store.playheadSec >= store.totalDuration ? 0 : store.playheadSec
-  playStartOffset = from
-  playStartCtxTime = getSharedAudioCtx().currentTime
   store.playing = true
-  await engine.play(store.project, buffers.value, from, onEnded)
-  startTicking()
+  await startEngine(from)
+  if (store.playing) startTicking()
 }
 
 function pause(): void {
@@ -100,11 +117,7 @@ function pause(): void {
 
 function seek(value: number): void {
   store.playheadSec = value
-  if (store.playing) {
-    playStartOffset = value
-    playStartCtxTime = getSharedAudioCtx().currentTime
-    void engine.play(store.project, buffers.value, value, onEnded)
-  }
+  if (store.playing) void startEngine(value)
 }
 
 let loopDragMode: 'start' | 'end' | 'move' | null = null
@@ -393,7 +406,7 @@ function onToggleMute(laneId: string, payload: { clipId: string; enabled: boolea
   if (!clip) return
   clip.muted = payload.enabled
   store.snapshot()
-  if (store.playing) engine.play(store.project, buffers.value, store.playheadSec, () => { store.playing = false })
+  if (store.playing) seek(store.playheadSec) // reschedule without the clip, same transport clock
 }
 
 function onToggleSolo(laneId: string, payload: { clipId: string; enabled: boolean }): void {
@@ -403,7 +416,7 @@ function onToggleSolo(laneId: string, payload: { clipId: string; enabled: boolea
   if (!clip) return
   clip.solo = payload.enabled
   store.snapshot()
-  if (store.playing) engine.play(store.project, buffers.value, store.playheadSec, () => { store.playing = false })
+  if (store.playing) seek(store.playheadSec)
 }
 
 watch(() => props.id, load, { immediate: true })

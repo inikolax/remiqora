@@ -126,14 +126,21 @@ export function useTimelineEngine() {
     return clips
   }
 
-  async function play(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, onEnded: () => void): Promise<void> {
+  /**
+   * Schedules playback from `fromSec`. Resolves with the context time the audio
+   * starts at (the transport clock's reference), or null when a newer
+   * play/seek/stop superseded this call.
+   */
+  async function play(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, onEnded: () => void): Promise<number | null> {
     const g = ensureGraph(project.lanes.length)
     const token = ++seekToken
     await (g.ctx as AudioContext).resume()
-    if (token !== seekToken || !graph) return // superseded by a newer play/seek, or torn down meanwhile
+    if (token !== seekToken || !graph) return null // superseded by a newer play/seek, or torn down meanwhile
     playback?.stop()
     applySettings(project)
-    playback = scheduleTimeline(graph, toScheduledClips(project, buffers), fromSec, (graph.ctx as AudioContext).currentTime + 0.05, onEnded)
+    const startAt = (graph.ctx as AudioContext).currentTime + 0.05
+    playback = scheduleTimeline(graph, toScheduledClips(project, buffers), fromSec, startAt, onEnded)
+    return startAt
   }
 
   function stop(): void {
