@@ -299,7 +299,8 @@ const masterAsChannel = computed<ChannelSettings>({
   get: () => ({ ...store.project.master, pan: 0, muted: false, solo: false }),
   set: (v) => {
     const { pan: _pan, muted: _muted, solo: _solo, ...rest } = v
-    store.updateMasterSettings(rest)
+    // Live value; the strip's commit event records the undo step on release.
+    store.updateMasterSettings(rest, false)
   },
 })
 
@@ -318,9 +319,17 @@ async function onPickForNewLane(payload: { sourceUrl: string; sourceLabel: strin
   pickerOpenForNewLane.value = false
   let buffer = buffers.value.get(payload.sourceUrl)
   if (!buffer) {
-    buffer = await decodeStem(payload.sourceUrl)
+    try {
+      buffer = await decodeStem(payload.sourceUrl)
+    } catch (e) {
+      // The library entry's file is gone or does not decode: say so instead
+      // of the click silently doing nothing.
+      store.error = e instanceof Error ? e.message : String(e)
+      return
+    }
     buffers.value.set(payload.sourceUrl, buffer)
   }
+  store.error = null
   const lane = store.addLane()
   store.renameLane(lane.id, payload.sourceLabel)
 
@@ -339,10 +348,21 @@ async function onPickForNewLane(payload: { sourceUrl: string; sourceLabel: strin
   store.addClip(lane.id, clip)
 }
 
+let unmounted = false
+// Set when Save on a new project is about to rewrite the URL from /editor/new
+// to /editor/<id>: that is the same project, so the id watcher must not reload
+// it (which would re-decode every source and wipe the undo history). Holds the
+// id so it can only skip that exact route, and only while the store still has
+// that project.
+let skipIdLoad: string | null = null
+
 async function doSave(): Promise<void> {
   const wasNew = store.projectId == null
-  await store.save()
-  if (wasNew && store.projectId != null) {
+  const ok = await store.save()
+  // save() returns false when another project was opened meanwhile; the route
+  // check covers a navigation that has started but not loaded yet.
+  if (ok && wasNew && store.projectId != null && props.id === 'new' && !unmounted) {
+    skipIdLoad = String(store.projectId)
     await router.replace(`/editor/${store.projectId}`)
   }
 }
@@ -378,19 +398,36 @@ async function doExport(): Promise<void> {
   }
 }
 
+// Only the most recent load() may write buffers or clear the loading state
+// (same idea as seekToken in useTimelineEngine).
+let loadToken = 0
+
 async function load(): Promise<void> {
+  const token = ++loadToken
   pause()
   engine.teardown()
   loadingAudio.value = true
-  if (props.id === 'new') {
-    store.newProject()
-  } else {
-    await store.loadProject(Number(props.id))
+  try {
+    if (props.id === 'new') {
+      store.newProject()
+    } else {
+      await store.loadProject(Number(props.id))
+      if (token !== loadToken) return
+      // The fetch failed: store.error is shown above the editor. Whatever
+      // project was in the store before stays as it was (undecoded, so it does
+      // not play); do not treat it as the project this URL asked for.
+      if (store.error) return
+    }
+    const decoded = await engine.decodeAll(store.project)
+    if (token !== loadToken) return
+    buffers.value = decoded
+    engine.ensureGraph(store.project.lanes.map((l) => l.id))
+    engine.applySettings(store.project)
+  } catch (e) {
+    if (token === loadToken) store.error = e instanceof Error ? e.message : String(e)
+  } finally {
+    if (token === loadToken) loadingAudio.value = false
   }
-  buffers.value = await engine.decodeAll(store.project)
-  engine.ensureGraph(store.project.lanes.map((l) => l.id))
-  engine.applySettings(store.project)
-  loadingAudio.value = false
 }
 
 async function onDropAudio(laneId: string, payload: { file: File; timelineStart: number }): Promise<void> {
@@ -416,6 +453,7 @@ async function onDropAudio(laneId: string, payload: { file: File; timelineStart:
       originalBpm: detectedBpm || store.project.bpm || 120,
     }
     const isFirstClip = store.totalDuration === 0
+    store.error = null
     store.addClip(laneId, clip)
     
     if (isFirstClip) {
@@ -459,7 +497,16 @@ function onToggleSolo(laneId: string, payload: { clipId: string; enabled: boolea
   if (store.playing) seek(store.playheadSec)
 }
 
-watch(() => props.id, load, { immediate: true })
+watch(
+  () => props.id,
+  () => {
+    const skip = skipIdLoad
+    skipIdLoad = null
+    if (skip != null && props.id === skip && store.projectId === Number(skip)) return
+    void load()
+  },
+  { immediate: true },
+)
 
 watch(
   () => store.project,
@@ -538,6 +585,10 @@ function onKeydown(e: KeyboardEvent) {
   }
 
   // ────── DAW Hotkeys ──────
+  if (e.key === 'Escape') {
+    store.clearSelection()
+    return
+  }
   if (e.key === ' ') {
     e.preventDefault()
     store.playing ? pause() : play()
@@ -557,15 +608,12 @@ function onKeydown(e: KeyboardEvent) {
         const clip = lane.clips.find(c => c.id === store.selectedClipId)
         if (clip) {
           const dur = clipDuration(clip, store.project.bpm)
+          // Copy every field (fades, mute/solo, MIDI notes and instrument), not a hand-picked subset.
           const newClip: Clip = {
+            ...clip,
+            notes: clip.notes?.map((n) => ({ ...n })),
             id: crypto.randomUUID(),
-            sourceUrl: clip.sourceUrl,
-            sourceLabel: clip.sourceLabel,
             timelineStart: clip.timelineStart + dur,
-            trimStart: clip.trimStart,
-            trimEnd: clip.trimEnd,
-            originalBpm: clip.originalBpm,
-            warpEnabled: clip.warpEnabled,
           }
           store.addClip(lane.id, newClip)
           store.selectedClipId = newClip.id
@@ -593,18 +641,20 @@ function onKeydown(e: KeyboardEvent) {
           const splitOffset = (currentPlayhead - clip.timelineStart) / sf
           const newLeftTrimEnd = clip.trimStart + splitOffset
           
+          // The right half inherits everything (fades, mute/solo, MIDI data);
+          // only the fades that sat at the cut are reset so the two new edges
+          // get the automatic micro-fade instead of the original clip's fade.
           const rightClip: Clip = {
+            ...clip,
+            notes: clip.notes?.map((n) => ({ ...n })),
             id: crypto.randomUUID(),
-            sourceUrl: clip.sourceUrl,
-            sourceLabel: clip.sourceLabel,
             timelineStart: currentPlayhead,
             trimStart: newLeftTrimEnd,
-            trimEnd: clip.trimEnd,
-            originalBpm: clip.originalBpm,
-            warpEnabled: clip.warpEnabled,
+            fadeInDuration: undefined,
           }
-          
+
           clip.trimEnd = newLeftTrimEnd
+          clip.fadeOutDuration = undefined
           newClips.push(rightClip)
           splitOccurred = true
           
@@ -646,6 +696,9 @@ function onTimelineWheel(e: WheelEvent) {
 }
 
 let isPanning = false
+let panClearsSelection = false
+/** Pointer travel below this still counts as a click, not a pan. */
+const PAN_CLICK_SLOP_PX = 4
 let panStartX = 0
 let panStartY = 0
 let panScrollStartX = 0
@@ -664,6 +717,11 @@ function onTimelinePointerDown(e: PointerEvent) {
     }
     
     e.preventDefault()
+    // A plain click (not a pan) on empty timeline drops the selection, so
+    // Delete, S and Ctrl+D stop acting on a clip that may have scrolled out of
+    // view. Decided on release so dragging to scroll keeps the selected track
+    // and its channel strip.
+    panClearsSelection = e.button === 0 && !e.shiftKey && !isInteractive
     isPanning = true
     panStartX = e.clientX
     panStartY = e.clientY
@@ -682,7 +740,10 @@ function onPanMove(e: PointerEvent) {
   timelineScrollEl.value.scrollTop = panScrollStartY - dy
 }
 
-function onPanEnd() {
+function onPanEnd(e: PointerEvent) {
+  const moved = Math.abs(e.clientX - panStartX) > PAN_CLICK_SLOP_PX || Math.abs(e.clientY - panStartY) > PAN_CLICK_SLOP_PX
+  if (panClearsSelection && !moved) store.clearSelection()
+  panClearsSelection = false
   isPanning = false
   window.removeEventListener('pointermove', onPanMove)
   window.removeEventListener('pointerup', onPanEnd)
@@ -715,6 +776,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
   stopTicking()
   engine.teardown()
   window.removeEventListener('keydown', onKeydown)
@@ -739,7 +801,11 @@ onBeforeRouteLeave((_to, _from, next) => {
     <div class="flex flex-wrap items-center gap-3 shrink-0">
       <router-link to="/editor" class="text-xs text-text-dim hover:underline">{{ t('editor.backToProjects') }}</router-link>
       <div class="flex items-center gap-1.5">
-        <input v-model="store.projectName" class="rounded-lg border border-border bg-panel-2 px-2 py-1 text-sm text-text" />
+        <input
+          :value="store.projectName"
+          class="rounded-lg border border-border bg-panel-2 px-2 py-1 text-sm text-text"
+          @input="store.setProjectName(($event.target as HTMLInputElement).value)"
+        />
         <span v-if="store.dirty" class="text-xs font-bold text-accent" :title="t('editor.unsavedTitle')">●</span>
       </div>
       <button
@@ -969,7 +1035,7 @@ onBeforeRouteLeave((_to, _from, next) => {
             :selected-clip-id="store.selectedClipId"
             :width-px="timelineWidthPx"
             :level="laneLevels[idx]"
-            @update:settings="(v) => store.updateLaneSettings(lane.id, v)"
+            @update:settings="(v) => store.updateLaneSettings(lane.id, v, false)"
             @rename="(name) => store.renameLane(lane.id, name)"
             @move-clip="(p) => store.updateClip(p.clipId, { timelineStart: p.timelineStart })"
             @trim-clip="(p) => store.updateClip(p.clipId, { trimStart: p.trimStart, trimEnd: p.trimEnd, timelineStart: p.timelineStart })"
@@ -1004,7 +1070,8 @@ onBeforeRouteLeave((_to, _from, next) => {
               show-meter
               :level="selectedLaneLevel.peak || 0"
               :clipping="selectedLaneLevel.clipping || false"
-              @update:model-value="(v) => store.updateLaneSettings(selectedLane!.id, v)"
+              @update:model-value="(v) => store.updateLaneSettings(selectedLane!.id, v, false)"
+              @commit="store.commitSnapshot()"
               @reset="store.updateLaneSettings(selectedLane!.id, defaultChannelSettings())"
             />
             <div v-else class="flex h-24 items-center justify-center rounded-xl border border-border/50 bg-panel-2/30 p-4 text-xs text-text-dim text-center w-full">
@@ -1018,6 +1085,7 @@ onBeforeRouteLeave((_to, _from, next) => {
               :model-value="masterAsChannel"
               :label="t('editor.master')"
               @update:model-value="(v) => (masterAsChannel = v)"
+              @commit="store.commitSnapshot()"
               @reset="store.updateMasterSettings(defaultMasterSettings())"
             />
           </div>

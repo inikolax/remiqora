@@ -24,6 +24,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   'update:modelValue': [value: ChannelSettings]
+  /** Fired once per finished gesture (slider release, button click) so the parent can record one undo step. */
+  commit: []
   reset: []
 }>()
 
@@ -150,7 +152,8 @@ const bcMix = computed({
 </script>
 
 <template>
-  <div class="flex items-stretch rounded-xl border border-border/50 bg-panel-2/60 backdrop-blur-sm p-3 shadow-sm transition-colors hover:bg-panel-2/80 w-full gap-4">
+  <!-- `change` bubbles from every range input and checkbox below and fires once on release, unlike `input`. -->
+  <div class="flex items-stretch rounded-xl border border-border/50 bg-panel-2/60 backdrop-blur-sm p-3 shadow-sm transition-colors hover:bg-panel-2/80 w-full gap-4" @change="emit('commit')">
     <!-- Volume & Pan Section -->
     <div class="flex flex-col w-36 shrink-0 border-r border-border/50 pr-3">
       <div class="flex items-center justify-between">
@@ -164,7 +167,7 @@ const bcMix = computed({
               :aria-pressed="!!muted"
               :aria-label="t('channelStrip.mute')"
               :title="t('channelStrip.mute')"
-              @click="muted = !muted"
+              @click="muted = !muted; emit('commit')"
             >
               M
             </button>
@@ -175,7 +178,7 @@ const bcMix = computed({
               :aria-pressed="!!solo"
               :aria-label="t('channelStrip.solo')"
               :title="t('channelStrip.solo')"
-              @click="solo = !solo"
+              @click="solo = !solo; emit('commit')"
             >
               S
             </button>

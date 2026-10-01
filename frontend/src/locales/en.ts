@@ -528,6 +528,7 @@ export default {
     exporting: 'Exporting…',
     export: 'Export',
     exportedAsNewTrack: 'Exported as a new track.',
+    sourceMissing: 'Source file missing',
     confirmLeave: 'There are unsaved changes in the project. Do you really want to leave the page?',
     play: 'Play',
     pause: 'Pause',

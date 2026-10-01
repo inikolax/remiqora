@@ -438,6 +438,13 @@ onBeforeUnmount(() => {
           >✕</button>
         </div>
       </div>
+      <div
+        v-if="!buffer && clip.type !== 'midi'"
+        class="px-2 text-[10px] text-status-failed truncate"
+        :title="clip.sourceLabel"
+      >
+        {{ t('editor.sourceMissing') }}
+      </div>
       <canvas ref="canvasEl" class="w-full min-h-0 flex-1"></canvas>
     </div>
     

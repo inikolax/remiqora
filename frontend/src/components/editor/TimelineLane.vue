@@ -92,6 +92,7 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           :placeholder="t('timeline.trackNamePlaceholder')"
           class="flex-1 min-w-0 rounded border border-transparent bg-panel/50 px-1 py-0.5 text-[11px] font-medium text-text focus:border-accent1/50 focus:bg-panel focus:outline-none transition-colors"
           @input="emit('rename', ($event.target as HTMLInputElement).value)"
+          @change="emit('dragEnd')"
         />
         <button
           type="button"
@@ -100,7 +101,7 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           :aria-pressed="!!lane.settings.muted"
           :aria-label="t('timeline.muteTrack')"
           :title="t('timeline.muteTrack')"
-          @click.stop="emit('update:settings', { ...lane.settings, muted: !lane.settings.muted })"
+          @click.stop="emit('update:settings', { ...lane.settings, muted: !lane.settings.muted }); emit('dragEnd')"
         >
           M
         </button>
@@ -111,7 +112,7 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           :aria-pressed="!!lane.settings.solo"
           :aria-label="t('timeline.soloTrack')"
           :title="t('timeline.soloTrack')"
-          @click.stop="emit('update:settings', { ...lane.settings, solo: !lane.settings.solo })"
+          @click.stop="emit('update:settings', { ...lane.settings, solo: !lane.settings.solo }); emit('dragEnd')"
         >
           S
         </button>
@@ -126,6 +127,7 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           :value="lane.settings.volume"
           :aria-label="t('timeline.trackVolume', { name: lane.name })"
           @input="emit('update:settings', { ...lane.settings, volume: Number(($event.target as HTMLInputElement).value) })"
+          @change="emit('dragEnd')"
           class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1"
           @click.stop
         />
