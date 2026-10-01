@@ -50,10 +50,10 @@ const rows: LicenseRow[] = [
         </span>
       </div>
 
-      <button type="button" class="hover:text-text" :title="t('footer.artistEdit')" @click="settings.openDialog()">
+      <button type="button" class="py-1.5 hover:text-text" :title="t('footer.artistEdit')" @click="settings.openDialog()">
         {{ t('footer.artist') }}: <span :class="settings.artist ? 'text-text' : 'text-text-dim'">{{ settings.artist || t('footer.artistUnset') }}</span> ✎
       </button>
-      <a href="#" class="text-accent1 hover:underline" @click.prevent="open = true">{{ t('footer.licenses') }}</a>
+      <a href="#" class="py-1.5 text-accent1 hover:underline" @click.prevent="open = true">{{ t('footer.licenses') }}</a>
     </div>
 
     <HelpModal :open="open" :title="t('footer.licenses')" @close="open = false">

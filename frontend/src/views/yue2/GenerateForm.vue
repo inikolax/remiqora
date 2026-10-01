@@ -7,6 +7,7 @@ import type { CotMode, GenerateOptions } from '../../api/yue2'
 import ChipGroup from '../../components/shared/ChipGroup.vue'
 import CollapsibleDetails from '../../components/shared/CollapsibleDetails.vue'
 import HelpModal from '../../components/shared/HelpModal.vue'
+import HelpIconButton from '../../components/shared/HelpIconButton.vue'
 import TagInput from '../../components/shared/TagInput.vue'
 
 const store = useYue2Store()
@@ -305,16 +306,16 @@ async function submit() {
 
       <div class="space-y-1.5">
         <div class="flex items-center justify-between">
-          <label class="text-sm font-medium text-text">{{ t('aceGen.lyricsLabel') }}</label>
-          <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'lyrics'">{{ t('common.help') }}</button>
+          <label class="text-[13px] font-medium text-text">{{ t('aceGen.lyricsLabel') }}</label>
+          <HelpIconButton @click="helpOpen = 'lyrics'" />
         </div>
         <textarea v-model="lyrics" rows="6" class="w-full rounded-lg border border-border bg-panel-2 p-2.5 font-mono text-sm text-text" :placeholder="t('aceGen.lyricsPlaceholder')"></textarea>
       </div>
 
       <div class="space-y-1.5">
         <div class="flex items-center justify-between">
-          <label class="text-sm font-medium text-text">{{ t('aceGen.styleLabel') }}</label>
-          <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'style'">{{ t('common.help') }}</button>
+          <label class="text-[13px] font-medium text-text">{{ t('aceGen.styleLabel') }}</label>
+          <HelpIconButton @click="helpOpen = 'style'" />
         </div>
         <TagInput v-model="style" :placeholder="t('aceGen.stylePlaceholder')" />
       </div>
@@ -322,15 +323,15 @@ async function submit() {
       <div class="grid grid-cols-2 gap-3">
         <div>
           <div class="mb-1 flex items-center justify-between">
-            <label class="text-xs text-text-dim">{{ t('yueGen.cotModeLabel') }}</label>
-            <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'cot'">?</button>
+            <label class="text-[13px] font-medium text-text">{{ t('yueGen.cotModeLabel') }}</label>
+            <HelpIconButton @click="helpOpen = 'cot'" />
           </div>
           <select v-model="cot" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
             <option v-for="o in COT_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
           </select>
         </div>
         <div>
-          <label class="mb-1 block text-xs text-text-dim">{{ t('yueGen.precisionLabel') }}</label>
+          <label class="mb-1 block text-[13px] font-medium text-text">{{ t('yueGen.precisionLabel') }}</label>
           <select v-model="precision" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
             <option value="q8_0">q8_0</option>
             <option value="q4_0">q4_0</option>
@@ -341,7 +342,7 @@ async function submit() {
 
       <div v-if="cot !== 'off'" class="space-y-3 rounded-lg border border-border bg-panel-2/50 p-3">
         <div>
-          <label class="text-xs text-text-dim">{{ t('yueGen.abcScore') }}</label>
+          <label class="text-[13px] font-medium text-text">{{ t('yueGen.abcScore') }}</label>
           <textarea v-model="abc" rows="6" class="w-full rounded-lg border border-border bg-panel-2 p-2.5 font-mono text-xs text-text"></textarea>
         </div>
         <div class="space-y-2 rounded-lg border border-border bg-panel p-3">
@@ -361,7 +362,7 @@ async function submit() {
 
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="text-xs text-text-dim">{{ t('aceGen.seed') }}</label>
+          <label class="text-[13px] font-medium text-text">{{ t('aceGen.seed') }}</label>
           <input v-model.number="seed" type="number" :disabled="randomSeed" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text disabled:opacity-40" />
         </div>
         <label class="flex items-end gap-2 pb-2 text-xs text-text-dim">
@@ -371,7 +372,7 @@ async function submit() {
       </div>
 
       <div>
-        <label class="mb-1 block text-xs text-text-dim">{{ t('aceGen.variantCount') }}</label>
+        <label class="mb-1 block text-[13px] font-medium text-text">{{ t('aceGen.variantCount') }}</label>
         <ChipGroup v-model="batchSize" :options="[{ value: 1, label: '1' }, { value: 2, label: '2' }, { value: 3, label: '3' }, { value: 4, label: '4' }]" />
       </div>
 
@@ -379,11 +380,11 @@ async function submit() {
         <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'advanced'">{{ t('aceGen.advancedWhatMeans') }}</button>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="text-xs text-text-dim">{{ t('yueGen.cfgScale') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('yueGen.cfgScale') }}</label>
             <input v-model.number="cfgScale" type="number" step="0.1" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="t('yueGen.defaultPlaceholder')" />
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.inferenceSteps') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.inferenceSteps') }}</label>
             <input v-model.number="numInferenceSteps" type="number" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="t('yueGen.defaultPlaceholder')" />
           </div>
         </div>
@@ -391,7 +392,7 @@ async function submit() {
         <CollapsibleDetails :summary="t('yueGen.semanticSampling')">
           <div class="grid grid-cols-2 gap-2">
             <div v-for="f in SAMPLING_FIELDS" :key="'sem_' + f.key">
-              <label class="text-xs text-text-dim">{{ f.label }}</label>
+              <label class="text-[13px] font-medium text-text">{{ f.label }}</label>
               <input v-model.number="semantic[f.key]" type="number" :step="f.step" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="t('yueGen.defaultPlaceholder')" />
             </div>
           </div>
@@ -400,7 +401,7 @@ async function submit() {
         <CollapsibleDetails v-if="cot !== 'off'" :summary="t('yueGen.abcPlannerSampling')">
           <div class="grid grid-cols-2 gap-2">
             <div v-for="f in SAMPLING_FIELDS" :key="'abc_' + f.key">
-              <label class="text-xs text-text-dim">{{ f.label }}</label>
+              <label class="text-[13px] font-medium text-text">{{ f.label }}</label>
               <input v-model.number="abcSampling[f.key]" type="number" :step="f.step" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="t('yueGen.defaultPlaceholder')" />
             </div>
           </div>

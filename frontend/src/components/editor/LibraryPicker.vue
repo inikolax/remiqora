@@ -106,7 +106,7 @@ async function onFileSelected(event: Event) {
             <div class="mt-1 flex flex-wrap gap-1.5">
               <button
                 type="button"
-                class="accent-gradient rounded px-2 py-1 text-[11px] font-medium text-white"
+                class="accent-gradient rounded px-2 py-1 text-xs font-medium text-white"
                 @click="pick(trk.audio_url, trk.title || t('library.trackFallback'))"
               >
                 {{ t('library.fullMix') }}
@@ -115,7 +115,7 @@ async function onFileSelected(event: Event) {
                 v-for="name in Object.keys(trk.stems || {})"
                 :key="name"
                 type="button"
-                class="rounded border border-border px-2 py-1 text-[11px] text-text"
+                class="rounded border border-border px-2 py-1 text-xs text-text"
                 @click="pick(trk.stems![name], `${trk.title || t('library.trackFallback')} — ${STEM_LABELS[name] || name}`)"
               >
                 {{ STEM_LABELS[name] || name }}

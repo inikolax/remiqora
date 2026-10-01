@@ -55,6 +55,8 @@ const PRESETS: { value: DatePreset; labelKey: string }[] = [
       <input
         type="date"
         :value="dateFrom"
+        :aria-label="t('filterSort.from')"
+        :title="t('filterSort.from')"
         class="rounded-md border border-border bg-panel-2 px-1.5 py-1 text-text"
         @change="emit('update:dateFrom', ($event.target as HTMLInputElement).value)"
       />
@@ -62,6 +64,8 @@ const PRESETS: { value: DatePreset; labelKey: string }[] = [
       <input
         type="date"
         :value="dateTo"
+        :aria-label="t('filterSort.to')"
+        :title="t('filterSort.to')"
         class="rounded-md border border-border bg-panel-2 px-1.5 py-1 text-text"
         @change="emit('update:dateTo', ($event.target as HTMLInputElement).value)"
       />
@@ -82,9 +86,9 @@ const PRESETS: { value: DatePreset; labelKey: string }[] = [
       </button>
     </div>
 
-    <div class="ml-auto flex items-center gap-2 text-text-dim">
-      <span>{{ isFiltered ? t('filterSort.shownOf', { shown: visibleCount, total: totalCount }) : t('filterSort.total', { total: totalCount }) }}</span>
-      <button v-if="isFiltered" type="button" class="text-accent1 hover:underline" @click="emit('reset')">{{ t('filterSort.reset') }}</button>
+    <div v-if="isFiltered" class="ml-auto flex items-center gap-2 text-text-dim">
+      <span>{{ t('filterSort.shownOf', { shown: visibleCount, total: totalCount }) }}</span>
+      <button type="button" class="py-1 text-accent1 hover:underline" @click="emit('reset')">{{ t('filterSort.reset') }}</button>
     </div>
   </div>
 </template>

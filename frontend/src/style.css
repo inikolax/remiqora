@@ -38,7 +38,7 @@
    * components; without this token those classes generate no CSS at all. */
   --color-accent: #a855f7;
   --color-status-queued: #eab308;
-  --color-status-running: #a855f7;
+  --color-status-running: #38bdf8;
   --color-status-done: #22c55e;
   --color-status-failed: #ef4444;
   --color-status-cancelled: #6b7280;

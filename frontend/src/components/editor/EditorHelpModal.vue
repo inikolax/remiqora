@@ -56,7 +56,7 @@ const { onKeydown } = useDialogA11y(dialogEl, () => props.show, () => emit('clos
             
             <!-- Hotkeys -->
             <section>
-              <h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-text-dim flex items-center gap-2">
+              <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-text">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent1"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x2="6" y1="8" y2="5"></line><line x2="10" y1="8" y2="5"></line><line x2="14" y1="8" y2="5"></line></svg>
                 {{ t('editor.help.hotkeys') }}
               </h3>
@@ -122,7 +122,7 @@ const { onKeydown } = useDialogA11y(dialogEl, () => props.show, () => emit('clos
 
             <!-- Mouse -->
             <section>
-              <h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-text-dim flex items-center gap-2">
+              <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-text">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent2"><path d="M12 2a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4Z"></path><path d="M12 6v3"></path></svg>
                 {{ t('editor.help.mouse') }}
               </h3>
@@ -140,7 +140,7 @@ const { onKeydown } = useDialogA11y(dialogEl, () => props.show, () => emit('clos
 
             <!-- Basics -->
             <section>
-              <h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-text-dim flex items-center gap-2">
+              <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-text">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-status-done"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
                 {{ t('editor.help.basics') }}
               </h3>

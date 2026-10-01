@@ -52,7 +52,7 @@ function goToPage(n: number) {
     />
 
     <!-- Also above the list, so a long page does not have to be scrolled to its end to turn it -->
-    <PaginationBar v-bind="barProps" @update:page="goToPage" @update:page-size="setPageSize" />
+    <PaginationBar v-bind="barProps" compact @update:page="goToPage" @update:page-size="setPageSize" />
 
     <!-- Skeleton loaders while history is loading -->
     <template v-if="!store.historyLoaded">

@@ -8,6 +8,8 @@ const props = defineProps<{
   modelValue: string
   placeholder?: string
   editable?: boolean
+  /** Shown instead of modelValue (e.g. a shortened title); editing still works on the full modelValue. */
+  displayText?: string
 }>()
 
 const emit = defineEmits<{ rename: [title: string] }>()
@@ -36,13 +38,13 @@ function cancel(): void {
 </script>
 
 <template>
-  <div class="flex min-w-0 items-center gap-1.5">
+  <div class="group flex min-w-0 items-center gap-1.5">
     <input
       v-if="editing"
       ref="inputEl"
       v-model="draft"
       type="text"
-      class="min-w-0 flex-1 rounded border border-border bg-panel-2 px-1.5 py-0.5 text-sm font-medium text-text"
+      class="min-w-0 flex-1 rounded border border-border bg-panel-2 px-1.5 py-0.5 text-base font-semibold text-text"
       :placeholder="placeholder"
       @keydown.enter="commit"
       @keydown.escape="cancel"
@@ -50,12 +52,13 @@ function cancel(): void {
       @click.stop
     />
     <template v-else>
-      <p class="min-w-0 flex-1 truncate text-sm font-medium text-text">{{ modelValue || placeholder }}</p>
+      <p class="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-text" :title="modelValue">{{ displayText || modelValue || placeholder }}</p>
       <button
         v-if="editable"
         type="button"
-        class="shrink-0 text-text-dim hover:text-text"
+        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-dim opacity-0 transition-opacity hover:bg-panel-2 hover:text-text focus-visible:opacity-100 group-hover:opacity-100 @max-[639px]:opacity-100"
         :title="t('common.rename')"
+        :aria-label="t('common.rename')"
         @click.stop="startEdit"
       >
         ✎

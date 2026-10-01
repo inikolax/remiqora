@@ -18,7 +18,7 @@ const SOURCE_LABELS = computed<Record<MidiSource, string>>(() => ({
 }))
 
 const status = ref<MidiStatus | null>(null)
-const expanded = ref(false)
+const expanded = ref(true)
 const actionError = ref<string | null>(null)
 
 const midiCache = ref<Record<string, MidiParsed>>({})
@@ -164,18 +164,18 @@ onBeforeUnmount(() => {
   <div class="rounded-lg border border-border bg-panel-2">
     <button
       type="button"
-      class="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-text-dim"
+      class="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left"
+      :aria-expanded="expanded"
       @click="expanded = !expanded"
     >
-      <span>MIDI</span>
-      <span aria-hidden="true">{{ expanded ? '▾' : '▸' }}</span>
+      <span class="min-w-0">
+        <span class="block text-sm font-semibold text-text">{{ t('midiPanel.title') }}</span>
+        <span class="mt-0.5 block text-xs text-text-dim">{{ t('midiPanel.hint') }}</span>
+      </span>
+      <span class="mt-1 shrink-0 text-text-dim" aria-hidden="true">{{ expanded ? '▾' : '▸' }}</span>
     </button>
 
     <div v-if="expanded" class="space-y-2 border-t border-border/60 p-3">
-      <p class="text-[11px] text-text-dim">
-        {{ t('midiPanel.intro') }}
-      </p>
-
       <div v-if="actionError" class="rounded-lg bg-status-failed/10 p-2 text-xs text-status-failed">{{ actionError }}</div>
 
       <div
@@ -212,7 +212,7 @@ onBeforeUnmount(() => {
           <button type="button" class="text-xs text-text-dim hover:underline" @click="start(source, true)">{{ t('midiPanel.recreate') }}</button>
 
           <div v-if="openRollSource === source" class="mt-2 w-full space-y-1">
-            <div class="flex items-center justify-between text-[10px] text-text-dim">
+            <div class="flex items-center justify-between text-xs text-text-dim">
               <span>{{ t('midiPanel.pianoRoll') }}</span>
               <span v-if="midiCache[source]">{{ t('midiPanel.notesCount', { count: midiCache[source].notes.length, bpm: midiCache[source].tempoBpm }) }}</span>
             </div>

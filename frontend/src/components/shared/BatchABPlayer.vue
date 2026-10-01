@@ -11,6 +11,8 @@ const props = defineProps<{
   sources: string[]
   labels?: string[]
   durationSec?: number | null
+  /** The card has its own tagged download buttons, so this player's plain link is hidden. */
+  hideDownload?: boolean
 }>()
 
 const activeIndex = ref(0)
@@ -147,7 +149,7 @@ onBeforeUnmount(() => {
 
     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
       <div class="flex items-center gap-1.5">
-        <span class="text-[11px] font-medium text-text-dim">{{ t('batchAB.compareLabel') }}</span>
+        <span class="text-xs font-medium text-text-dim">{{ t('batchAB.compareLabel') }}</span>
         <div class="flex flex-wrap gap-1">
           <button
             v-for="(src, idx) in sources"
@@ -167,6 +169,7 @@ onBeforeUnmount(() => {
       </div>
 
       <button
+        v-if="!hideDownload"
         type="button"
         class="text-xs text-accent1 hover:underline"
         :title="t('batchAB.downloadTitle')"

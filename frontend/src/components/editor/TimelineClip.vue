@@ -421,7 +421,7 @@ onBeforeUnmount(() => {
     }"
   >
     <div class="flex h-full cursor-grab flex-col" @pointerdown="onPointerDown('move', $event)">
-      <div class="flex items-center justify-between px-2 pt-1 pb-0.5 text-[10px] font-medium text-text-dim/80 bg-gradient-to-b from-white/[0.08] to-transparent">
+      <div class="flex items-center justify-between px-2 pt-1 pb-0.5 text-[11px] font-medium text-text-dim/80 bg-gradient-to-b from-white/[0.08] to-transparent">
         <span class="truncate text-text drop-shadow-md">{{ laneName }}</span>
         <div class="flex items-center gap-1 z-10">
           <button 
@@ -466,7 +466,7 @@ onBeforeUnmount(() => {
       </div>
       <div
         v-if="!buffer && clip.type !== 'midi'"
-        class="px-2 text-[10px] text-status-failed truncate"
+        class="px-2 text-[11px] text-status-failed truncate"
         :title="clip.sourceLabel"
       >
         {{ t('editor.sourceMissing') }}

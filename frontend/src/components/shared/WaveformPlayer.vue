@@ -2,12 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { claimPlayback, fetchAndComputePeaks, peaksCache, releasePlaybackIfCurrent } from '../../composables/audioPlayback'
+import { formatClock } from '../../composables/formatCreated'
 import PlayIcon from './icons/PlayIcon.vue'
 import PauseIcon from './icons/PauseIcon.vue'
 
 const { t } = useI18n()
 
-const props = defineProps<{ src: string; compact?: boolean }>()
+const props = defineProps<{ src: string; compact?: boolean; durationHint?: number | null; totalClass?: string }>()
 
 const BAR_COUNT = 140
 
@@ -18,13 +19,15 @@ const duration = ref(0)
 const currentTime = ref(0)
 const peaks = ref<number[]>([])
 
-const timeLabel = computed(() => formatTime(currentTime.value > 0 ? currentTime.value : duration.value))
+const total = computed(() => duration.value || props.durationHint || 0)
+// The elapsed time appears once playback has started; before that the label is the length alone.
+const started = computed(() => playing.value || currentTime.value > 0)
+const elapsedLabel = computed(() => formatTime(currentTime.value))
+const totalLabel = computed(() => (total.value ? formatTime(total.value) : ''))
 
 function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00'
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
+  return formatClock(Math.floor(sec))
 }
 
 async function loadPeaks(priority = false): Promise<void> {
@@ -57,7 +60,18 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
 
-  const bars = peaks.value.length ? peaks.value : new Array(BAR_COUNT).fill(0.1)
+  const source = peaks.value.length ? peaks.value : new Array(BAR_COUNT).fill(0.1)
+  // Show no more bars than fit at about 4 px apiece: a narrow waveform stays readable instead of overflowing.
+  const target = Math.max(12, Math.floor(width / 4))
+  const bars =
+    target >= source.length
+      ? source
+      : Array.from({ length: target }, (_, i) => {
+          const from = Math.floor((i * source.length) / target)
+          const to = Math.max(from + 1, Math.floor(((i + 1) * source.length) / target))
+          const slice = source.slice(from, to)
+          return slice.reduce((a, b) => a + b, 0) / slice.length
+        })
   const gap = 2
   const barWidth = Math.max(1, width / bars.length - gap)
   const progress = duration.value ? currentTime.value / duration.value : 0
@@ -193,7 +207,10 @@ onBeforeUnmount(() => {
       <PauseIcon v-else :width="compact ? 11 : 14" :height="compact ? 11 : 14" />
     </button>
     <canvas ref="canvasEl" class="min-w-0 flex-1 cursor-pointer rounded bg-panel-2" :class="compact ? 'h-7' : 'h-10'" @click="onSeekClick"></canvas>
-    <span class="w-10 shrink-0 text-right text-xs tabular-nums text-text-dim">{{ timeLabel }}</span>
+    <span class="shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-text-dim" :class="started ? (compact ? 'min-w-[3.75rem]' : 'min-w-[4.5rem]') : ''">
+      <template v-if="started">{{ elapsedLabel }}</template>
+      <span v-if="totalLabel" :class="totalClass">{{ started ? ` / ${totalLabel}` : totalLabel }}</span>
+    </span>
     <audio ref="audioEl" :src="src" preload="none" class="hidden" @timeupdate="onTimeUpdate" @ended="onEnded" @loadedmetadata="onLoaded"></audio>
   </div>
 </template>

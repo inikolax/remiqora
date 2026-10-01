@@ -12,6 +12,8 @@ const props = defineProps<{
   total: number
   rangeFrom: number
   rangeTo: number
+  /** No page-size control: for the bar above the list, where the control would be a second copy. */
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,7 +50,7 @@ function onSize(e: Event) {
     <div class="ml-auto flex flex-wrap items-center gap-1">
       <button
         type="button"
-        class="rounded-md border border-border px-2 py-1 text-text-dim hover:border-accent1/60 hover:text-text disabled:cursor-default disabled:opacity-40 disabled:hover:border-border disabled:hover:text-text-dim"
+        class="min-h-8 min-w-8 rounded-md border border-border px-2 py-1 text-text-dim hover:border-accent1/60 hover:text-text disabled:cursor-default disabled:opacity-40 disabled:hover:border-border disabled:hover:text-text-dim"
         :disabled="page <= 1"
         :aria-label="t('pagination.prev')"
         :title="t('pagination.prev')"
@@ -61,7 +63,7 @@ function onSize(e: Event) {
         <button
           v-else
           type="button"
-          class="min-w-7 rounded-md border px-2 py-1 transition-colors"
+          class="min-h-8 min-w-8 rounded-md border px-2 py-1 transition-colors"
           :class="n === page ? 'border-accent1 bg-accent1/10 text-accent1' : 'border-border text-text-dim hover:border-accent1/60 hover:text-text'"
           :aria-current="n === page ? 'page' : undefined"
           :aria-label="t('pagination.page', { n })"
@@ -72,7 +74,7 @@ function onSize(e: Event) {
       </template>
       <button
         type="button"
-        class="rounded-md border border-border px-2 py-1 text-text-dim hover:border-accent1/60 hover:text-text disabled:cursor-default disabled:opacity-40 disabled:hover:border-border disabled:hover:text-text-dim"
+        class="min-h-8 min-w-8 rounded-md border border-border px-2 py-1 text-text-dim hover:border-accent1/60 hover:text-text disabled:cursor-default disabled:opacity-40 disabled:hover:border-border disabled:hover:text-text-dim"
         :disabled="page >= totalPages"
         :aria-label="t('pagination.next')"
         :title="t('pagination.next')"
@@ -82,7 +84,7 @@ function onSize(e: Event) {
       </button>
     </div>
 
-    <label class="flex items-center gap-1.5 text-text-dim">
+    <label v-if="!compact" class="flex items-center gap-1.5 text-text-dim">
       {{ t('pagination.perPage') }}
       <select :value="pageSize" class="rounded-md border border-border bg-panel-2 px-1.5 py-1 text-text" @change="onSize">
         <option v-for="s in PAGE_SIZES" :key="s" :value="s">{{ s }}</option>

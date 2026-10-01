@@ -17,16 +17,21 @@ async function start() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-xl rounded-xl border border-border bg-panel p-8 text-center">
-    <p v-if="status === 'starting'" class="text-sm text-text-dim">
-      <span class="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent1 border-t-transparent align-middle"></span>
-      {{ t('offlineBanner.starting', { model: MODEL_LABELS[modelId] }) }}
-    </p>
-    <p v-else-if="status === 'stopping'" class="text-sm text-text-dim">{{ t('offlineBanner.stopping', { model: MODEL_LABELS[modelId] }) }}</p>
-    <template v-else>
-      <p class="text-sm text-text-dim">{{ t('offlineBanner.notRunning', { model: MODEL_LABELS[modelId] }) }}</p>
-      <p v-if="status === 'error' && error" class="mt-3 whitespace-pre-line rounded-lg bg-status-failed/10 p-3 text-left text-xs text-status-failed">{{ error }}</p>
-      <button type="button" class="accent-gradient mt-4 rounded-lg px-4 py-2 text-sm font-medium text-white" @click="start">{{ t('offlineBanner.start', { model: MODEL_LABELS[modelId] }) }}</button>
-    </template>
+  <div class="rounded-lg border border-border bg-panel px-4 py-2.5 text-sm">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <p v-if="status === 'starting'" class="flex items-center gap-2 text-text-dim">
+        <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent1 border-t-transparent"></span>
+        {{ t('offlineBanner.starting', { model: MODEL_LABELS[modelId] }) }}
+      </p>
+      <p v-else-if="status === 'stopping'" class="text-text-dim">{{ t('offlineBanner.stopping', { model: MODEL_LABELS[modelId] }) }}</p>
+      <template v-else>
+        <p class="flex items-center gap-2 text-text-dim">
+          <span class="h-2 w-2 shrink-0 rounded-full" :class="status === 'error' ? 'bg-status-failed' : 'bg-gray-500'"></span>
+          {{ t('offlineBanner.notRunning', { model: MODEL_LABELS[modelId] }) }}
+        </p>
+        <button type="button" class="accent-gradient rounded-lg px-3 py-1.5 text-sm font-medium text-white sm:ml-auto" @click="start">{{ t('offlineBanner.start', { model: MODEL_LABELS[modelId] }) }}</button>
+      </template>
+    </div>
+    <p v-if="status === 'error' && error" class="mt-2 whitespace-pre-line rounded-lg bg-status-failed/10 p-3 text-xs text-status-failed">{{ error }}</p>
   </div>
 </template>

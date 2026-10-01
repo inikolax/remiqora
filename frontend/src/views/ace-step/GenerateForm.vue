@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { cutAtPhrase } from '../../utils/trackTitle'
 import { useI18n } from 'vue-i18n'
 import { useAceStepStore } from '../../stores/aceStep'
 import * as api from '../../api/aceStep'
@@ -8,6 +9,7 @@ import { useLoraRegistry } from '../../composables/useLoraRegistry'
 import ChipGroup from '../../components/shared/ChipGroup.vue'
 import CollapsibleDetails from '../../components/shared/CollapsibleDetails.vue'
 import HelpModal from '../../components/shared/HelpModal.vue'
+import HelpIconButton from '../../components/shared/HelpIconButton.vue'
 import TagInput from '../../components/shared/TagInput.vue'
 
 const store = useAceStepStore()
@@ -341,7 +343,7 @@ async function submit() {
       formError.value = t('aceGen.enterDescription')
       return
     }
-    title = simpleQuery.value.trim().slice(0, 60)
+    title = cutAtPhrase(simpleQuery.value, 60)
     if (useRefAudio.value) {
       req.prompt = simpleQuery.value.trim()
     } else {
@@ -353,7 +355,7 @@ async function submit() {
       formError.value = t('aceGen.enterStyle')
       return
     }
-    title = customPrompt.value.trim().slice(0, 60)
+    title = cutAtPhrase(customPrompt.value, 60)
     req.prompt = customPrompt.value.trim()
     req.lyrics = instrumental.value ? '' : customLyrics.value
   }
@@ -480,15 +482,15 @@ async function submit() {
       </div>
 
       <div v-if="mode === 'simple'" class="space-y-1.5">
-        <label class="text-sm font-medium text-text">{{ t('aceGen.simpleLabel') }}</label>
+        <label class="text-[13px] font-medium text-text">{{ t('aceGen.simpleLabel') }}</label>
         <textarea v-model="simpleQuery" rows="3" class="w-full rounded-lg border border-border bg-panel-2 p-2.5 text-sm text-text" :placeholder="t('aceGen.simplePlaceholder')"></textarea>
       </div>
 
       <div v-else class="space-y-3">
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
-            <label class="text-sm font-medium text-text">{{ t('aceGen.styleLabel') }}</label>
-            <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'style'">{{ t('common.help') }}</button>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.styleLabel') }}</label>
+            <HelpIconButton @click="helpOpen = 'style'" />
           </div>
           <TagInput v-model="customPrompt" :placeholder="t('aceGen.stylePlaceholder')" />
         </div>
@@ -498,8 +500,8 @@ async function submit() {
         </label>
         <div v-if="!instrumental" class="space-y-1.5">
           <div class="flex items-center justify-between">
-            <label class="text-sm font-medium text-text">{{ t('aceGen.lyricsLabel') }}</label>
-            <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'lyrics'">{{ t('common.help') }}</button>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.lyricsLabel') }}</label>
+            <HelpIconButton @click="helpOpen = 'lyrics'" />
           </div>
           <textarea v-model="customLyrics" rows="6" class="w-full rounded-lg border border-border bg-panel-2 p-2.5 font-mono text-sm text-text" :placeholder="t('aceGen.lyricsPlaceholder')"></textarea>
         </div>
@@ -511,7 +513,7 @@ async function submit() {
             <input v-model="useRefAudio" type="checkbox" class="rounded border-border" />
             {{ t('aceGen.refAudio') }}
           </span>
-          <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'remix'">{{ t('common.help') }}</button>
+          <HelpIconButton @click="helpOpen = 'remix'" />
         </label>
         <div v-if="useRefAudio" class="space-y-3 pt-1">
           <input type="file" accept="audio/*" class="block w-full text-xs text-text-dim file:mr-3 file:rounded-md file:border-0 file:accent-gradient file:px-3 file:py-1.5 file:text-white" @change="onRefFileChange" />
@@ -521,41 +523,41 @@ async function submit() {
 
           <div v-if="taskType === 'repaint'" class="grid grid-cols-2 gap-2">
             <div>
-              <label class="text-xs text-text-dim">{{ t('aceGen.repaintStart') }}</label>
+              <label class="text-[13px] font-medium text-text">{{ t('aceGen.repaintStart') }}</label>
               <input v-model.number="repaintStart" type="number" min="0" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" />
             </div>
             <div>
-              <label class="text-xs text-text-dim">{{ t('aceGen.repaintEnd') }}</label>
+              <label class="text-[13px] font-medium text-text">{{ t('aceGen.repaintEnd') }}</label>
               <input v-model.number="repaintEnd" type="number" min="0" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" />
             </div>
           </div>
 
           <div v-if="taskType === 'extract' || taskType === 'lego'">
-            <label class="text-xs text-text-dim">{{ t('aceGen.trackPart') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.trackPart') }}</label>
             <select v-model="trackName" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
               <option v-for="opt in TRACK_NAME_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
             </select>
           </div>
 
           <div v-if="taskType === 'complete'">
-            <label class="mb-1 block text-xs text-text-dim">{{ t('aceGen.trackPartsToAdd') }}</label>
+            <label class="mb-1 block text-[13px] font-medium text-text">{{ t('aceGen.trackPartsToAdd') }}</label>
             <ChipGroup v-model="trackClasses" multiple :options="TRACK_NAME_OPTIONS.map((v) => ({ value: v, label: v }))" />
           </div>
 
           <div v-if="taskType === 'cover' || taskType === 'repaint'">
-            <label class="text-xs text-text-dim">{{ t('aceGen.coverStrength', { value: coverStrength.toFixed(2) }) }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.coverStrength', { value: coverStrength.toFixed(2) }) }}</label>
             <input v-model.number="coverStrength" type="range" min="0" max="1" step="0.05" class="w-full accent-accent1" />
           </div>
         </div>
       </div>
 
       <div>
-        <label class="text-xs text-text-dim">{{ t('aceGen.duration', { value: durationLabel }) }}</label>
+        <label class="text-[13px] font-medium text-text">{{ t('aceGen.duration', { value: durationLabel }) }}</label>
         <input v-model.number="duration" type="range" min="10" max="300" step="5" class="w-full accent-accent1" />
       </div>
 
       <div>
-        <label class="mb-1 block text-xs text-text-dim">{{ t('aceGen.variantCount') }}</label>
+        <label class="mb-1 block text-[13px] font-medium text-text">{{ t('aceGen.variantCount') }}</label>
         <ChipGroup v-model="batchSize" :options="[{ value: 1, label: '1' }, { value: 2, label: '2' }, { value: 4, label: '4' }]" />
       </div>
 
@@ -563,7 +565,7 @@ async function submit() {
         <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'advanced'">{{ t('aceGen.advancedWhatMeans') }}</button>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.format') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.format') }}</label>
             <select v-model="audioFormat" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
               <option value="mp3">mp3</option>
               <option value="wav">wav</option>
@@ -571,29 +573,29 @@ async function submit() {
             </select>
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.bpm') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.bpm') }}</label>
             <input v-model.number="bpm" type="number" min="0" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="t('aceGen.bpmPlaceholder')" />
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.keyScale') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.keyScale') }}</label>
             <input v-model="keyScale" type="text" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="t('aceGen.keyScalePlaceholder')" />
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.timeSignature') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.timeSignature') }}</label>
             <select v-model="timeSignature" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
               <option value="">{{ t('aceGen.timeSignatureAuto') }}</option>
               <option v-for="ts in TIME_SIGNATURES" :key="ts" :value="ts">{{ ts }}</option>
             </select>
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.vocalLanguage') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.vocalLanguage') }}</label>
             <select v-model="vocalLanguage" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
               <option value="">{{ t('aceGen.vocalLanguageAuto') }}</option>
               <option v-for="lang in VOCAL_LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
             </select>
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.inferenceSteps') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.inferenceSteps') }}</label>
             <input
               v-model.number="inferenceSteps"
               type="number"
@@ -604,7 +606,7 @@ async function submit() {
             />
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.guidanceScale') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.guidanceScale') }}</label>
             <input
               v-model.number="guidanceScale"
               type="number"
@@ -615,11 +617,11 @@ async function submit() {
             />
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.seed') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.seed') }}</label>
             <input v-model.number="seedValue" type="number" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="t('aceGen.seedPlaceholder')" />
           </div>
           <div>
-            <label class="text-xs text-text-dim">{{ t('aceGen.model') }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.model') }}</label>
             <select v-model="selectedModel" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
               <option v-for="m in store.inventory?.models ?? []" :key="m.name" :value="m.name">{{ m.name }}</option>
             </select>
@@ -627,13 +629,13 @@ async function submit() {
         </div>
 
         <div class="space-y-2 rounded-lg border border-border bg-panel-2/50 p-3">
-          <label class="text-xs text-text-dim">{{ t('aceGen.lora') }}</label>
+          <label class="text-[13px] font-medium text-text">{{ t('aceGen.lora') }}</label>
           <select v-model="selectedLoraPath" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
             <option value="">{{ t('aceGen.noLora') }}</option>
             <option v-for="l in loras" :key="l.path" :value="l.path">{{ l.name }}</option>
           </select>
           <div v-if="selectedLoraPath">
-            <label class="text-xs text-text-dim">{{ t('aceGen.loraStrength', { value: loraScaleVal.toFixed(2) }) }}</label>
+            <label class="text-[13px] font-medium text-text">{{ t('aceGen.loraStrength', { value: loraScaleVal.toFixed(2) }) }}</label>
             <input v-model.number="loraScaleVal" type="range" min="0" max="2" step="0.05" class="w-full accent-accent1" />
           </div>
           <p v-if="loraStatus" class="text-xs text-status-failed">{{ loraStatus }}</p>

@@ -11,6 +11,7 @@ import ModelOfflineBanner from '../../components/shared/ModelOfflineBanner.vue'
 import ProgressBar from '../../components/shared/ProgressBar.vue'
 import CollapsibleDetails from '../../components/shared/CollapsibleDetails.vue'
 import HelpModal from '../../components/shared/HelpModal.vue'
+import HelpIconButton from '../../components/shared/HelpIconButton.vue'
 import type { DatasetSample } from '../../api/aceStepTraining'
 
 const orchestrator = useOrchestratorStore()
@@ -305,7 +306,7 @@ async function onExport() {
       <section class="space-y-3 rounded-xl border border-border bg-panel p-5">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold text-text">{{ t('lora.step1Title') }}</h2>
-          <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'dataset'">{{ t('common.help') }}</button>
+          <HelpIconButton @click="helpOpen = 'dataset'" />
         </div>
 
         <label class="space-y-1 block max-w-xs">
@@ -474,7 +475,7 @@ async function onExport() {
         <section class="space-y-3 rounded-xl border border-border bg-panel p-5">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-text">{{ t('lora.step5Title') }}</h2>
-            <button type="button" class="text-xs text-accent1 hover:underline" @click="helpOpen = 'training'">{{ t('common.help') }}</button>
+            <HelpIconButton @click="helpOpen = 'training'" />
           </div>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label class="space-y-1">

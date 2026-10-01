@@ -4,6 +4,8 @@
 // ((whisper), (ad-lib)...) in an accent colour. Shared by the ACE-Step and YuE2 cards.
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import CopyIcon from './icons/CopyIcon.vue'
+import CheckIcon from './icons/CheckIcon.vue'
 
 const props = defineProps<{ styleText?: string; lyrics?: string }>()
 const { t } = useI18n()
@@ -57,18 +59,25 @@ async function copy(what: 'style' | 'lyrics') {
   <div class="space-y-4 rounded-lg border border-border/60 bg-panel-2 p-3 text-xs">
     <section v-if="styleText" class="space-y-2">
       <div class="flex items-center justify-between gap-2">
-        <h4 class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-accent1">
+        <h4 class="flex items-center gap-1.5 text-xs font-semibold text-accent1">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none" />
           </svg>
           {{ t('trackDetails.style') }}
         </h4>
-        <button type="button" class="text-[11px] text-text-dim hover:text-text" @click="copy('style')">
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
+          :class="copied === 'style' ? 'border-status-done/50 bg-status-done/10 text-status-done' : 'border-border bg-panel text-text-dim hover:border-accent1/60 hover:text-text'"
+          @click="copy('style')"
+        >
+          <CheckIcon v-if="copied === 'style'" class="h-3.5 w-3.5" />
+          <CopyIcon v-else class="h-3.5 w-3.5" />
           {{ copied === 'style' ? t('trackDetails.copied') : t('trackDetails.copy') }}
         </button>
       </div>
       <ul v-if="tags.length" class="flex flex-wrap gap-1.5">
-        <li v-for="(tag, i) in tags" :key="i" class="rounded-full border border-accent1/30 bg-accent1/10 px-2.5 py-0.5 text-[11px] text-text">
+        <li v-for="(tag, i) in tags" :key="i" class="rounded-full border border-accent1/30 bg-accent1/10 px-2.5 py-0.5 text-xs text-text">
           {{ tag }}
         </li>
       </ul>
@@ -77,20 +86,27 @@ async function copy(what: 'style' | 'lyrics') {
 
     <section v-if="rows.length" class="space-y-2">
       <div class="flex items-center justify-between gap-2">
-        <h4 class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-accent2">
+        <h4 class="flex items-center gap-1.5 text-xs font-semibold text-accent2">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
           </svg>
           {{ t('trackDetails.lyrics') }}
         </h4>
-        <button type="button" class="text-[11px] text-text-dim hover:text-text" @click="copy('lyrics')">
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
+          :class="copied === 'lyrics' ? 'border-status-done/50 bg-status-done/10 text-status-done' : 'border-border bg-panel text-text-dim hover:border-accent1/60 hover:text-text'"
+          @click="copy('lyrics')"
+        >
+          <CheckIcon v-if="copied === 'lyrics'" class="h-3.5 w-3.5" />
+          <CopyIcon v-else class="h-3.5 w-3.5" />
           {{ copied === 'lyrics' ? t('trackDetails.copied') : t('trackDetails.copy') }}
         </button>
       </div>
       <div class="max-h-80 overflow-y-auto rounded-md border-l-2 border-accent2/40 bg-panel/60 py-2 pl-3 pr-2 leading-relaxed">
         <template v-for="(row, i) in rows" :key="i">
           <p v-if="row.kind === 'section'" class="mb-0.5 mt-2 first:mt-0">
-            <span class="inline-block rounded bg-accent2/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent2">{{ row.text }}</span>
+            <span class="inline-block rounded bg-accent2/15 px-1.5 py-0.5 text-xs font-medium text-accent2">{{ row.text }}</span>
           </p>
           <div v-else-if="row.kind === 'gap'" class="h-1" aria-hidden="true"></div>
           <p v-else class="text-text">

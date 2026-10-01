@@ -915,7 +915,7 @@ onBeforeRouteLeave((_to, _from, next) => {
             :value="store.project.pxPerSecond"
             @input="store.setZoom(Number(($event.target as HTMLInputElement).value))"
           />
-          <button type="button" class="px-1.5 py-0.5 rounded border border-border text-[10px] hover:bg-panel transition-colors active:scale-95" :title="t('editor.fitZoomTitle')" @click="fitZoom">{{ t('editor.fitZoom') }}</button>
+          <button type="button" class="px-1.5 py-0.5 rounded border border-border text-[11px] hover:bg-panel transition-colors active:scale-95" :title="t('editor.fitZoomTitle')" @click="fitZoom">{{ t('editor.fitZoom') }}</button>
         </label>
 
         <label class="flex items-center gap-2 text-xs text-text-dim border-l border-border/60 pl-3">
@@ -956,7 +956,7 @@ onBeforeRouteLeave((_to, _from, next) => {
           <div class="flex flex-col gap-1.5 w-28" :title="t('editor.masterLevels')" role="img" :aria-label="t('editor.masterLevels')">
             <!-- Left Channel -->
             <div class="flex items-center gap-1.5">
-              <span class="text-[10px] font-bold text-text-dim w-2 text-right">L</span>
+              <span class="text-[11px] font-bold text-text-dim w-2 text-right">L</span>
               <div class="flex-1 h-1.5 rounded-full overflow-hidden bg-panel-2 shadow-inner relative border border-border/50">
                 <div 
                   class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-accent1 to-accent2 transition-all duration-75 shadow-[0_0_8px_var(--color-accent1)]"
@@ -966,7 +966,7 @@ onBeforeRouteLeave((_to, _from, next) => {
             </div>
             <!-- Right Channel -->
             <div class="flex items-center gap-1.5">
-              <span class="text-[10px] font-bold text-text-dim w-2 text-right">R</span>
+              <span class="text-[11px] font-bold text-text-dim w-2 text-right">R</span>
               <div class="flex-1 h-1.5 rounded-full overflow-hidden bg-panel-2 shadow-inner relative border border-border/50">
                 <div 
                   class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-accent1 to-accent2 transition-all duration-75 shadow-[0_0_8px_var(--color-accent1)]"
@@ -1008,7 +1008,7 @@ onBeforeRouteLeave((_to, _from, next) => {
                   @click="store.updateLaneColor(selectedLane!.id, c.id)"
                 ></button>
               </template>
-              <div v-else class="text-[10px] text-text-dim/70">{{ t('editor.selectTrackToPickColor') }}</div>
+              <div v-else class="text-[11px] text-text-dim/70">{{ t('editor.selectTrackToPickColor') }}</div>
             </div>
             <!-- Ruler Area -->
             <div
@@ -1019,7 +1019,7 @@ onBeforeRouteLeave((_to, _from, next) => {
               <div
                 v-for="mark in rulerMarks"
                 :key="mark"
-                class="absolute top-0 bottom-0 border-l border-border/40 pl-1 text-[10px] text-text-dim"
+                class="absolute top-0 bottom-0 border-l border-border/40 pl-1 text-[11px] text-text-dim"
                 :style="{ left: mark * store.project.pxPerSecond + 'px' }"
               >
                 {{ formatTime(mark) }}

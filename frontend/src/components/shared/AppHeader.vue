@@ -82,7 +82,30 @@ async function onSelect(id: ModelId) {
         </span>
       </router-link>
 
-      <nav class="ml-auto flex flex-wrap items-center gap-2">
+      <div class="ml-auto flex items-center gap-2 sm:order-last sm:ml-0">
+        <button
+          type="button"
+          class="min-h-9 rounded-lg border border-border bg-panel-2 px-3 py-2 text-xs font-semibold text-text-dim hover:text-text"
+          @click="toggleLocale"
+        >
+          {{ locale === 'ru' ? 'EN' : 'RU' }}
+        </button>
+        <button
+          type="button"
+          :title="t('header.help')"
+          :aria-label="t('header.help')"
+          class="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-panel-2 text-text-dim hover:border-accent1/60 hover:text-text"
+          @click="helpOpen = true"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.33c-.77.32-1.4.98-1.4 1.92V14" />
+            <circle cx="12" cy="17.5" r=".8" fill="currentColor" stroke="none" />
+            <circle cx="12" cy="12" r="10" />
+          </svg>
+        </button>
+      </div>
+
+      <nav class="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
         <router-link
           to="/editor"
           class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
@@ -103,32 +126,13 @@ async function onSelect(id: ModelId) {
           :key="id"
           type="button"
           class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
+          :title="t(STATUS_LABEL_KEYS[statusOf(id)])"
           :class="route.name === MODEL_ROUTES[id] ? 'border-accent1/60 bg-panel text-text' : 'border-border bg-panel-2 text-text-dim hover:text-text'"
           @click="onSelect(id)"
         >
           <span class="h-2 w-2 rounded-full" :class="LED_CLASSES[statusOf(id)]"></span>
           <span>{{ MODEL_LABELS[id] }}</span>
-          <span class="text-xs text-text-dim">{{ t(STATUS_LABEL_KEYS[statusOf(id)]) }}</span>
-        </button>
-        <button
-          type="button"
-          class="rounded-lg border border-border bg-panel-2 px-3 py-2 text-xs font-semibold text-text-dim hover:text-text"
-          @click="toggleLocale"
-        >
-          {{ locale === 'ru' ? 'EN' : 'RU' }}
-        </button>
-        <button
-          type="button"
-          :title="t('header.help')"
-          :aria-label="t('header.help')"
-          class="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-panel-2 text-text-dim hover:border-accent1/60 hover:text-text"
-          @click="helpOpen = true"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.33c-.77.32-1.4.98-1.4 1.92V14" />
-            <circle cx="12" cy="17.5" r=".8" fill="currentColor" stroke="none" />
-            <circle cx="12" cy="12" r="10" />
-          </svg>
+          <span class="hidden text-xs text-text-dim sm:inline">{{ t(STATUS_LABEL_KEYS[statusOf(id)]) }}</span>
         </button>
       </nav>
     </div>

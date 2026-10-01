@@ -184,11 +184,11 @@ function onPasteAbc() {
           <option value="sine">Sine</option>
           <option value="triangle">Triangle</option>
         </select>
-        <span class="ml-4 text-[10px] text-text-dim hidden sm:inline">Double-click to add, right-click to delete, drag edges to resize.</span>
+        <span class="ml-4 text-[11px] text-text-dim hidden sm:inline">Double-click to add, right-click to delete, drag edges to resize.</span>
       </div>
       <button 
         type="button" 
-        class="rounded border border-accent1 px-2 py-0.5 text-[10px] text-accent1 hover:bg-accent1/10"
+        class="rounded border border-accent1 px-2 py-0.5 text-[11px] text-accent1 hover:bg-accent1/10"
         @click="onPasteAbc"
       >
         Paste ABC
