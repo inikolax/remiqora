@@ -193,6 +193,25 @@ function onLoopPointerMove(evt: PointerEvent) {
   }
 }
 
+/** Keyboard counterpart of dragging a loop edge: arrows move it by the grid step (snapped when snapping is on), Alt = 0.01 s, Shift = 4x. */
+function onLoopKeydown(edge: 'start' | 'end', e: KeyboardEvent) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  if (e.ctrlKey || e.metaKey) return
+  const r = store.project.loopRegion
+  if (!r) return
+  e.preventDefault()
+  e.stopPropagation()
+  const dir = e.key === 'ArrowLeft' ? -1 : 1
+  const grid = gridStepSec.value
+  const snapped = store.project.snapEnabled && !e.altKey
+  const step = (e.altKey ? 0.01 : grid) * (e.shiftKey ? 4 : 1)
+  let value = (edge === 'start' ? r.start : r.end) + dir * step
+  if (snapped) value = Math.round(value / grid) * grid
+  if (edge === 'start') store.setLoopRegion(Math.min(Math.max(0, value), r.end - 0.1), r.end)
+  else store.setLoopRegion(r.start, Math.max(r.start + 0.1, value))
+  store.snapshot()
+}
+
 function onLoopPointerUp() {
   loopDragMode = null
   window.removeEventListener('pointermove', onLoopPointerMove)
@@ -550,6 +569,9 @@ watch(
 )
 
 function onKeydown(e: KeyboardEvent) {
+  // A modal dialog (help, library picker) owns the keyboard while it is open.
+  if (document.querySelector('[aria-modal="true"]')) return
+
   // Ctrl+S saves the project (also from the name field) instead of opening
   // the browser's Save Page dialog.
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'KeyS') {
@@ -1010,8 +1032,28 @@ onBeforeRouteLeave((_to, _from, next) => {
                 @pointerdown="onLoopPointerDown('move', $event)"
               >
                 <!-- Drag handles -->
-                <div class="absolute top-0 bottom-0 left-0 w-1.5 cursor-ew-resize bg-status-done/50 hover:bg-status-done" @pointerdown="onLoopPointerDown('start', $event)"></div>
-                <div class="absolute top-0 bottom-0 right-0 w-1.5 cursor-ew-resize bg-status-done/50 hover:bg-status-done" @pointerdown="onLoopPointerDown('end', $event)"></div>
+                <div
+                  class="absolute top-0 bottom-0 left-0 w-1.5 cursor-ew-resize bg-status-done/50 hover:bg-status-done focus-visible:bg-status-done focus-visible:outline-2 focus-visible:outline-white"
+                  role="slider"
+                  tabindex="0"
+                  :aria-label="t('editor.loopStart')"
+                  :aria-valuemin="0"
+                  :aria-valuemax="Number(store.project.loopRegion.end.toFixed(2))"
+                  :aria-valuenow="Number(store.project.loopRegion.start.toFixed(2))"
+                  @keydown="onLoopKeydown('start', $event)"
+                  @pointerdown="onLoopPointerDown('start', $event)"
+                ></div>
+                <div
+                  class="absolute top-0 bottom-0 right-0 w-1.5 cursor-ew-resize bg-status-done/50 hover:bg-status-done focus-visible:bg-status-done focus-visible:outline-2 focus-visible:outline-white"
+                  role="slider"
+                  tabindex="0"
+                  :aria-label="t('editor.loopEnd')"
+                  :aria-valuemin="Number(store.project.loopRegion.start.toFixed(2))"
+                  :aria-valuemax="Number(Math.max(store.totalDuration, store.project.loopRegion.end).toFixed(2))"
+                  :aria-valuenow="Number(store.project.loopRegion.end.toFixed(2))"
+                  @keydown="onLoopKeydown('end', $event)"
+                  @pointerdown="onLoopPointerDown('end', $event)"
+                ></div>
               </div>
               <div
                 class="absolute top-0 bottom-0 z-20 w-[2px] bg-accent1 shadow-[0_0_8px_var(--color-accent1)] pointer-events-none"

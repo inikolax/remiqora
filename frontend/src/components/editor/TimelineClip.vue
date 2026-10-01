@@ -125,6 +125,32 @@ function onKeydown(e: KeyboardEvent): void {
   emit('dragEnd')
 }
 
+/** Keyboard counterpart of dragging a trim or fade handle: arrows move it by the grid step, Alt = 0.01 s, Shift = 4x. */
+function onHandleKeydown(handle: Exclude<DragMode, 'move'>, e: KeyboardEvent): void {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  if (e.ctrlKey || e.metaKey) return
+  e.preventDefault()
+  e.stopPropagation()
+  const dir = e.key === 'ArrowLeft' ? -1 : 1
+  const base = e.altKey ? 0.01 : props.snapEnabled && props.gridStepSec > 0 ? props.gridStepSec : 0.1
+  const step = base * (e.shiftKey ? 4 : 1)
+  const sf = effectiveStretchFactor.value
+  if (handle === 'fade-left') {
+    emit('fade', { fadeInDuration: Math.max(0, Math.min((props.clip.fadeInDuration || 0) + dir * step, duration.value)), fadeOutDuration: props.clip.fadeOutDuration || 0 })
+  } else if (handle === 'fade-right') {
+    // The right handle sits at the fade's inner edge, so moving it left lengthens the fade.
+    emit('fade', { fadeInDuration: props.clip.fadeInDuration || 0, fadeOutDuration: Math.max(0, Math.min((props.clip.fadeOutDuration || 0) - dir * step, duration.value)) })
+  } else if (handle === 'trim-left') {
+    const trimStart = Math.max(0, Math.min(props.clip.trimStart + (dir * step) / sf, props.clip.trimEnd - MIN_CLIP_SEC))
+    emit('trim', { trimStart, trimEnd: props.clip.trimEnd, timelineStart: props.clip.timelineStart + (trimStart - props.clip.trimStart) * sf })
+  } else {
+    const maxEnd = props.buffer ? props.buffer.duration / sf : Infinity
+    const trimEnd = Math.max(props.clip.trimStart + MIN_CLIP_SEC, Math.min(props.clip.trimEnd + (dir * step) / sf, maxEnd))
+    emit('trim', { trimStart: props.clip.trimStart, trimEnd, timelineStart: props.clip.timelineStart })
+  }
+  emit('dragEnd')
+}
+
 function onPointerDown(mode: DragMode, evt: PointerEvent): void {
   evt.stopPropagation()
   emit('select')
@@ -453,23 +479,61 @@ onBeforeUnmount(() => {
       <polygon :points="fadeOutPolygon" fill="black" />
     </svg>
 
-    <div class="absolute top-0 left-0 h-full w-2 cursor-ew-resize hover:bg-accent1/30 transition-colors" @pointerdown="onPointerDown('trim-left', $event)">
+    <div
+      class="absolute top-0 left-0 h-full w-2 cursor-ew-resize hover:bg-accent1/30 focus-visible:bg-accent1/30 focus-visible:outline-2 focus-visible:outline-accent1 transition-colors"
+      role="slider"
+      tabindex="0"
+      :aria-label="t('timeline.trimStart')"
+      :aria-valuemin="0"
+      :aria-valuemax="Number((clip.timelineStart + duration).toFixed(2))"
+      :aria-valuenow="Number(clip.timelineStart.toFixed(2))"
+      @focus="emit('select')"
+      @keydown="onHandleKeydown('trim-left', $event)"
+      @pointerdown="onPointerDown('trim-left', $event)"
+    >
       <div class="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-r-sm bg-white/40 shadow-sm"></div>
     </div>
-    <div class="absolute top-0 right-0 h-full w-2 cursor-ew-resize hover:bg-accent1/30 transition-colors" @pointerdown="onPointerDown('trim-right', $event)">
+    <div
+      class="absolute top-0 right-0 h-full w-2 cursor-ew-resize hover:bg-accent1/30 focus-visible:bg-accent1/30 focus-visible:outline-2 focus-visible:outline-accent1 transition-colors"
+      role="slider"
+      tabindex="0"
+      :aria-label="t('timeline.trimEnd')"
+      :aria-valuemin="Number(clip.timelineStart.toFixed(2))"
+      :aria-valuemax="Number((clip.timelineStart + duration).toFixed(2))"
+      :aria-valuenow="Number((clip.timelineStart + duration).toFixed(2))"
+      @focus="emit('select')"
+      @keydown="onHandleKeydown('trim-right', $event)"
+      @pointerdown="onPointerDown('trim-right', $event)"
+    >
       <div class="absolute right-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-l-sm bg-white/40 shadow-sm"></div>
     </div>
     
     <div
-      class="group absolute top-0 z-20 flex h-6 w-6 -translate-x-1/2 cursor-ew-resize items-start justify-center"
+      class="group absolute top-0 z-20 flex h-6 w-6 -translate-x-1/2 cursor-ew-resize items-start justify-center rounded focus-visible:outline-2 focus-visible:outline-accent1"
       :style="{ left: (props.clip.fadeInDuration || 0) * props.pxPerSecond + 'px' }"
+      role="slider"
+      tabindex="0"
+      :aria-label="t('timeline.fadeIn')"
+      :aria-valuemin="0"
+      :aria-valuemax="Number(duration.toFixed(2))"
+      :aria-valuenow="Number((clip.fadeInDuration || 0).toFixed(2))"
+      @focus="emit('select')"
+      @keydown="onHandleKeydown('fade-left', $event)"
       @pointerdown="onPointerDown('fade-left', $event)"
     >
       <div class="mt-1 h-2.5 w-2.5 rounded-full bg-accent1 shadow-[0_0_8px_var(--color-accent1)] transition-all group-hover:scale-125 group-hover:bg-white"></div>
     </div>
     <div
-      class="group absolute top-0 z-20 flex h-6 w-6 translate-x-1/2 cursor-ew-resize items-start justify-center"
+      class="group absolute top-0 z-20 flex h-6 w-6 translate-x-1/2 cursor-ew-resize items-start justify-center rounded focus-visible:outline-2 focus-visible:outline-accent1"
       :style="{ right: (props.clip.fadeOutDuration || 0) * props.pxPerSecond + 'px' }"
+      role="slider"
+      tabindex="0"
+      :aria-label="t('timeline.fadeOut')"
+      :aria-valuemin="0"
+      :aria-valuemax="Number(duration.toFixed(2))"
+      :aria-valuenow="Number((clip.fadeOutDuration || 0).toFixed(2))"
+      @focus="emit('select')"
+      @keydown="onHandleKeydown('fade-right', $event)"
       @pointerdown="onPointerDown('fade-right', $event)"
     >
       <div class="mt-1 h-2.5 w-2.5 rounded-full bg-accent1 shadow-[0_0_8px_var(--color-accent1)] transition-all group-hover:scale-125 group-hover:bg-white"></div>

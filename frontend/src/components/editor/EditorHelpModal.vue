@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { onMounted, onUnmounted } from 'vue'
+import { ref } from 'vue'
+import { useDialogA11y } from '../../composables/useDialogA11y'
 
 const props = defineProps<{
   show: boolean
@@ -12,19 +13,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && props.show) {
-    emit('close')
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
-})
+const dialogEl = ref<HTMLElement | null>(null)
+const { onKeydown } = useDialogA11y(dialogEl, () => props.show, () => emit('close'))
 </script>
 
 <template>
@@ -35,10 +25,17 @@ onUnmounted(() => {
         class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm bg-black/40"
         @click.self="emit('close')"
       >
-        <div class="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-border/60 bg-panel-2/95 shadow-2xl backdrop-blur-xl">
+        <div
+          ref="dialogEl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="editor-help-title"
+          class="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-border/60 bg-panel-2/95 shadow-2xl backdrop-blur-xl"
+          @keydown="onKeydown"
+        >
           <!-- Header -->
           <div class="flex items-center justify-between border-b border-border/40 bg-panel/50 px-6 py-4">
-            <h2 class="text-xl font-bold bg-gradient-to-r from-accent1 to-accent2 bg-clip-text text-transparent">
+            <h2 id="editor-help-title" class="text-xl font-bold bg-gradient-to-r from-accent1 to-accent2 bg-clip-text text-transparent">
               {{ t('editor.help.title') }}
             </h2>
             <button 
@@ -115,6 +112,10 @@ onUnmounted(() => {
                 <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
                   <span class="text-sm text-text">{{ t('editor.help.trimClipEnd') }}</span>
                   <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Shift+← →</kbd>
+                </div>
+                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
+                  <span class="text-sm text-text">{{ t('editor.help.handles') }}</span>
+                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Tab, ← →</kbd>
                 </div>
               </div>
             </section>
