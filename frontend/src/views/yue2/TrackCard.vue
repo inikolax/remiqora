@@ -10,6 +10,7 @@ import WaveformPlayer from '../../components/shared/WaveformPlayer.vue'
 import StemsPanel from '../../components/shared/StemsPanel.vue'
 import MidiPanel from '../../components/shared/MidiPanel.vue'
 import EditableTitle from '../../components/shared/EditableTitle.vue'
+import { downloadSavedTrack } from '../../composables/useTrackDownload'
 
 const props = defineProps<{ job: Yue2Job }>()
 const store = useYue2Store()
@@ -52,6 +53,10 @@ function insertIntoForm() {
 }
 function download() {
   if (!props.job.audioUrl) return
+  if (props.job.dbId != null) {
+    void downloadSavedTrack(props.job.dbId, props.job.savedFilename || `yue2_${props.job.seed}.wav`)
+    return
+  }
   const a = document.createElement('a')
   a.href = props.job.audioUrl
   a.download = props.job.savedFilename || `yue2_${props.job.seed}.wav`

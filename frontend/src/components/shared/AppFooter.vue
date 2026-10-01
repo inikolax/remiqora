@@ -4,10 +4,12 @@
 // generated track is the model's, not Remiqora's.
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useSettingsStore } from '../../stores/settings'
 import HelpModal from './HelpModal.vue'
 
 const { t } = useI18n()
 const year = new Date().getFullYear()
+const settings = useSettingsStore()
 const open = ref(false)
 
 interface LicenseRow {
@@ -48,6 +50,9 @@ const rows: LicenseRow[] = [
         </span>
       </div>
 
+      <button type="button" class="hover:text-text" :title="t('footer.artistEdit')" @click="settings.openDialog()">
+        {{ t('footer.artist') }}: <span :class="settings.artist ? 'text-text' : 'text-text-dim'">{{ settings.artist || t('footer.artistUnset') }}</span> ✎
+      </button>
       <a href="#" class="text-accent1 hover:underline" @click.prevent="open = true">{{ t('footer.licenses') }}</a>
     </div>
 

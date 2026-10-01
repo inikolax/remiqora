@@ -11,6 +11,7 @@ import BatchABPlayer from '../../components/shared/BatchABPlayer.vue'
 import StemsPanel from '../../components/shared/StemsPanel.vue'
 import MidiPanel from '../../components/shared/MidiPanel.vue'
 import EditableTitle from '../../components/shared/EditableTitle.vue'
+import { downloadSavedTrack } from '../../composables/useTrackDownload'
 
 const props = defineProps<{ job: AceJob }>()
 const store = useAceStepStore()
@@ -35,9 +36,16 @@ function remove() {
   void store.removeJob(props.job.id)
 }
 function download(url: string, index: number) {
+  const filename = `${(props.job.title || 'track').replace(/[^\w\-]+/g, '_')}_${index + 1}.${props.job.audioFormat}`
+  const trackId = props.job.dbIds[index]
+  // A saved track goes through the server so the tags are written; a variant that is not saved yet is plain audio.
+  if (trackId != null) {
+    void downloadSavedTrack(trackId, filename)
+    return
+  }
   const a = document.createElement('a')
   a.href = url
-  a.download = `${(props.job.title || 'track').replace(/[^\w\-]+/g, '_')}_${index + 1}.${props.job.audioFormat}`
+  a.download = filename
   a.click()
 }
 function copyParamsToForm() {

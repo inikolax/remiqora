@@ -31,6 +31,14 @@ export default {
       local: { title: 'Local and licenses', text: 'Generation runs on this computer, with no cloud service; the models are downloaded once, on the first launch. The models have their own licenses, and a generated track follows the license of the model that made it: see Models and licenses in the footer, and note that YuE2-3B is for non-commercial use only.' },
     },
   },
+  artistDialog: {
+    title: 'Artist name',
+    label: 'Who is the artist of your tracks?',
+    placeholder: 'Your name or alias',
+    hint: 'Asked once. The name goes into the tags of every track you download and is kept on this computer. You can change it in the footer.',
+    save: 'Save',
+    skip: 'Not now',
+  },
   footer: {
     author: 'Nikolay Cherkashin',
     local: 'Generation runs on this computer',
@@ -44,6 +52,9 @@ export default {
     demucsNote: 'Stem separation.',
     ffmpegNote: 'Static builds that the desktop app downloads on the first launch.',
     responsibility: 'You are responsible for what you publish and for checking the license of the model that made it.',
+    artist: 'Artist',
+    artistUnset: 'not set',
+    artistEdit: 'Change the artist name',
   },
   modelStatus: {
     stopped: 'stopped',

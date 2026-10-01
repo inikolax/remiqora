@@ -71,6 +71,7 @@ def get_db() -> sqlite3.Connection:
             """
         )
         _db.commit()
+        _db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         _db.execute("CREATE INDEX IF NOT EXISTS idx_tracks_model_id ON tracks(model, id DESC);")
         _db.execute("CREATE INDEX IF NOT EXISTS idx_tracks_created ON tracks(created_at DESC);")
         _db.execute("CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects(updated_at DESC);")
@@ -273,3 +274,17 @@ def delete_track(track_id: int) -> bool:
     db.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
     db.commit()
     return True
+
+
+def get_setting(key: str, default: str = "") -> str:
+    row = get_db().execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    db = get_db()
+    db.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+    db.commit()

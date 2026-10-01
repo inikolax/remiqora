@@ -4,15 +4,21 @@ import { useI18n } from 'vue-i18n'
 import { useOrchestratorStore } from './stores/orchestrator'
 import AppFooter from './components/shared/AppFooter.vue'
 import AppHeader from './components/shared/AppHeader.vue'
+import ArtistDialog from './components/shared/ArtistDialog.vue'
+import { useSettingsStore } from './stores/settings'
 
 const orchestrator = useOrchestratorStore()
+const settings = useSettingsStore()
 const { t } = useI18n()
 
 watchEffect(() => {
   document.title = `Remiqora — ${t('header.tagline')}`
 })
 
-onMounted(() => orchestrator.startPolling())
+onMounted(() => {
+  orchestrator.startPolling()
+  void settings.load()
+})
 onBeforeUnmount(() => orchestrator.stopPolling())
 </script>
 
@@ -26,4 +32,5 @@ onBeforeUnmount(() => orchestrator.stopPolling())
     </router-view>
   </main>
   <AppFooter />
+  <ArtistDialog />
 </template>

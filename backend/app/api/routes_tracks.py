@@ -14,10 +14,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from starlette.background import BackgroundTask
 
-from .. import db
+from .. import db, tagging
 from ..config import MODELS
 
 router = APIRouter(prefix="/api/tracks", tags=["tracks"])
@@ -191,6 +192,25 @@ async def track_audio(track_id: int):
     if not row or not Path(row["audio_path"]).exists():
         return JSONResponse({"error": "audio not found"}, status_code=404)
     return FileResponse(row["audio_path"])
+
+
+@router.get("/{track_id}/download")
+async def track_download(track_id: int, album: Optional[str] = Query(None, max_length=120), track_no: Optional[int] = Query(None, ge=1, le=999)):
+    """The track as a download: a copy with title, artist, lyrics, cover-ready tags and the AI-generated
+    marks written in. The artist is the app-wide setting. The stored file is not changed; if tagging
+    is not possible (no ffmpeg) the original is served."""
+    row = db.get_track(track_id)
+    src = Path(row["audio_path"]) if row else None
+    if not row or not src or not src.exists():
+        return JSONResponse({"error": "audio not found"}, status_code=404)
+    ext = src.suffix.lower().lstrip(".")
+    params = json.loads(row["params_json"] or "{}")
+    tags = tagging.build_tags(row, params, db.get_setting("artist", ""), album=album, track_no=track_no)
+    name = tagging.download_name(tags, ext)
+    tagged = await tagging.write_tagged_copy(src, tags)
+    if tagged is None:
+        return FileResponse(src, filename=name, headers={"X-Tags": "skipped"})
+    return FileResponse(tagged, filename=name, background=BackgroundTask(lambda: tagged.unlink(missing_ok=True)))
 
 
 @router.get("/{track_id}/abc")
