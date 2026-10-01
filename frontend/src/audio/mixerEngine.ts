@@ -544,7 +544,7 @@ export function applyMixSettings(graph: MixGraph, settings: MixSettings): void {
   applyChannelSettings(graph.master, settings.master, settings.master.volume)
 }
 
-function disconnectChannel(ch: BuiltChannel): void {
+export function disconnectChannel(ch: BuiltChannel): void {
   ch.filterNode.disconnect()
   ch.distNode.disconnect()
   ch.distDry.disconnect()
