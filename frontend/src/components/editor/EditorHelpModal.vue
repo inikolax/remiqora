@@ -44,6 +44,8 @@ onUnmounted(() => {
             <button 
               type="button"
               class="flex h-8 w-8 items-center justify-center rounded-full bg-panel hover:bg-border/50 text-text-dim hover:text-text transition-colors"
+              :aria-label="t('common.close')"
+              :title="t('common.close')"
               @click="emit('close')"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">

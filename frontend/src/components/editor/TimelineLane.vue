@@ -97,6 +97,9 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           type="button"
           class="w-5 h-5 flex items-center justify-center rounded text-[9px] font-medium transition-all active:scale-95"
           :class="lane.settings.muted ? 'bg-status-failed text-white shadow-[0_0_8px_var(--color-status-failed)]' : 'bg-panel text-text-dim hover:text-white'"
+          :aria-pressed="!!lane.settings.muted"
+          :aria-label="t('timeline.muteTrack')"
+          :title="t('timeline.muteTrack')"
           @click.stop="emit('update:settings', { ...lane.settings, muted: !lane.settings.muted })"
         >
           M
@@ -105,6 +108,9 @@ function bufferFor(clip: Clip): AudioBuffer | null {
           type="button"
           class="w-5 h-5 flex items-center justify-center rounded text-[9px] font-medium transition-all active:scale-95"
           :class="lane.settings.solo ? 'accent-gradient text-white shadow-[0_0_8px_var(--color-accent1)]' : 'bg-panel text-text-dim hover:text-white'"
+          :aria-pressed="!!lane.settings.solo"
+          :aria-label="t('timeline.soloTrack')"
+          :title="t('timeline.soloTrack')"
           @click.stop="emit('update:settings', { ...lane.settings, solo: !lane.settings.solo })"
         >
           S
@@ -113,16 +119,23 @@ function bufferFor(clip: Clip): AudioBuffer | null {
 
       <!-- Row 2: Vol, Range, Delete -->
       <div class="flex items-center gap-1.5 px-0.5">
-        <span class="text-[8px] text-text-dim font-bold tracking-wider">VOL</span>
-        <input 
-          type="range" 
-          min="0" max="1.5" step="0.01" 
+        <span class="text-[8px] text-text-dim font-bold tracking-wider">{{ t('timeline.volume') }}</span>
+        <input
+          type="range"
+          min="0" max="1.5" step="0.01"
           :value="lane.settings.volume"
+          :aria-label="t('timeline.trackVolume', { name: lane.name })"
           @input="emit('update:settings', { ...lane.settings, volume: Number(($event.target as HTMLInputElement).value) })"
           class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1"
           @click.stop
         />
-        <button type="button" class="w-4 h-4 flex items-center justify-center text-[10px] text-status-failed/60 hover:text-status-failed transition-colors ml-1" @click.stop="emit('removeLane')">
+        <button
+          type="button"
+          class="w-4 h-4 flex items-center justify-center text-[10px] text-status-failed/60 hover:text-status-failed transition-colors ml-1"
+          :aria-label="t('timeline.removeTrack')"
+          :title="t('timeline.removeTrack')"
+          @click.stop="emit('removeLane')"
+        >
           ✕
         </button>
       </div>
