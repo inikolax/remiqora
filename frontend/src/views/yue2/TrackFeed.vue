@@ -1,19 +1,42 @@
 <script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useYue2Store } from '../../stores/yue2'
 import { useDateFilterSort } from '../../composables/useDateFilterSort'
+import { usePagination } from '../../composables/usePagination'
 import FilterSortBar from '../../components/shared/FilterSortBar.vue'
+import PaginationBar from '../../components/shared/PaginationBar.vue'
 import TrackCard from './TrackCard.vue'
 
 const store = useYue2Store()
 const { t } = useI18n()
 
 const { sortOrder, dateFrom, dateTo, activePreset, isFiltered, filteredSorted, applyPreset, reset } = useDateFilterSort(() => store.jobs)
+
+const { pageSize, page, totalPages, total, pageItems, rangeFrom, rangeTo, setPage, setPageSize, resetPage } = usePagination(() => filteredSorted.value)
+// A different sort or period is a different list: start from its first page.
+watch([sortOrder, dateFrom, dateTo], resetPage)
+
+const barProps = computed(() => ({
+  page: page.value,
+  totalPages: totalPages.value,
+  pageSize: pageSize.value,
+  total: total.value,
+  rangeFrom: rangeFrom.value,
+  rangeTo: rangeTo.value,
+}))
+
+const feedTop = ref<HTMLElement | null>(null)
+function goToPage(n: number) {
+  setPage(n)
+  // The cards are tall: bring the top of the list back into view after turning the page.
+  nextTick(() => feedTop.value?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+}
 </script>
 
 <template>
   <div class="space-y-3">
-    <h2 class="text-lg font-semibold text-text">{{ t('feed.yourTracks') }}</h2>
+    <h2 ref="feedTop" class="text-lg font-semibold text-text" style="scroll-margin-top: calc(var(--header-h, 64px) + 12px)">{{ t('feed.yourTracks') }}</h2>
 
     <FilterSortBar
       v-if="store.jobs.length > 0"
@@ -27,6 +50,9 @@ const { sortOrder, dateFrom, dateTo, activePreset, isFiltered, filteredSorted, a
       @preset="applyPreset"
       @reset="reset"
     />
+
+    <!-- Also above the list, so a long page does not have to be scrolled to its end to turn it -->
+    <PaginationBar v-bind="barProps" @update:page="goToPage" @update:page-size="setPageSize" />
 
     <!-- Skeleton loaders while history is loading -->
     <template v-if="!store.historyLoaded">
@@ -42,6 +68,7 @@ const { sortOrder, dateFrom, dateTo, activePreset, isFiltered, filteredSorted, a
 
     <p v-else-if="store.jobs.length === 0" class="rounded-xl border border-dashed border-border p-8 text-center text-sm text-text-dim">{{ t('feed.emptyHint') }}</p>
     <p v-else-if="filteredSorted.length === 0" class="rounded-xl border border-dashed border-border p-8 text-center text-sm text-text-dim">{{ t('feed.noneInPeriod') }}</p>
-    <TrackCard v-for="job in filteredSorted" :key="job.id" :job="job" />
+    <TrackCard v-for="job in pageItems" :key="job.id" :job="job" />
+    <PaginationBar v-bind="barProps" @update:page="goToPage" @update:page-size="setPageSize" />
   </div>
 </template>
