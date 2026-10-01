@@ -9,10 +9,11 @@
  * silently orphan connected AudioNodes with no disconnect() ever firing.
  */
 import { getSharedAudioCtx } from './audioPlayback'
-import { decodeStem, getChannelLevel, getReverbImpulse } from '../audio/mixerEngine'
+import { decodeStem, disconnectChannel, getChannelLevel, getReverbImpulse } from '../audio/mixerEngine'
 import {
   applyLaneSettings,
   applyMasterSettings,
+  buildLaneChannel,
   buildTimelineGraph,
   disconnectTimelineGraph,
   effectiveLaneGain,
@@ -25,16 +26,36 @@ import type { TimelineProject } from '../audio/timelineTypes'
 
 export function useTimelineEngine() {
   let graph: TimelineGraph | null = null
-  let playback: TimelinePlaybackHandle | null = null
+  /** Lane id for each entry of graph.lanes, in the same order. */
+  let graphLaneIds: string[] = []
+  /** Scheduled passes: the one playing and, while looping, the next one. */
+  let passes: TimelinePlaybackHandle[] = []
   let seekToken = 0
 
-  function ensureGraph(laneCount: number): TimelineGraph {
+  /**
+   * Brings graph.lanes in line with the project's lanes. Channels are kept per
+   * lane id and the master is built once, so adding, removing or reordering a
+   * lane during playback leaves the sources already playing on their route.
+   * Only the channels of removed lanes are torn down.
+   */
+  function ensureGraph(laneIds: string[]): TimelineGraph {
     const ctx = getSharedAudioCtx()
-    if (!graph || graph.lanes.length !== laneCount) {
-      if (graph) disconnectTimelineGraph(graph)
-      graph = buildTimelineGraph(ctx, laneCount, getReverbImpulse(ctx.sampleRate))
+    if (!graph) {
+      graph = buildTimelineGraph(ctx, 0, getReverbImpulse(ctx.sampleRate))
+      graphLaneIds = []
     }
-    return graph
+    if (laneIds.length === graphLaneIds.length && laneIds.every((id, i) => id === graphLaneIds[i])) return graph
+    const g = graph
+    const byId = new Map(graphLaneIds.map((id, i) => [id, g.lanes[i]]))
+    g.lanes = laneIds.map((id) => {
+      const ch = byId.get(id)
+      if (!ch) return buildLaneChannel(g, getReverbImpulse(ctx.sampleRate))
+      byId.delete(id) // a repeated id gets its own channel
+      return ch
+    })
+    for (const ch of byId.values()) disconnectChannel(ch)
+    graphLaneIds = [...laneIds]
+    return g
   }
 
   function applySettings(project: TimelineProject): void {
@@ -44,11 +65,23 @@ export function useTimelineEngine() {
     applyMasterSettings(graph, project.master)
   }
 
+  /**
+   * Decodes every source the project references. A source that 404s or does
+   * not decode is left out of the map (and logged) instead of failing the whole
+   * load, so a project with one deleted track still opens; the clip shows as
+   * missing and the rest plays.
+   */
   async function decodeAll(project: TimelineProject): Promise<Map<string, AudioBuffer>> {
     const urls = new Set<string>()
     for (const lane of project.lanes) for (const clip of lane.clips) if (clip.sourceUrl) urls.add(clip.sourceUrl)
-    const entries = await Promise.all([...urls].map(async (u) => [u, await decodeStem(u)] as const))
-    return new Map(entries)
+    const list = [...urls]
+    const results = await Promise.allSettled(list.map((u) => decodeStem(u)))
+    const buffers = new Map<string, AudioBuffer>()
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') buffers.set(list[i], r.value)
+      else console.warn(`editor: could not load ${list[i]}`, r.reason)
+    })
+    return buffers
   }
 
   function toScheduledClips(project: TimelineProject, buffers: Map<string, AudioBuffer>): ScheduledClip[] {
@@ -126,26 +159,49 @@ export function useTimelineEngine() {
     return clips
   }
 
-  async function play(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, onEnded: () => void): Promise<void> {
-    const g = ensureGraph(project.lanes.length)
+  /**
+   * Schedules playback from `fromSec`, cut at `untilSec` (a loop's end). Resolves
+   * with the context time the audio starts at (the transport clock's
+   * reference), or null when a newer play/seek/stop superseded this call.
+   */
+  async function play(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, onEnded: () => void, untilSec = Infinity): Promise<number | null> {
+    const g = ensureGraph(project.lanes.map((l) => l.id))
     const token = ++seekToken
     await (g.ctx as AudioContext).resume()
-    if (token !== seekToken || !graph) return // superseded by a newer play/seek, or torn down meanwhile
-    playback?.stop()
+    if (token !== seekToken || !graph) return null // superseded by a newer play/seek, or torn down meanwhile
+    stopPasses()
     applySettings(project)
-    playback = scheduleTimeline(graph, toScheduledClips(project, buffers), fromSec, (graph.ctx as AudioContext).currentTime + 0.05, onEnded)
+    const startAt = (graph.ctx as AudioContext).currentTime + 0.05
+    passes = [scheduleTimeline(graph, toScheduledClips(project, buffers), fromSec, startAt, onEnded, untilSec)]
+    return startAt
+  }
+
+  /**
+   * Schedules one more loop pass ([fromSec, untilSec) of the timeline) to start
+   * at `ctxStartTime`, the moment the pass before it ends, so the wrap has no gap.
+   * Keeps the two newest passes; older ones have finished by then.
+   */
+  function queuePass(project: TimelineProject, buffers: Map<string, AudioBuffer>, fromSec: number, untilSec: number, ctxStartTime: number): void {
+    if (!graph) return
+    passes.push(scheduleTimeline(graph, toScheduledClips(project, buffers), fromSec, ctxStartTime, () => {}, untilSec))
+    while (passes.length > 2) passes.shift()!.stop()
+  }
+
+  function stopPasses(): void {
+    for (const p of passes) p.stop()
+    passes = []
   }
 
   function stop(): void {
     seekToken++ // invalidate any in-flight play()
-    playback?.stop()
-    playback = null
+    stopPasses()
   }
 
   function teardown(): void {
     stop()
     if (graph) disconnectTimelineGraph(graph)
     graph = null
+    graphLaneIds = []
   }
 
   async function render(project: TimelineProject, buffers: Map<string, AudioBuffer>, totalDurationSec: number): Promise<AudioBuffer> {
@@ -165,5 +221,5 @@ export function useTimelineEngine() {
     return getChannelLevel(graph.master)
   }
 
-  return { ensureGraph, applySettings, decodeAll, toScheduledClips, play, stop, teardown, render, getLaneLevel, getMasterLevel }
+  return { ensureGraph, applySettings, decodeAll, toScheduledClips, play, queuePass, stop, teardown, render, getLaneLevel, getMasterLevel }
 }

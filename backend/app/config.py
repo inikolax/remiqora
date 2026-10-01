@@ -130,6 +130,13 @@ CUDA_BIN64_DIR = CUDA_BIN_DIR / "x64"
 UV_BIN = os.getenv("UV_BIN", "uv")
 ACE_STEP_DEVICE = os.getenv("ACE_STEP_DEVICE", "").strip()
 ACE_STEP_API_PORT = int(os.getenv("ACE_STEP_API_PORT", "8001"))
+# Checkpoint folder names under ACE_STEP_DIR/checkpoints. acestep-api has no
+# DiT CLI flag; it reads ACESTEP_CONFIG_PATH and otherwise loads turbo.
+# Turbo + the 1.7B LM is the fast default. A machine with enough memory can
+# point these at acestep-v15-xl-sft and acestep-5Hz-lm-4B.
+ACE_STEP_DIT_MODEL = os.getenv("ACE_STEP_DIT_MODEL", "acestep-v15-turbo").strip() or "acestep-v15-turbo"
+ACE_STEP_LM_MODEL = os.getenv("ACE_STEP_LM_MODEL", "acestep-5Hz-lm-1.7B").strip() or "acestep-5Hz-lm-1.7B"
+ACE_STEP_ON_DEMAND_MODEL_LOAD = os.getenv("ACE_STEP_ON_DEMAND_MODEL_LOAD", "").strip().lower() in {"1", "true", "yes"}
 YUE2_SERVER_PORT = int(os.getenv("YUE2_SERVER_PORT", "8080"))
 YUE2_SERVER_HOST = os.getenv("YUE2_SERVER_HOST", "127.0.0.1")
 YUE2_DEVICE = os.getenv("YUE2_DEVICE", "").strip()
@@ -174,10 +181,15 @@ MODELS: dict[str, ModelDefinition] = {
                     UV_BIN, "run", "acestep-api",
                     "--host", "127.0.0.1",
                     "--port", str(ACE_STEP_API_PORT),
-                    "--lm-model-path", "acestep-5Hz-lm-1.7B",
+                    "--lm-model-path", ACE_STEP_LM_MODEL,
                 ],
                 extra_path_dirs=[FFMPEG_BIN_DIR],
-                env={"PYTHONUTF8": "1", **({"CUDA_VISIBLE_DEVICES": ACE_STEP_DEVICE} if ACE_STEP_DEVICE else {})},
+                env={
+                    "PYTHONUTF8": "1",
+                    "ACESTEP_CONFIG_PATH": ACE_STEP_DIT_MODEL,
+                    **({"ACESTEP_ON_DEMAND_MODEL_LOAD": "true"} if ACE_STEP_ON_DEMAND_MODEL_LOAD else {}),
+                    **({"CUDA_VISIBLE_DEVICES": ACE_STEP_DEVICE} if ACE_STEP_DEVICE else {}),
+                },
                 health_url=f"http://127.0.0.1:{ACE_STEP_API_PORT}/health",
                 # Model + LM weights loading onto the GPU can genuinely take
                 # a few minutes on first load / cold cache.

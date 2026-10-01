@@ -174,7 +174,14 @@ export const useLoraTrainingStore = defineStore('loraTraining', {
           this.preprocessTotal = st.total
           if (st.status === 'completed') {
             this.preprocessRunning = false
+            const produced = st.result?.num_tensors
+            const message = st.result?.message || st.progress
+            if (produced === 0) {
+              this.preprocessError = message || t('storeErrors.preprocessFailed')
+              return
+            }
             this.preprocessOutputDir = st.result?.output_dir || outputDir
+            if (message && /failed/i.test(message)) this.preprocessError = message
             return
           }
           if (st.status === 'failed') {
@@ -216,6 +223,9 @@ export const useLoraTrainingStore = defineStore('loraTraining', {
       try {
         this.training = await api.trainingStatus()
         if (this.training.error) this.trainingError = this.training.error
+        else if (typeof this.training.status === 'string' && this.training.status.startsWith('❌')) {
+          this.trainingError = this.training.status
+        }
       } catch {
         // Model may be offline - leave last known state as-is.
       }

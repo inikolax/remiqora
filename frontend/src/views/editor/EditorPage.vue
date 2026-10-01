@@ -46,6 +46,14 @@ const timelineScrollEl = ref<HTMLElement | null>(null)
 let rafId: number | null = null
 let playStartCtxTime = 0
 let playStartOffset = 0
+/** While looping: context time the current pass ends (the next one is already queued there). */
+let passEndCtxTime: number | null = null
+
+/** The enabled loop region, if playback at `sec` runs inside it (i.e. before its end). */
+function activeLoop(sec: number): { start: number; end: number } | null {
+  const r = store.project.loopRegion
+  return r?.enabled && r.end > r.start && sec < r.end ? r : null
+}
 
 function stopTicking(): void {
   if (rafId != null) cancelAnimationFrame(rafId)
@@ -55,17 +63,36 @@ function stopTicking(): void {
 }
 function tick(): void {
   const ctx = getSharedAudioCtx()
-  const currentTime = ctx.currentTime - playStartCtxTime + playStartOffset
-  
   const prevSec = store.playheadSec
-  if (store.project.loopRegion?.enabled && currentTime >= store.project.loopRegion.end) {
-    seek(store.project.loopRegion.start)
-    followPlayhead(prevSec)
-    rafId = requestAnimationFrame(tick)
+  const loop = store.project.loopRegion
+  // Loop wrap: the next pass was scheduled to start exactly when this one ends,
+  // so the clock just moves its reference to the loop start.
+  if (passEndCtxTime != null && loop && ctx.currentTime >= passEndCtxTime) {
+    const len = loop.end - loop.start
+    if (ctx.currentTime >= passEndCtxTime + len) {
+      // Stalled (hidden tab) past the queued pass too: start over from the loop start.
+      seek(loop.start)
+      rafId = requestAnimationFrame(tick)
+      return
+    }
+    playStartOffset = loop.start
+    playStartCtxTime = passEndCtxTime
+    passEndCtxTime += len
+    engine.queuePass(store.project, buffers.value, loop.start, loop.end, passEndCtxTime)
+  }
+  // Held at the start position until the scheduled audio actually begins.
+  const currentTime = Math.max(playStartOffset, ctx.currentTime - playStartCtxTime + playStartOffset)
+
+  // The transport ends at the project end even when no source is scheduled to
+  // fire onended (empty project, playing past the last clip, every clip muted).
+  // A loop that runs past the project end plays on to the loop end.
+  if (currentTime >= store.totalDuration && !activeLoop(currentTime)) {
+    engine.stop()
+    onEnded()
     return
   }
 
-  store.playheadSec = Math.min(store.totalDuration, currentTime)
+  store.playheadSec = currentTime
   followPlayhead(prevSec)
   laneLevels.value = store.project.lanes.map((_, i) => engine.getLaneLevel(i))
   masterLevel.value = engine.getMasterLevel()
@@ -82,14 +109,29 @@ function onEnded(): void {
   stopTicking()
 }
 
+/** (Re)starts the engine at `from` and pins the transport clock to the time the audio starts. */
+async function startEngine(from: number): Promise<void> {
+  playStartOffset = from
+  playStartCtxTime = Infinity // tick holds the playhead at `from` until the engine answers
+  passEndCtxTime = null
+  const loop = activeLoop(from)
+  // No end callback: the last *scheduled* clip can end before the project does
+  // (a later clip muted or not soloed), so tick() alone decides the end.
+  const startAt = await engine.play(store.project, buffers.value, from, () => {}, loop?.end)
+  if (startAt == null) return
+  playStartCtxTime = startAt
+  if (loop) {
+    passEndCtxTime = startAt + (loop.end - from)
+    engine.queuePass(store.project, buffers.value, loop.start, loop.end, passEndCtxTime)
+  }
+}
+
 async function play(): Promise<void> {
   if (store.playing) return
-  const from = store.playheadSec >= store.totalDuration ? 0 : store.playheadSec
-  playStartOffset = from
-  playStartCtxTime = getSharedAudioCtx().currentTime
+  const from = store.playheadSec >= store.totalDuration && !activeLoop(store.playheadSec) ? 0 : store.playheadSec
   store.playing = true
-  await engine.play(store.project, buffers.value, from, onEnded)
-  startTicking()
+  await startEngine(from)
+  if (store.playing) startTicking()
 }
 
 function pause(): void {
@@ -100,21 +142,31 @@ function pause(): void {
 
 function seek(value: number): void {
   store.playheadSec = value
-  if (store.playing) {
-    playStartOffset = value
-    playStartCtxTime = getSharedAudioCtx().currentTime
-    void engine.play(store.project, buffers.value, value, onEnded)
-  }
+  if (store.playing) void startEngine(value)
 }
 
 let loopDragMode: 'start' | 'end' | 'move' | null = null
 let loopDragStartX = 0
 let loopDragStartVal = 0
+let loopDragStartKey = ''
+
+function loopKey(): string {
+  const r = store.project.loopRegion
+  return r ? `${r.enabled}:${r.start}:${r.end}` : ''
+}
+
+// Loop passes are scheduled ahead, so a loop change during playback reschedules.
+// A drag reschedules once on release: rescheduling on every pointermove would
+// keep restarting the audio before it can start.
+watch(loopKey, () => {
+  if (store.playing && !loopDragMode) seek(store.playheadSec)
+})
 
 function onLoopPointerDown(mode: 'start' | 'end' | 'move', evt: PointerEvent) {
   evt.stopPropagation()
   if (!store.project.loopRegion) return
   loopDragMode = mode
+  loopDragStartKey = loopKey()
   loopDragStartX = evt.clientX
   if (mode === 'start') loopDragStartVal = store.project.loopRegion.start
   if (mode === 'end') loopDragStartVal = store.project.loopRegion.end
@@ -145,6 +197,7 @@ function onLoopPointerUp() {
   loopDragMode = null
   window.removeEventListener('pointermove', onLoopPointerMove)
   window.removeEventListener('pointerup', onLoopPointerUp)
+  if (store.playing && loopKey() !== loopDragStartKey) seek(store.playheadSec)
   store.snapshot()
 }
 
@@ -246,7 +299,8 @@ const masterAsChannel = computed<ChannelSettings>({
   get: () => ({ ...store.project.master, pan: 0, muted: false, solo: false }),
   set: (v) => {
     const { pan: _pan, muted: _muted, solo: _solo, ...rest } = v
-    store.updateMasterSettings(rest)
+    // Live value; the strip's commit event records the undo step on release.
+    store.updateMasterSettings(rest, false)
   },
 })
 
@@ -265,9 +319,17 @@ async function onPickForNewLane(payload: { sourceUrl: string; sourceLabel: strin
   pickerOpenForNewLane.value = false
   let buffer = buffers.value.get(payload.sourceUrl)
   if (!buffer) {
-    buffer = await decodeStem(payload.sourceUrl)
+    try {
+      buffer = await decodeStem(payload.sourceUrl)
+    } catch (e) {
+      // The library entry's file is gone or does not decode: say so instead
+      // of the click silently doing nothing.
+      store.error = e instanceof Error ? e.message : String(e)
+      return
+    }
     buffers.value.set(payload.sourceUrl, buffer)
   }
+  store.error = null
   const lane = store.addLane()
   store.renameLane(lane.id, payload.sourceLabel)
 
@@ -286,10 +348,21 @@ async function onPickForNewLane(payload: { sourceUrl: string; sourceLabel: strin
   store.addClip(lane.id, clip)
 }
 
+let unmounted = false
+// Set when Save on a new project is about to rewrite the URL from /editor/new
+// to /editor/<id>: that is the same project, so the id watcher must not reload
+// it (which would re-decode every source and wipe the undo history). Holds the
+// id so it can only skip that exact route, and only while the store still has
+// that project.
+let skipIdLoad: string | null = null
+
 async function doSave(): Promise<void> {
   const wasNew = store.projectId == null
-  await store.save()
-  if (wasNew && store.projectId != null) {
+  const ok = await store.save()
+  // save() returns false when another project was opened meanwhile; the route
+  // check covers a navigation that has started but not loaded yet.
+  if (ok && wasNew && store.projectId != null && props.id === 'new' && !unmounted) {
+    skipIdLoad = String(store.projectId)
     await router.replace(`/editor/${store.projectId}`)
   }
 }
@@ -325,19 +398,36 @@ async function doExport(): Promise<void> {
   }
 }
 
+// Only the most recent load() may write buffers or clear the loading state
+// (same idea as seekToken in useTimelineEngine).
+let loadToken = 0
+
 async function load(): Promise<void> {
+  const token = ++loadToken
   pause()
   engine.teardown()
   loadingAudio.value = true
-  if (props.id === 'new') {
-    store.newProject()
-  } else {
-    await store.loadProject(Number(props.id))
+  try {
+    if (props.id === 'new') {
+      store.newProject()
+    } else {
+      await store.loadProject(Number(props.id))
+      if (token !== loadToken) return
+      // The fetch failed: store.error is shown above the editor. Whatever
+      // project was in the store before stays as it was (undecoded, so it does
+      // not play); do not treat it as the project this URL asked for.
+      if (store.error) return
+    }
+    const decoded = await engine.decodeAll(store.project)
+    if (token !== loadToken) return
+    buffers.value = decoded
+    engine.ensureGraph(store.project.lanes.map((l) => l.id))
+    engine.applySettings(store.project)
+  } catch (e) {
+    if (token === loadToken) store.error = e instanceof Error ? e.message : String(e)
+  } finally {
+    if (token === loadToken) loadingAudio.value = false
   }
-  buffers.value = await engine.decodeAll(store.project)
-  engine.ensureGraph(store.project.lanes.length)
-  engine.applySettings(store.project)
-  loadingAudio.value = false
 }
 
 async function onDropAudio(laneId: string, payload: { file: File; timelineStart: number }): Promise<void> {
@@ -363,6 +453,7 @@ async function onDropAudio(laneId: string, payload: { file: File; timelineStart:
       originalBpm: detectedBpm || store.project.bpm || 120,
     }
     const isFirstClip = store.totalDuration === 0
+    store.error = null
     store.addClip(laneId, clip)
     
     if (isFirstClip) {
@@ -393,7 +484,7 @@ function onToggleMute(laneId: string, payload: { clipId: string; enabled: boolea
   if (!clip) return
   clip.muted = payload.enabled
   store.snapshot()
-  if (store.playing) engine.play(store.project, buffers.value, store.playheadSec, () => { store.playing = false })
+  if (store.playing) seek(store.playheadSec) // reschedule without the clip, same transport clock
 }
 
 function onToggleSolo(laneId: string, payload: { clipId: string; enabled: boolean }): void {
@@ -403,15 +494,24 @@ function onToggleSolo(laneId: string, payload: { clipId: string; enabled: boolea
   if (!clip) return
   clip.solo = payload.enabled
   store.snapshot()
-  if (store.playing) engine.play(store.project, buffers.value, store.playheadSec, () => { store.playing = false })
+  if (store.playing) seek(store.playheadSec)
 }
 
-watch(() => props.id, load, { immediate: true })
+watch(
+  () => props.id,
+  () => {
+    const skip = skipIdLoad
+    skipIdLoad = null
+    if (skip != null && props.id === skip && store.projectId === Number(skip)) return
+    void load()
+  },
+  { immediate: true },
+)
 
 watch(
   () => store.project,
   async () => {
-    engine.ensureGraph(store.project.lanes.length)
+    engine.ensureGraph(store.project.lanes.map((l) => l.id))
     engine.applySettings(store.project)
     
     for (const lane of store.project.lanes) {
@@ -485,6 +585,10 @@ function onKeydown(e: KeyboardEvent) {
   }
 
   // ────── DAW Hotkeys ──────
+  if (e.key === 'Escape') {
+    store.clearSelection()
+    return
+  }
   if (e.key === ' ') {
     e.preventDefault()
     store.playing ? pause() : play()
@@ -504,15 +608,12 @@ function onKeydown(e: KeyboardEvent) {
         const clip = lane.clips.find(c => c.id === store.selectedClipId)
         if (clip) {
           const dur = clipDuration(clip, store.project.bpm)
+          // Copy every field (fades, mute/solo, MIDI notes and instrument), not a hand-picked subset.
           const newClip: Clip = {
+            ...clip,
+            notes: clip.notes?.map((n) => ({ ...n })),
             id: crypto.randomUUID(),
-            sourceUrl: clip.sourceUrl,
-            sourceLabel: clip.sourceLabel,
             timelineStart: clip.timelineStart + dur,
-            trimStart: clip.trimStart,
-            trimEnd: clip.trimEnd,
-            originalBpm: clip.originalBpm,
-            warpEnabled: clip.warpEnabled,
           }
           store.addClip(lane.id, newClip)
           store.selectedClipId = newClip.id
@@ -540,18 +641,20 @@ function onKeydown(e: KeyboardEvent) {
           const splitOffset = (currentPlayhead - clip.timelineStart) / sf
           const newLeftTrimEnd = clip.trimStart + splitOffset
           
+          // The right half inherits everything (fades, mute/solo, MIDI data);
+          // only the fades that sat at the cut are reset so the two new edges
+          // get the automatic micro-fade instead of the original clip's fade.
           const rightClip: Clip = {
+            ...clip,
+            notes: clip.notes?.map((n) => ({ ...n })),
             id: crypto.randomUUID(),
-            sourceUrl: clip.sourceUrl,
-            sourceLabel: clip.sourceLabel,
             timelineStart: currentPlayhead,
             trimStart: newLeftTrimEnd,
-            trimEnd: clip.trimEnd,
-            originalBpm: clip.originalBpm,
-            warpEnabled: clip.warpEnabled,
+            fadeInDuration: undefined,
           }
-          
+
           clip.trimEnd = newLeftTrimEnd
+          clip.fadeOutDuration = undefined
           newClips.push(rightClip)
           splitOccurred = true
           
@@ -593,6 +696,9 @@ function onTimelineWheel(e: WheelEvent) {
 }
 
 let isPanning = false
+let panClearsSelection = false
+/** Pointer travel below this still counts as a click, not a pan. */
+const PAN_CLICK_SLOP_PX = 4
 let panStartX = 0
 let panStartY = 0
 let panScrollStartX = 0
@@ -611,6 +717,11 @@ function onTimelinePointerDown(e: PointerEvent) {
     }
     
     e.preventDefault()
+    // A plain click (not a pan) on empty timeline drops the selection, so
+    // Delete, S and Ctrl+D stop acting on a clip that may have scrolled out of
+    // view. Decided on release so dragging to scroll keeps the selected track
+    // and its channel strip.
+    panClearsSelection = e.button === 0 && !e.shiftKey && !isInteractive
     isPanning = true
     panStartX = e.clientX
     panStartY = e.clientY
@@ -629,7 +740,10 @@ function onPanMove(e: PointerEvent) {
   timelineScrollEl.value.scrollTop = panScrollStartY - dy
 }
 
-function onPanEnd() {
+function onPanEnd(e: PointerEvent) {
+  const moved = Math.abs(e.clientX - panStartX) > PAN_CLICK_SLOP_PX || Math.abs(e.clientY - panStartY) > PAN_CLICK_SLOP_PX
+  if (panClearsSelection && !moved) store.clearSelection()
+  panClearsSelection = false
   isPanning = false
   window.removeEventListener('pointermove', onPanMove)
   window.removeEventListener('pointerup', onPanEnd)
@@ -662,6 +776,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
   stopTicking()
   engine.teardown()
   window.removeEventListener('keydown', onKeydown)
@@ -686,7 +801,11 @@ onBeforeRouteLeave((_to, _from, next) => {
     <div class="flex flex-wrap items-center gap-3 shrink-0">
       <router-link to="/editor" class="text-xs text-text-dim hover:underline">{{ t('editor.backToProjects') }}</router-link>
       <div class="flex items-center gap-1.5">
-        <input v-model="store.projectName" class="rounded-lg border border-border bg-panel-2 px-2 py-1 text-sm text-text" />
+        <input
+          :value="store.projectName"
+          class="rounded-lg border border-border bg-panel-2 px-2 py-1 text-sm text-text"
+          @input="store.setProjectName(($event.target as HTMLInputElement).value)"
+        />
         <span v-if="store.dirty" class="text-xs font-bold text-accent" :title="t('editor.unsavedTitle')">●</span>
       </div>
       <button
@@ -757,6 +876,8 @@ onBeforeRouteLeave((_to, _from, next) => {
         <button
           type="button"
           class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full accent-gradient text-white shadow-md shadow-accent1/30 transition-all duration-200 hover:scale-110 active:scale-95"
+          :aria-label="store.playing ? t('editor.pause') : t('editor.play')"
+          :title="store.playing ? t('editor.pause') : t('editor.play')"
           @click="store.playing ? pause() : play()"
         >
           <PlayIcon v-if="!store.playing" class="w-[13px] h-[13px]" />
@@ -772,11 +893,11 @@ onBeforeRouteLeave((_to, _from, next) => {
             :value="store.project.pxPerSecond"
             @input="store.setZoom(Number(($event.target as HTMLInputElement).value))"
           />
-          <button type="button" class="px-1.5 py-0.5 rounded border border-border text-[10px] hover:bg-panel transition-colors active:scale-95" @click="fitZoom">Fit</button>
+          <button type="button" class="px-1.5 py-0.5 rounded border border-border text-[10px] hover:bg-panel transition-colors active:scale-95" :title="t('editor.fitZoomTitle')" @click="fitZoom">{{ t('editor.fitZoom') }}</button>
         </label>
-        
+
         <label class="flex items-center gap-2 text-xs text-text-dim border-l border-border/60 pl-3">
-          BPM
+          {{ t('editor.bpm') }}
           <input
             type="number"
             min="20"
@@ -791,24 +912,26 @@ onBeforeRouteLeave((_to, _from, next) => {
           type="button"
           class="rounded border px-2 py-1 text-xs font-medium"
           :class="store.project.snapEnabled ? 'border-accent1 text-accent1 bg-accent1/10' : 'border-border text-text-dim hover:bg-panel'"
+          :aria-pressed="store.project.snapEnabled"
+          :title="t('editor.snapTitle')"
           @click="store.toggleSnap()"
-          title="Snap to Grid"
         >
-          Magnet
+          {{ t('editor.snap') }}
         </button>
         <button
           type="button"
           class="rounded border px-2 py-1 text-xs font-medium"
           :class="store.project.loopRegion?.enabled ? 'border-status-done text-status-done bg-status-done/10' : 'border-border text-text-dim hover:bg-panel'"
+          :aria-pressed="!!store.project.loopRegion?.enabled"
+          :title="t('editor.loopTitle')"
           @click="store.toggleLoop()"
-          title="Toggle Loop"
         >
-          Loop
+          {{ t('editor.loop') }}
         </button>
 
         <div class="ml-auto flex items-center gap-4">
           <!-- Stereo Master Meter -->
-          <div class="flex flex-col gap-1.5 w-28" title="Master L/R Levels">
+          <div class="flex flex-col gap-1.5 w-28" :title="t('editor.masterLevels')" role="img" :aria-label="t('editor.masterLevels')">
             <!-- Left Channel -->
             <div class="flex items-center gap-1.5">
               <span class="text-[9px] font-bold text-text-dim w-2 text-right">L</span>
@@ -861,7 +984,7 @@ onBeforeRouteLeave((_to, _from, next) => {
                   @click="store.updateLaneColor(selectedLane!.id, c.id)"
                 ></button>
               </template>
-              <div v-else class="text-[9px] text-text-dim/70">Select a track to pick color</div>
+              <div v-else class="text-[9px] text-text-dim/70">{{ t('editor.selectTrackToPickColor') }}</div>
             </div>
             <!-- Ruler Area -->
             <div
@@ -912,7 +1035,7 @@ onBeforeRouteLeave((_to, _from, next) => {
             :selected-clip-id="store.selectedClipId"
             :width-px="timelineWidthPx"
             :level="laneLevels[idx]"
-            @update:settings="(v) => store.updateLaneSettings(lane.id, v)"
+            @update:settings="(v) => store.updateLaneSettings(lane.id, v, false)"
             @rename="(name) => store.renameLane(lane.id, name)"
             @move-clip="(p) => store.updateClip(p.clipId, { timelineStart: p.timelineStart })"
             @trim-clip="(p) => store.updateClip(p.clipId, { trimStart: p.trimStart, trimEnd: p.trimEnd, timelineStart: p.timelineStart })"
@@ -942,16 +1065,17 @@ onBeforeRouteLeave((_to, _from, next) => {
             <ChannelStrip
               v-if="selectedLane"
               :model-value="selectedLane.settings"
-              :label="(selectedLane?.name || '') + ' ' + t('editor.settings', 'Settings')"
+              :label="(selectedLane?.name || '') + ' ' + t('editor.settings')"
               show-pan-mute-solo
               show-meter
               :level="selectedLaneLevel.peak || 0"
               :clipping="selectedLaneLevel.clipping || false"
-              @update:model-value="(v) => store.updateLaneSettings(selectedLane!.id, v)"
+              @update:model-value="(v) => store.updateLaneSettings(selectedLane!.id, v, false)"
+              @commit="store.commitSnapshot()"
               @reset="store.updateLaneSettings(selectedLane!.id, defaultChannelSettings())"
             />
             <div v-else class="flex h-24 items-center justify-center rounded-xl border border-border/50 bg-panel-2/30 p-4 text-xs text-text-dim text-center w-full">
-              {{ t('editor.selectTrackToEdit', 'Select a track to edit settings') }}
+              {{ t('editor.selectTrackToEdit') }}
             </div>
           </div>
           
@@ -961,6 +1085,7 @@ onBeforeRouteLeave((_to, _from, next) => {
               :model-value="masterAsChannel"
               :label="t('editor.master')"
               @update:model-value="(v) => (masterAsChannel = v)"
+              @commit="store.commitSnapshot()"
               @reset="store.updateMasterSettings(defaultMasterSettings())"
             />
           </div>

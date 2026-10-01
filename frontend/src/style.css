@@ -32,6 +32,9 @@
   --color-text-dim: #9a9aab;
   --color-accent1: #a855f7;
   --color-accent2: #ec4899;
+  /* Plain accent used by text-accent / bg-accent / border-accent in several
+   * components; without this token those classes generate no CSS at all. */
+  --color-accent: #a855f7;
   --color-status-queued: #eab308;
   --color-status-running: #a855f7;
   --color-status-done: #22c55e;
@@ -134,8 +137,21 @@ input[type="range"]:active::-webkit-slider-thumb {
   background-color: var(--color-accent2);
 }
 
-input[type="range"]:focus {
+/* Mouse focus stays quiet; keyboard focus gets a ring and a lit thumb, otherwise
+ * tabbing through the mixer gives no indication of which slider is active. */
+input[type="range"]:focus:not(:focus-visible) {
   outline: none;
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--color-accent1);
+  outline-offset: 3px;
+  border-radius: 99px;
+}
+
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  background-color: var(--color-accent1);
+  box-shadow: 0 0 8px var(--color-accent1);
 }
 
 /* Custom Scrollbars */
