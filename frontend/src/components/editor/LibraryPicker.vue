@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useDialogA11y } from '../../composables/useDialogA11y'
 import * as tracksApi from '../../api/tracks'
 import type { SavedTrack } from '../../api/tracks'
 
@@ -10,6 +11,9 @@ const emit = defineEmits<{
   pick: [payload: { sourceUrl: string; sourceLabel: string }]
   close: []
 }>()
+
+const dialogEl = ref<HTMLElement | null>(null)
+const { onKeydown } = useDialogA11y(dialogEl, () => true, () => emit('close'))
 
 const tracks = ref<SavedTrack[]>([])
 const loading = ref(true)
@@ -60,9 +64,16 @@ async function onFileSelected(event: Event) {
 <template>
   <Teleport to="body">
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" @mousedown.self="emit('close')">
-      <div class="flex max-h-[80vh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-xl bg-panel p-4">
+      <div
+        ref="dialogEl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="library-picker-title"
+        class="flex max-h-[80vh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-xl bg-panel p-4"
+        @keydown="onKeydown"
+      >
         <div class="flex items-center justify-between">
-          <p class="text-sm font-medium text-text">{{ t('library.title') }}</p>
+          <p id="library-picker-title" class="text-sm font-medium text-text">{{ t('library.title') }}</p>
           <button type="button" class="text-text-dim hover:text-status-failed" :aria-label="t('common.close')" :title="t('common.close')" @click="emit('close')">✕</button>
         </div>
 
