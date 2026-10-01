@@ -28,7 +28,6 @@ function emptyProject(): TimelineProject {
     pxPerSecond: DEFAULT_PX_PER_SECOND,
     bpm: 120,
     snapEnabled: true,
-    loopRegion: { start: 0, end: 10, enabled: false },
   }
 }
 
@@ -210,7 +209,8 @@ export const useEditorStore = defineStore('editor', {
     },
     toggleLoop() {
       if (!this.project.loopRegion) {
-        this.project.loopRegion = { start: 0, end: 10, enabled: true }
+        // Cover the whole project; 10 s when it is still empty.
+        this.project.loopRegion = { start: 0, end: this.totalDuration > 0.1 ? this.totalDuration : 10, enabled: true }
       } else {
         this.project.loopRegion.enabled = !this.project.loopRegion.enabled
       }
