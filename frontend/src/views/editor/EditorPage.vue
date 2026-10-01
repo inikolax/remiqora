@@ -934,7 +934,7 @@ onBeforeRouteLeave((_to, _from, next) => {
           <div class="flex flex-col gap-1.5 w-28" :title="t('editor.masterLevels')" role="img" :aria-label="t('editor.masterLevels')">
             <!-- Left Channel -->
             <div class="flex items-center gap-1.5">
-              <span class="text-[9px] font-bold text-text-dim w-2 text-right">L</span>
+              <span class="text-[10px] font-bold text-text-dim w-2 text-right">L</span>
               <div class="flex-1 h-1.5 rounded-full overflow-hidden bg-panel-2 shadow-inner relative border border-border/50">
                 <div 
                   class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-accent1 to-accent2 transition-all duration-75 shadow-[0_0_8px_var(--color-accent1)]"
@@ -944,7 +944,7 @@ onBeforeRouteLeave((_to, _from, next) => {
             </div>
             <!-- Right Channel -->
             <div class="flex items-center gap-1.5">
-              <span class="text-[9px] font-bold text-text-dim w-2 text-right">R</span>
+              <span class="text-[10px] font-bold text-text-dim w-2 text-right">R</span>
               <div class="flex-1 h-1.5 rounded-full overflow-hidden bg-panel-2 shadow-inner relative border border-border/50">
                 <div 
                   class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-accent1 to-accent2 transition-all duration-75 shadow-[0_0_8px_var(--color-accent1)]"
@@ -977,14 +977,16 @@ onBeforeRouteLeave((_to, _from, next) => {
                 <button
                   v-for="c in TRACK_COLORS"
                   :key="c.id"
-                  class="w-2.5 h-2.5 rounded-full transition-all focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-offset-panel-2 hover:scale-125"
+                  class="w-2.5 h-2.5 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent1 focus-visible:ring-offset-2 focus-visible:ring-offset-panel-2 hover:scale-125"
                   :class="selectedLane.colorId === c.id ? 'scale-125 ring-1 ring-white shadow-sm' : 'opacity-60 hover:opacity-100'"
                   :style="{ backgroundColor: c.baseHex, boxShadow: selectedLane.colorId === c.id ? `0 0 6px ${c.baseHex}80` : '' }"
                   :title="c.name"
+                  :aria-label="c.name"
+                  :aria-pressed="selectedLane.colorId === c.id"
                   @click="store.updateLaneColor(selectedLane!.id, c.id)"
                 ></button>
               </template>
-              <div v-else class="text-[9px] text-text-dim/70">{{ t('editor.selectTrackToPickColor') }}</div>
+              <div v-else class="text-[10px] text-text-dim/70">{{ t('editor.selectTrackToPickColor') }}</div>
             </div>
             <!-- Ruler Area -->
             <div

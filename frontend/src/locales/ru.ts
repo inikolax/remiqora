@@ -579,7 +579,7 @@ export default {
     removeTrack: 'Удалить дорожку',
     muteTrack: 'Заглушить дорожку',
     soloTrack: 'Соло дорожки',
-    volume: 'ГРОМ',
+    volume: 'Громк.',
     trackVolume: 'Громкость дорожки {name}',
     muteClip: 'Заглушить клип',
     soloClip: 'Соло клипа',
@@ -647,7 +647,7 @@ export default {
     effects: 'Эффекты',
     mute: 'Заглушить',
     solo: 'Соло',
-    clip: 'КЛИП',
+    clip: 'ПИК',
     lowpass: 'ФНЧ',
     highpass: 'ФВЧ',
     modules: {
