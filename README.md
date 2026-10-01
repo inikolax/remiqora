@@ -136,7 +136,7 @@ Any number of tracks, onto which you can add anything from the shared library (a
 
 ### Channels and effects
 
-![Effects rack on the vocals channel](docs/screenshots/en/10-editor-effects.png)
+![Effects rack on the drums channel](docs/screenshots/en/10-editor-effects.png)
 
 - Every track has volume, pan, mute/solo, and a color (the dots above the track list), plus a shared master bus.
 - **An 8-effect rack** on every channel and on the master: EQ (Low/Mid/High, ±12 dB), Dynamics (compressor: threshold and ratio), Filter (LP/HP: frequency and resonance), Chorus, Delay, Reverb, Distortion, and Bitcrush. All effects run in real time, with parameter values shown next to the sliders.
