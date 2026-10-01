@@ -11,6 +11,7 @@ import StemsPanel from '../../components/shared/StemsPanel.vue'
 import MidiPanel from '../../components/shared/MidiPanel.vue'
 import EditableTitle from '../../components/shared/EditableTitle.vue'
 import { downloadSavedTrack } from '../../composables/useTrackDownload'
+import TrackDetails from '../../components/shared/TrackDetails.vue'
 
 const props = defineProps<{ job: Yue2Job }>()
 const store = useYue2Store()
@@ -84,7 +85,7 @@ function copyParamsToForm() {
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <EditableTitle
-          :model-value="job.style"
+          :model-value="job.title"
           :placeholder="t('yueTrack.noStyle')"
           :editable="job.dbId != null"
           @rename="(title) => store.renameJob(job, title)"
@@ -119,7 +120,7 @@ function copyParamsToForm() {
         <span v-else-if="job.saveError" class="text-status-failed" :title="job.saveError">{{ t('yueTrack.notSaved') }}</span>
       </div>
       <div v-if="job.dbId != null" class="space-y-1.5 pt-1">
-        <StemsPanel :track-id="job.dbId" :title="job.style" :lyrics="job.lyrics" model="yue2" />
+        <StemsPanel :track-id="job.dbId" :title="job.title" :lyrics="job.lyrics" model="yue2" />
         <MidiPanel :track-id="job.dbId" />
       </div>
       <button type="button" class="text-xs text-text-dim hover:underline" @click="toggleAbc">
@@ -142,9 +143,6 @@ function copyParamsToForm() {
         {{ showDetails ? t('aceJob.hideDetails') : t('aceJob.showDetails') }}
       </button>
     </div>
-    <div v-if="showDetails" class="space-y-1 rounded-lg bg-panel-2 p-2 text-xs text-text-dim">
-      <p><b>{{ t('aceJob.style') }}</b> {{ job.style }}</p>
-      <p class="whitespace-pre-wrap"><b>{{ t('aceJob.lyrics') }}</b> {{ job.lyrics }}</p>
-    </div>
+    <TrackDetails v-if="showDetails" :style-text="job.style" :lyrics="job.lyrics" />
   </div>
 </template>

@@ -99,6 +99,12 @@ export default {
     clearAllTitle: 'Очистить все теги',
     clearAll: 'Очистить',
   },
+  trackDetails: {
+    style: 'Стиль',
+    lyrics: 'Текст песни',
+    copy: 'Копировать',
+    copied: 'Скопировано',
+  },
   aceJob: {
     noDescription: '(без описания)',
     defaultModel: 'модель по умолчанию',

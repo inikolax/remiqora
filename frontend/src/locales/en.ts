@@ -99,6 +99,12 @@ export default {
     clearAllTitle: 'Clear all tags',
     clearAll: 'Clear',
   },
+  trackDetails: {
+    style: 'Style',
+    lyrics: 'Lyrics',
+    copy: 'Copy',
+    copied: 'Copied',
+  },
   aceJob: {
     noDescription: '(no description)',
     defaultModel: 'default model',

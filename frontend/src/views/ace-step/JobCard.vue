@@ -12,6 +12,7 @@ import StemsPanel from '../../components/shared/StemsPanel.vue'
 import MidiPanel from '../../components/shared/MidiPanel.vue'
 import EditableTitle from '../../components/shared/EditableTitle.vue'
 import { downloadSavedTrack } from '../../composables/useTrackDownload'
+import TrackDetails from '../../components/shared/TrackDetails.vue'
 
 const props = defineProps<{ job: AceJob }>()
 const store = useAceStepStore()
@@ -115,9 +116,6 @@ function copyParamsToForm() {
         {{ showDetails ? t('aceJob.hideDetails') : t('aceJob.showDetails') }}
       </button>
     </div>
-    <div v-if="showDetails" class="space-y-1 rounded-lg bg-panel-2 p-2 text-xs text-text-dim">
-      <p v-if="styleText"><b>{{ t('aceJob.style') }}</b> {{ styleText }}</p>
-      <p v-if="job.lyrics" class="whitespace-pre-wrap"><b>{{ t('aceJob.lyrics') }}</b> {{ job.lyrics }}</p>
-    </div>
+    <TrackDetails v-if="showDetails" :style-text="styleText" :lyrics="job.lyrics" />
   </div>
 </template>

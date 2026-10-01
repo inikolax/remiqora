@@ -13,6 +13,9 @@ export interface Yue2Job {
   id: string
   status: JobStatus
   createdAt: number
+  /** The name shown on the card and stored as the track title; the user can rename it. */
+  title: string
+  /** The style tags the track was generated with. Never overwritten by a rename. */
   style: string
   lyrics: string
   cot: CotMode
@@ -57,7 +60,9 @@ export const useYue2Store = defineStore('yue2', {
           id: `saved_${t.id}`,
           status: 'done',
           createdAt: new Date(t.created_at).getTime() || Date.now(),
-          style: t.title,
+          title: t.title,
+          // The tags live in the saved params; the title is only a fallback for tracks saved before they were recorded.
+          style: (t.params.style as string) || t.title,
           lyrics: t.lyrics,
           cot: (t.params.cot as CotMode) || 'off',
           precision: (t.params.precision as 'q8_0' | 'q4_0') || 'q8_0',
@@ -106,6 +111,7 @@ export const useYue2Store = defineStore('yue2', {
           id: `g_${Date.now()}_${i}`,
           status: 'queued',
           createdAt: Date.now(),
+          title: params.style,
           style: params.style,
           lyrics: params.lyrics,
           cot: params.cot,
@@ -149,7 +155,7 @@ export const useYue2Store = defineStore('yue2', {
           const saved = await tracksApi.saveTrack(
             {
               model: 'yue2',
-              title: job.style,
+              title: job.title,
               lyrics: job.lyrics,
               seed: job.seed,
               duration_ms: durationMs,
@@ -203,7 +209,7 @@ export const useYue2Store = defineStore('yue2', {
       if (job.dbId == null) return
       await tracksApi.renameTrack(job.dbId, title)
       const target = this.jobs.find((j) => j.id === job.id)
-      if (target) target.style = title
+      if (target) target.title = title
     },
   },
 })
