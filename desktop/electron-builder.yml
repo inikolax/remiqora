@@ -43,11 +43,13 @@ mac:
       arch: [arm64]
   category: public.app-category.music
   icon: build/icon.png
-  # Unsigned: a .dmg built on the Mac itself was installed from Applications and ran fine on Apple Silicon.
-  # A downloaded build carries the quarantine flag and will need a manual "Open Anyway" (or xattr -dr
-  # com.apple.quarantine). Ad-hoc signing (identity "-" with hardenedRuntime false) is the documented next step
-  # for distribution but has NOT been tried on a Mac; a Developer ID and notarization is the real fix.
-  identity: null
+  # Ad-hoc signing (no certificate). With identity null the renamed Electron bundle had no valid seal, and a
+  # downloaded copy (quarantine flag set by the browser) was reported as "damaged" with no way to open it (#33).
+  # An ad-hoc seal turns that into the usual "Apple could not verify" prompt, which the user passes once via
+  # System Settings > Privacy & Security > Open Anyway. Hardened runtime stays off: without a Developer ID it
+  # makes library validation reject Electron's frameworks. A Developer ID and notarization is the real fix.
+  identity: "-"
+  hardenedRuntime: false
   artifactName: Remiqora-${version}-${arch}.${ext}
 
 # Packaging works; the first-run setup reports "unsupported" on Linux until it has scripts (see PR #2).

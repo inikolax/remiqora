@@ -213,7 +213,7 @@ For anyone who would rather not use a terminal, Remiqora also comes as a **deskt
 - **Every launch after that.** The app starts the server and opens the interface. Closing the window stops the model servers and frees the GPU.
 - **Where things live.** Models, the database, generated audio and logs stay in the folder you chose, and nothing is uploaded anywhere. The folder cannot be moved later, because the database stores absolute paths.
 
-**Status.** Experimental. The installers are not signed yet, so Windows shows a SmartScreen warning ("More info" → "Run anyway") and macOS may ask you to allow the app ("Open Anyway" in System Settings → Privacy & Security). The SHA-256 sum of every file is in `SHA256SUMS.txt` on the release page. To build an installer yourself instead:
+**Status.** Experimental. The installers are not signed yet, so Windows shows a SmartScreen warning ("More info" → "Run anyway") and macOS says it cannot verify the app: close that message, open System Settings → Privacy & Security, click "Open Anyway" and confirm (needed once). If macOS instead says the app "is damaged and can't be opened" (the 0.2.1 build and earlier, [#33](https://github.com/inikolax/remiqora/issues/33)), drag it to Applications and run `xattr -dr com.apple.quarantine /Applications/Remiqora.app` in Terminal. The SHA-256 sum of every file is in `SHA256SUMS.txt` on the release page. To build an installer yourself instead:
 
 ```sh
 cd frontend && npm ci && cd ../desktop && npm ci

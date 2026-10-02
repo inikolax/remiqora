@@ -50,8 +50,10 @@ npm run dist:dir    # unpacked app in dist/win-unpacked, handy for testing
 `npm run dist` builds the frontend, copies the backend sources, the built frontend and the ACE-Step patch into
 `resources/` (never `.env`, the database or a virtualenv; the build fails if one is found) and runs electron-builder.
 A macOS installer must be built on macOS. The `Desktop app` workflow builds both on GitHub Actions and uploads them
-as artifacts; nothing is published from it. The installers are **unsigned**: Windows shows a SmartScreen warning and
-macOS needs a right-click "Open" until a code-signing certificate is set up.
+as artifacts; nothing is published from it. The installers have **no certificate**: Windows shows a SmartScreen warning,
+and the macOS app is only ad-hoc signed, so a downloaded copy has to be allowed once via System Settings → Privacy &
+Security → "Open Anyway" (macOS 15 and later have no right-click bypass). Without that ad-hoc seal macOS reports the
+downloaded app as "damaged" (#33).
 
 ## What the first run installs
 

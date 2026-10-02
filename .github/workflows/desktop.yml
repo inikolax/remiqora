@@ -62,6 +62,13 @@ jobs:
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # An app without a valid seal is reported as "damaged" once downloaded (#33); fail here instead.
+      - name: Verify the ad-hoc signature
+        if: runner.os == 'macOS'
+        run: |
+          codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Remiqora.app
+          codesign --display --verbose=2 dist/mac-arm64/Remiqora.app
+        working-directory: desktop
       - uses: actions/upload-artifact@v7
         with:
           name: remiqora-${{ runner.os }}
@@ -96,7 +103,7 @@ jobs:
           cat > ../notes.md <<'NOTES'
           Experimental desktop installers for Windows (NVIDIA GPU) and macOS (Apple Silicon).
 
-          - They are not signed yet. Windows shows a SmartScreen warning and macOS may ask you to allow the app.
+          - They have no certificate yet. Windows shows a SmartScreen warning ("More info" → "Run anyway"); on macOS allow the app once via System Settings → Privacy & Security → "Open Anyway".
           - The installer is small: the first launch downloads the engines and models (roughly 30 GB) into a folder you choose.
           - SHA-256 sums of every file are in `SHA256SUMS.txt`.
 
