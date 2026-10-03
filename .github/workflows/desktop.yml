@@ -62,6 +62,8 @@ jobs:
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # electron-builder skips signing in pull requests by default; the ad-hoc signature needs no secrets.
+          CSC_FOR_PULL_REQUEST: "true"
       # An app without a valid seal is reported as "damaged" once downloaded (#33); fail here instead.
       - name: Verify the ad-hoc signature
         if: runner.os == 'macOS'
