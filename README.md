@@ -202,7 +202,7 @@ There are two ways to install Remiqora: the **desktop app** (experimental, descr
 
 For anyone who would rather not use a terminal, Remiqora also comes as a **desktop app** for **Windows** (NVIDIA RTX 20-series or newer, driver 580 or newer) and **macOS** (Apple Silicon). It opens in its own window and sets everything up on the first launch, so there is no Git, Python, CUDA Toolkit or compiler to install. The Windows installer installs per user and needs no administrator rights.
 
-**Download (v0.2.1, pre-release):** [Windows installer (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.2.1/Remiqora-Setup-0.2.1.exe) · [macOS installer (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.2.1/Remiqora-0.2.1-arm64.dmg) · [all files and SHA-256 sums](https://github.com/inikolax/remiqora/releases/tag/v0.2.1)
+**Download (v0.2.2, pre-release):** [Windows installer (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.2.2/Remiqora-Setup-0.2.2.exe) · [macOS installer (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.2.2/Remiqora-0.2.2-arm64.dmg) · [all files and SHA-256 sums](https://github.com/inikolax/remiqora/releases/tag/v0.2.2)
 
 <p align="center">
   <img src="docs/screenshots/en/12-desktop-check.png" alt="First launch: the app checks the GPU, driver, free space and connection, and asks where to keep models and projects" width="48%">

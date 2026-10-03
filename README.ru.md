@@ -202,7 +202,7 @@ Remiqora — это UI и оркестратор поверх сторонних
 
 Для тех, кто не хочет работать в терминале, Remiqora есть и как **настольное приложение** для **Windows** (видеокарта NVIDIA RTX 20-й серии или новее, драйвер 580 или новее) и **macOS** (Apple Silicon). Оно открывается в своём окне и при первом запуске само всё настраивает: ставить Git, Python, CUDA Toolkit и компилятор не нужно. Установщик для Windows ставится на пользователя и не требует прав администратора.
 
-**Скачать (v0.2.1, предрелиз):** [установщик для Windows (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.2.1/Remiqora-Setup-0.2.1.exe) · [установщик для macOS (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.2.1/Remiqora-0.2.1-arm64.dmg) · [все файлы и суммы SHA-256](https://github.com/inikolax/remiqora/releases/tag/v0.2.1)
+**Скачать (v0.2.2, предрелиз):** [установщик для Windows (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.2.2/Remiqora-Setup-0.2.2.exe) · [установщик для macOS (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.2.2/Remiqora-0.2.2-arm64.dmg) · [все файлы и суммы SHA-256](https://github.com/inikolax/remiqora/releases/tag/v0.2.2)
 
 <p align="center">
   <img src="docs/screenshots/12-desktop-check.png" alt="Первый запуск: приложение проверяет видеокарту, драйвер, место и соединение и спрашивает, где хранить модели и проекты" width="48%">
