@@ -4,3 +4,9 @@ httpx>=0.28.1
 pydantic>=2.13.5
 python-multipart>=0.0.32
 python-dotenv>=1.2.3
+# Built-in prompt translator (NLLB, CPU-only). torch MUST come from the CPU
+# wheel index — a plain "pip install torch" would pull the ~2.5GB CUDA bundle.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+transformers>=4.48
+sentencepiece>=0.2

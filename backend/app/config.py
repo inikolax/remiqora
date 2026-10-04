@@ -188,7 +188,8 @@ MODELS: dict[str, ModelDefinition] = {
                     "PYTHONUTF8": "1",
                     "ACESTEP_CONFIG_PATH": ACE_STEP_DIT_MODEL,
                     **({"ACESTEP_ON_DEMAND_MODEL_LOAD": "true"} if ACE_STEP_ON_DEMAND_MODEL_LOAD else {}),
-                    **({"CUDA_VISIBLE_DEVICES": ACE_STEP_DEVICE} if ACE_STEP_DEVICE else {}),
+                    # Same GPU-visibility pinning as the YuE2 server below.
+                    **({"CUDA_VISIBLE_DEVICES": ACE_STEP_DEVICE or "0"} if (ACE_STEP_DEVICE or IS_WINDOWS) else {}),
                 },
                 health_url=f"http://127.0.0.1:{ACE_STEP_API_PORT}/health",
                 # Model + LM weights loading onto the GPU can genuinely take
@@ -219,10 +220,20 @@ MODELS: dict[str, ModelDefinition] = {
                     *(["--device", YUE2_DEVICE] if YUE2_DEVICE else []),
                 ],
                 extra_path_dirs=_YUE2_EXTRA_PATH_DIRS,
-                env=(
-                    {"LD_LIBRARY_PATH": f"{CUDA_LIB_DIR}{os.pathsep}{os.environ.get('LD_LIBRARY_PATH', '')}"}
-                    if IS_LINUX else {}
-                ),
+                env={
+                    # Pin GPU visibility explicitly instead of inheriting it:
+                    # any stray CUDA_VISIBLE_DEVICES (e.g. "-1" left over from
+                    # forcing an unrelated tool onto CPU) would otherwise hide
+                    # the GPU from this server with a cryptic "no CUDA-capable
+                    # device" error. Explicit per-engine values still win via
+                    # YUE2_DEVICE (and enable concurrent residency on Linux).
+                    **({"CUDA_VISIBLE_DEVICES": YUE2_DEVICE or "0"} if (YUE2_DEVICE or IS_WINDOWS) else {}),
+                    **(
+                        {"LD_LIBRARY_PATH": f"{CUDA_LIB_DIR}{os.pathsep}{os.environ.get('LD_LIBRARY_PATH', '')}"}
+                        if IS_LINUX
+                        else {}
+                    ),
+                },
                 health_url=f"http://127.0.0.1:{YUE2_SERVER_PORT}/health",
                 startup_timeout=300.0,
             ),
