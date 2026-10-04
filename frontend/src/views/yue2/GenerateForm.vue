@@ -8,6 +8,7 @@ import ChipGroup from '../../components/shared/ChipGroup.vue'
 import CollapsibleDetails from '../../components/shared/CollapsibleDetails.vue'
 import HelpModal from '../../components/shared/HelpModal.vue'
 import HelpIconButton from '../../components/shared/HelpIconButton.vue'
+import PromptBridge from '../../components/shared/PromptBridge.vue'
 import TagInput from '../../components/shared/TagInput.vue'
 
 const store = useYue2Store()
@@ -198,6 +199,13 @@ async function extractAbc() {
   }
 }
 
+function onPromptApply(r: { style_en: string; lyrics: string; simple: string }) {
+  if (r.style_en) style.value = r.style_en
+  // Only fill lyrics when the field is empty — never overwrite the user's own text.
+  if (r.lyrics && !lyrics.value.trim()) lyrics.value = r.lyrics
+  else if (!lyrics.value.trim() && r.simple) lyrics.value = r.simple
+}
+
 function buildOptions(): GenerateOptions {
   const options: GenerateOptions = { style: style.value.trim(), cot: cot.value }
   if (cfgScale.value != null) options.cfg_scale = cfgScale.value
@@ -303,6 +311,8 @@ async function submit() {
           </button>
         </div>
       </div>
+
+      <PromptBridge target="yue2" @apply="onPromptApply" />
 
       <div class="space-y-1.5">
         <div class="flex items-center justify-between">

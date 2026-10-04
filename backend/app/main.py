@@ -9,6 +9,7 @@ from .api.routes_lora_dataset import router as lora_dataset_router
 from .api.routes_midi import router as midi_router
 from .api.routes_orchestrator import router as orchestrator_router
 from .api.routes_projects import router as projects_router
+from .api.routes_prompt import router as prompt_router
 from .api.routes_settings import router as settings_router
 from .api.routes_proxy import router as proxy_router
 from .api.routes_stems import router as stems_router
@@ -33,6 +34,7 @@ app.include_router(tracks_router)
 app.include_router(stems_router)
 app.include_router(midi_router)
 app.include_router(projects_router)
+app.include_router(prompt_router)
 app.include_router(settings_router)
 app.include_router(lora_dataset_router)
 # Registered before proxy_router's catch-all so this exact path wins.

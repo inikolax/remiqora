@@ -10,6 +10,7 @@ import ChipGroup from '../../components/shared/ChipGroup.vue'
 import CollapsibleDetails from '../../components/shared/CollapsibleDetails.vue'
 import HelpModal from '../../components/shared/HelpModal.vue'
 import HelpIconButton from '../../components/shared/HelpIconButton.vue'
+import PromptBridge from '../../components/shared/PromptBridge.vue'
 import TagInput from '../../components/shared/TagInput.vue'
 
 const store = useAceStepStore()
@@ -321,6 +322,21 @@ function registerNewLora() {
   newLoraPath.value = ''
 }
 
+function onPromptApply(r: { style_en: string; lyrics: string; simple: string; vocal_language: string }) {
+  if (mode.value === 'simple') {
+    simpleQuery.value = r.simple || r.style_en
+  } else {
+    if (r.style_en) customPrompt.value = r.style_en
+    // Only fill lyrics when the field is empty — never overwrite the user's own text
+    // with model-hallucinated lines.
+    if (r.lyrics && !customLyrics.value.trim()) {
+      customLyrics.value = r.lyrics
+      instrumental.value = false
+    }
+    if (r.vocal_language) vocalLanguage.value = r.vocal_language
+  }
+}
+
 const inferenceStepsPlaceholder = computed(() => (isTurbo.value ? t('aceGen.inferenceStepsTurbo') : t('aceGen.inferenceStepsNormal')))
 const durationLabel = computed(() => {
   const m = Math.floor(duration.value / 60)
@@ -461,6 +477,8 @@ async function submit() {
           </button>
         </div>
       </div>
+
+      <PromptBridge :target="mode === 'simple' ? 'ace_simple' : 'ace_custom'" @apply="onPromptApply" />
 
       <div class="flex gap-2 rounded-lg bg-panel-2 p-1 text-sm">
         <button

@@ -294,6 +294,24 @@ else
     echo "Skipped Demucs 'uv sync' - install uv and re-run this script."
 fi
 
+step "NLLB translator weights (prompt bridge, ~2.4 GB)"
+# Offline Hungarian/any-language -> English translator used by the backend's
+# /api/prompt route (TRANSLATOR=auto/local). Downloaded once into
+# backend/data/nllb (gitignored); without it the route falls back to Ollama.
+NLLB_DIR="$ROOT/backend/data/nllb"
+if [[ "$SKIP_WEIGHTS" == "1" ]]; then
+    echo "Skipping NLLB download (--skip-weights passed)."
+elif [[ -f "$NLLB_DIR/config.json" ]]; then
+    echo "NLLB weights already present, skipping."
+elif command -v uvx >/dev/null 2>&1; then
+    echo "Downloading facebook/nllb-200-distilled-600M ..."
+    uvx --from huggingface_hub huggingface-cli download facebook/nllb-200-distilled-600M \
+        --local-dir "$NLLB_DIR" \
+        --exclude "*.msgpack" --exclude "*.h5" --exclude "*.ot" --exclude "*.onnx"
+else
+    echo "Skipped NLLB download - install uv and re-run this script (or set TRANSLATOR=ollama in backend/.env)."
+fi
+
 step "backend/.env"
 ENV_FILE="$ROOT/backend/.env"
 FFMPEG_BIN_DIR=$(find_ffmpeg_bin_dir || true)
