@@ -17,8 +17,25 @@ from pathlib import Path
 from .config import DATA_DIR
 
 NLLB_DIR = DATA_DIR / "nllb"
-SRC_HU = "hun_Latn"
 DST_EN = "eng_Latn"
+
+# ISO code -> (NLLB language code, self-name for the UI dropdown).
+SUPPORTED_LANGS: dict[str, tuple[str, str]] = {
+    "hu": ("hun_Latn", "Magyar"),
+    "es": ("spa_Latn", "Español"),
+    "de": ("deu_Latn", "Deutsch"),
+    "fr": ("fra_Latn", "Français"),
+    "it": ("ita_Latn", "Italiano"),
+    "pt": ("por_Latn", "Português"),
+    "ru": ("rus_Cyrl", "Русский"),
+    "uk": ("ukr_Cyrl", "Українська"),
+    "pl": ("pol_Latn", "Polski"),
+    "ro": ("ron_Latn", "Română"),
+    "nl": ("nld_Latn", "Nederlands"),
+    "cs": ("ces_Latn", "Čeština"),
+    "tr": ("tur_Latn", "Türkçe"),
+    "en": ("eng_Latn", "English"),
+}
 
 _HU_CHARS = frozenset("áéíóöőúüűÁÉÍÓÖŐÚÜŰ")
 
@@ -119,19 +136,26 @@ def _ensure_loaded() -> None:
     _model.eval()
 
 
-def translate_to_english(text: str) -> tuple[str, str]:
-    """Return (english_text, src_lang). Non-Hungarian ASCII passes through."""
+def translate_to_english(text: str, src: str = "auto") -> tuple[str, str]:
+    """Return (english_text, iso_src_lang). 'en' passes through; any other
+    supported ISO code translates from that language; 'auto' (default) uses
+    the Hungarian-vs-English heuristic below."""
     cleaned = " ".join(text.split())
     if not cleaned:
         return "", ""
-    if not looks_hungarian(cleaned):
+    iso = (src or "auto").strip().lower()
+    if iso == "auto":
+        iso = "hu" if looks_hungarian(cleaned) else "en"
+    if iso == "en" or iso not in SUPPORTED_LANGS:
         return cleaned, "en"
-    cleaned = _restore_accents(cleaned)
+    if iso == "hu":
+        cleaned = _restore_accents(cleaned)
+    nllb_code = SUPPORTED_LANGS[iso][0]
     with _lock:
         _ensure_loaded()
         import torch
 
-        _tokenizer.src_lang = SRC_HU
+        _tokenizer.src_lang = nllb_code
         inputs = _tokenizer(cleaned, return_tensors="pt", truncation=True, max_length=512)
         forced_bos = _tokenizer.convert_tokens_to_ids(DST_EN)
         with torch.no_grad():
@@ -144,7 +168,7 @@ def translate_to_english(text: str) -> tuple[str, str]:
     # NLLB sometimes decorates music-related lines with stray note symbols.
     en = re.sub(r"^[^A-Za-z0-9\u00C0-\u017F]+", "", en.strip())
     en = re.sub(r"[^A-Za-z0-9\u00C0-\u017F).!?\"]+$", "", en.strip())
-    return " ".join(en.split()), "hu"
+    return " ".join(en.split()), iso
 
 
 def local_dir() -> Path:

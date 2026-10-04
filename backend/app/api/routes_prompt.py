@@ -65,6 +65,9 @@ class PrepareIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     target: str = Field(default="ace_custom", max_length=32)
     model: str = Field(default="", max_length=64)
+    # Source language ISO code (hu/es/de/... — see nllb.SUPPORTED_LANGS) or
+    # "auto" (default): Hungarian-vs-English heuristic.
+    src_lang: str = Field(default="auto", max_length=16)
 
 
 async def _ollama_models(client: httpx.AsyncClient) -> list[str]:
@@ -109,12 +112,13 @@ async def prompt_status():
 
     local_ready = nllb.weights_present()
     engine = "local" if (TRANSLATOR == "local" or (TRANSLATOR == "auto" and local_ready)) else "ollama"
+    supported_langs = [{"code": code, "label": label} for code, (_, label) in nllb.SUPPORTED_LANGS.items()]
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             names = await _ollama_models(client)
     except httpx.HTTPError as exc:
-        return {"reachable": False, "engine": engine, "local_ready": local_ready, "model": OLLAMA_MODEL, "models": [], "error": str(exc)[:200]}
-    return {"reachable": True, "engine": engine, "local_ready": local_ready, "model": OLLAMA_MODEL, "model_present": OLLAMA_MODEL in names, "models": names}
+        return {"reachable": False, "engine": engine, "local_ready": local_ready, "model": OLLAMA_MODEL, "models": [], "supported_langs": supported_langs, "error": str(exc)[:200]}
+    return {"reachable": True, "engine": engine, "local_ready": local_ready, "model": OLLAMA_MODEL, "model_present": OLLAMA_MODEL in names, "models": names, "supported_langs": supported_langs}
 
 
 def _use_local() -> bool:
@@ -136,14 +140,14 @@ async def prompt_prepare(body: PrepareIn):
         from .. import nllb
 
         try:
-            en, src = await _run_blocking(nllb.translate_to_english, text)
+            en, src = await _run_blocking(nllb.translate_to_english, text, body.src_lang)
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=f"Local translator unavailable: {exc}") from exc
         return PrepareOut(
             style_en=en[:600],
             lyrics="",
             simple=en[:600],
-            vocal_language="hu" if src == "hu" else "",
+            vocal_language=src if src != "en" else "",
         )
     model = (body.model or OLLAMA_MODEL).strip()
     try:

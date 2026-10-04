@@ -788,6 +788,8 @@ export default {
     engineLocalTitle: 'Встроенный офлайн-переводчик (Ollama не нужна)',
     hintLocal: 'Встроенный переводчик, работает офлайн',
     submitLocal: 'Перевести',
+    srcLangTitle: 'Язык ввода для встроенного переводчика',
+    srcLangAuto: 'Авто',
   },
   storeErrors: {
     noSamplesToLabel: 'Нет сэмплов для разметки',

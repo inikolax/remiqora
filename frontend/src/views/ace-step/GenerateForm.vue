@@ -333,7 +333,7 @@ function onPromptApply(r: { style_en: string; lyrics: string; simple: string; vo
       customLyrics.value = r.lyrics
       instrumental.value = false
     }
-    if (r.vocal_language === 'hu') vocalLanguage.value = 'hu'
+    if (r.vocal_language) vocalLanguage.value = r.vocal_language
   }
 }
 

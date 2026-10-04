@@ -787,7 +787,9 @@ export default {
     engineLocal: 'built-in',
     engineLocalTitle: 'Built-in offline translator (no Ollama needed)',
     hintLocal: 'Built-in translator, works offline',
-    submitLocal: 'Translate',  },
+    submitLocal: 'Translate',
+    srcLangTitle: 'Input language for the built-in translator',
+    srcLangAuto: 'Auto',  },
   storeErrors: {
     noSamplesToLabel: 'No samples to label',
     labelingFailed: 'Labeling failed',

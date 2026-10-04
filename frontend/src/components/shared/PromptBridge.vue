@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { preparePrompt, promptStatus } from '../../api/prompt'
-import type { PromptPrepareResult } from '../../api/prompt'
+import type { PromptLang, PromptPrepareResult } from '../../api/prompt'
 
 const props = defineProps<{ target: string }>()
 const emit = defineEmits<{ apply: [result: PromptPrepareResult] }>()
@@ -16,6 +16,8 @@ const backendStatus = ref<string>('')
 const models = ref<string[]>([])
 const selectedModel = ref(localStorage.getItem('promptBridge_model') || '')
 const useLocal = ref(false)
+const srcLangs = ref<PromptLang[]>([])
+const srcLang = ref(localStorage.getItem('promptBridge_srcLang') || 'auto')
 
 function pickDefaultModel(list: string[], fallback: string): string {
   if (selectedModel.value && list.includes(selectedModel.value)) return selectedModel.value
@@ -27,7 +29,11 @@ onMounted(async () => {
   try {
     const st = await promptStatus()
     useLocal.value = st.engine === 'local'
-    if (useLocal.value) return // built-in translator: Ollama state is irrelevant
+    if (useLocal.value) {
+      srcLangs.value = st.supported_langs || []
+      if (srcLang.value !== 'auto' && !srcLangs.value.some((l) => l.code === srcLang.value)) srcLang.value = 'auto'
+      return // built-in translator: Ollama state is irrelevant
+    }
     if (!st.reachable) backendStatus.value = t('promptBridge.ollamaDown')
     else {
       models.value = st.models || []
@@ -44,13 +50,17 @@ function onModelChange() {
   localStorage.setItem('promptBridge_model', selectedModel.value)
 }
 
+function onSrcLangChange() {
+  localStorage.setItem('promptBridge_srcLang', srcLang.value)
+}
+
 async function submit() {
   error.value = ''
   result.value = null
   if (!input.value.trim()) return
   loading.value = true
   try {
-    result.value = await preparePrompt(input.value.trim(), props.target, selectedModel.value)
+    result.value = await preparePrompt(input.value.trim(), props.target, selectedModel.value, srcLang.value)
     // Auto-insert so a Hungarian description flows straight into the form;
     // everything stays editable/reviewable in the form fields.
     apply()
@@ -79,6 +89,16 @@ function apply() {
       :placeholder="t('promptBridge.placeholder')"
     ></textarea>
     <div class="flex items-center gap-2">
+      <select
+        v-if="useLocal && srcLangs.length"
+        v-model="srcLang"
+        class="max-w-36 rounded-lg border border-border bg-panel px-2 py-1.5 text-xs text-text"
+        :title="t('promptBridge.srcLangTitle')"
+        @change="onSrcLangChange"
+      >
+        <option value="auto">{{ t('promptBridge.srcLangAuto') }}</option>
+        <option v-for="l in srcLangs" :key="l.code" :value="l.code">{{ l.label }}</option>
+      </select>
       <span
         v-if="useLocal"
         class="rounded-lg border border-border bg-panel px-2 py-1.5 text-xs text-text-dim"

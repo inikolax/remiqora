@@ -248,6 +248,25 @@ if (Assert-Command "uv" "Install it from https://docs.astral.sh/uv/getting-start
     Write-Host "Skipped Demucs 'uv sync' - install uv and re-run this script." -ForegroundColor Yellow
 }
 
+Write-Step "NLLB translator weights (prompt bridge, ~2.4 GB)"
+# Offline Hungarian/any-language -> English translator used by the backend's
+# /api/prompt route (TRANSLATOR=auto/local). Downloaded once into
+# backend/data/nllb (gitignored); without it the route falls back to Ollama.
+# Honored by -SkipWeights like the other weight downloads.
+$nllbDir = Join-Path $root "backend\data\nllb"
+if ($SkipWeights) {
+    Write-Host "Skipping NLLB download (-SkipWeights passed)."
+} elseif (Test-Path (Join-Path $nllbDir "config.json")) {
+    Write-Host "NLLB weights already present, skipping."
+} elseif (Assert-Command "uvx" "Install uv from https://docs.astral.sh/uv/getting-started/installation/ (uvx ships with it).") {
+    Write-Host "Downloading facebook/nllb-200-distilled-600M ..."
+    uvx --from huggingface_hub huggingface-cli download facebook/nllb-200-distilled-600M `
+        --local-dir $nllbDir `
+        --exclude "*.msgpack" --exclude "*.h5" --exclude "*.ot" --exclude "*.onnx"
+} else {
+    Write-Host "Skipped NLLB download - install uv and re-run this script (or set TRANSLATOR=ollama in backend/.env)." -ForegroundColor Yellow
+}
+
 Write-Step "backend/.env"
 $envExample = Join-Path $root "backend\.env.example"
 $envFile = Join-Path $root "backend\.env"

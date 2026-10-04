@@ -382,6 +382,14 @@ CUDA_BIN_DIR=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin
 - `DEMUCS_DIR` — root of the `demucs` uv project used for stem separation.
 - `FFMPEG_BIN_DIR` — folder containing `ffmpeg.exe`/`ffprobe.exe`.
 - `CUDA_BIN_DIR` — the `bin` folder of the installed CUDA Toolkit (needs to be on PATH for `audiocpp_server.exe`). Windows only — on macOS this is left unset, since YuE2 runs on the Metal backend instead.
+- `TRANSLATOR` — prompt-bridge engine: `auto` (default: built-in offline translator when its weights are present, otherwise Ollama), `local` (built-in only), `ollama` (Ollama only).
+
+### Prompt bridge (Hungarian/any-language input)
+
+Both generation forms accept a free-form description in Hungarian (or Spanish, German, French, … — pick the source language in the box, or leave it on Auto). The backend translates it to English style tags via `POST /api/prompt/prepare` and fills the form for review — lyrics you already typed are never overwritten. Two engines:
+
+- **Built-in (default):** `facebook/nllb-200-distilled-600M` running on CPU inside the backend (~2.4 GB, downloaded once by the setup scripts into `backend/data/nllb`, which is gitignored). No extra services, no VRAM usage.
+- **Ollama fallback:** `OLLAMA_HOST` (default `http://127.0.0.1:11434`) + `OLLAMA_MODEL` (default `qwen2.5:3b`). Richer style expansion with bigger models at the cost of speed; keep Ollama on CPU (`ollama-cpu` style launch with `CUDA_VISIBLE_DEVICES=-1` scoped to its own window) so it doesn't eat the GPU the music engines need.
 
 ---
 
