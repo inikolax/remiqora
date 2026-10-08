@@ -47,6 +47,11 @@ class StemJob:
 _jobs: dict[int, StemJob] = {}
 
 
+def running_pids() -> list[int]:
+    """Root PIDs of the Demucs runs in flight (`uv run demucs`; the separation runs in its child)."""
+    return [j.proc.pid for j in _jobs.values() if j.proc is not None and j.proc.returncode is None]
+
+
 async def start(track_id: int, *, force: bool = False) -> StemJob:
     job = _jobs.get(track_id)
     if job and job.status in ("queued", "running"):

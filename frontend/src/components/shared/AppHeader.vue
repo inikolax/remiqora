@@ -7,6 +7,7 @@ import { MODEL_LABELS, MODEL_ROUTES, useModelSwitch } from '../../composables/us
 import { setLocale, currentLocale, type LocaleCode } from '../../i18n'
 import type { ModelId, ModelRuntimeStatus } from '../../types'
 import HelpModal from './HelpModal.vue'
+import ResourceMeters from './ResourceMeters.vue'
 
 const orchestrator = useOrchestratorStore()
 const route = useRoute()
@@ -135,6 +136,12 @@ async function onSelect(id: ModelId) {
           <span class="hidden text-xs text-text-dim sm:inline">{{ t(STATUS_LABEL_KEYS[statusOf(id)]) }}</span>
         </button>
       </nav>
+    </div>
+    <!-- a thin strip under the header, as in Remiqora Video: RAM and video memory, details on click -->
+    <div class="hidden border-t border-border/60 md:block">
+      <div class="mx-auto flex w-full max-w-7xl justify-end px-4 py-1 sm:px-6">
+        <ResourceMeters />
+      </div>
     </div>
     <p v-if="orchestrator.switchError" class="border-t border-status-failed/30 bg-status-failed/10 px-4 py-2 text-xs whitespace-pre-line text-status-failed sm:px-6">
       {{ orchestrator.switchError }}

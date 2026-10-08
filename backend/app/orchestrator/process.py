@@ -109,6 +109,10 @@ class ManagedProcess:
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
+    @property
+    def pid(self) -> Optional[int]:
+        return self._proc.pid if self.is_running else None
+
     def exit_summary(self) -> str:
         code = self._proc.returncode if self._proc else None
         return f"process '{self.spec.name}' exited (code {code}).\n{tail_log(self.spec.name)}"

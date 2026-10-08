@@ -2,12 +2,14 @@
 import { onBeforeUnmount, onMounted, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useOrchestratorStore } from './stores/orchestrator'
+import { useSystemStore } from './stores/system'
 import AppFooter from './components/shared/AppFooter.vue'
 import AppHeader from './components/shared/AppHeader.vue'
 import ArtistDialog from './components/shared/ArtistDialog.vue'
 import { useSettingsStore } from './stores/settings'
 
 const orchestrator = useOrchestratorStore()
+const system = useSystemStore()
 const settings = useSettingsStore()
 const { t } = useI18n()
 
@@ -17,9 +19,13 @@ watchEffect(() => {
 
 onMounted(() => {
   orchestrator.startPolling()
+  system.startPolling()
   void settings.load()
 })
-onBeforeUnmount(() => orchestrator.stopPolling())
+onBeforeUnmount(() => {
+  orchestrator.stopPolling()
+  system.stopPolling()
+})
 </script>
 
 <template>

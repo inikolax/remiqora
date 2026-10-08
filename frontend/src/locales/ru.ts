@@ -899,6 +899,23 @@ export default {
       backing_vocals: 'Бэк-вокал',
     },
   },
+  resources: {
+    title: 'Память: ОЗУ и видеопамять',
+    unit: 'ГБ',
+    ram: 'ОЗУ',
+    vram: 'Видео',
+    ramLong: 'Оперативная память',
+    vramLong: 'Видеопамять',
+    holds: '{who} держит в ОЗУ',
+    holder: {
+      ace_step: 'ACE-Step',
+      yue2: 'YuE2 (и распознавание MIDI)',
+      demucs: 'Demucs (стемы)',
+      backend: 'Сервер Remiqora',
+      other: 'Остальные программы (браузер, Windows)',
+    },
+    load: 'загрузка видеокарты {n}%',
+  },
   storeErrors: {
     noSamplesToLabel: 'Нет сэмплов для разметки',
     labelingFailed: 'Разметка завершилась с ошибкой',

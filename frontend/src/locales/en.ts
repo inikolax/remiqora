@@ -899,6 +899,23 @@ export default {
       backing_vocals: 'Backing vocals',
     },
   },
+  resources: {
+    title: 'Memory: RAM and video memory',
+    unit: 'GB',
+    ram: 'RAM',
+    vram: 'Video',
+    ramLong: 'RAM',
+    vramLong: 'Video memory',
+    holds: '{who} holds in RAM',
+    holder: {
+      ace_step: 'ACE-Step',
+      yue2: 'YuE2 (and MIDI transcription)',
+      demucs: 'Demucs (stems)',
+      backend: 'Remiqora server',
+      other: 'Other programs (browser, Windows)',
+    },
+    load: 'GPU load {n}%',
+  },
   storeErrors: {
     noSamplesToLabel: 'No samples to label',
     labelingFailed: 'Labeling failed',

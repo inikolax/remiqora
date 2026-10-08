@@ -69,6 +69,15 @@ class OrchestratorManager:
         for event in self._cancel_start.values():
             event.set()
 
+    def process_pids(self) -> dict[str, list[int]]:
+        """Root PIDs of the running processes, by model id (the header's memory meters walk their trees)."""
+        out: dict[str, list[int]] = {}
+        for mid, procs in self._processes.items():
+            pids = [p.pid for p in procs if p.pid]
+            if pids:
+                out[mid] = pids
+        return out
+
     def status_snapshot(self) -> dict:
         return {
             "active_model": self.state.active_model,
