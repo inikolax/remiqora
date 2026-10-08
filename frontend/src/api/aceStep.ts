@@ -25,6 +25,8 @@ export interface GenerateMusicRequest {
   repainting_end?: number
   track_name?: string
   track_classes?: string[]
+  /** "explicit" passes the repaint range to the model as a 0/1 mask (what ACE-Step's own UI does for repaint). */
+  chunk_mask_mode?: 'explicit' | 'auto'
 }
 
 export interface ModelInventoryEntry {

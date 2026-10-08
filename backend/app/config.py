@@ -136,7 +136,10 @@ ACE_STEP_API_PORT = int(os.getenv("ACE_STEP_API_PORT", "8001"))
 # point these at acestep-v15-xl-sft and acestep-5Hz-lm-4B.
 ACE_STEP_DIT_MODEL = os.getenv("ACE_STEP_DIT_MODEL", "acestep-v15-turbo").strip() or "acestep-v15-turbo"
 ACE_STEP_LM_MODEL = os.getenv("ACE_STEP_LM_MODEL", "acestep-5Hz-lm-1.7B").strip() or "acestep-5Hz-lm-1.7B"
-ACE_STEP_ON_DEMAND_MODEL_LOAD = os.getenv("ACE_STEP_ON_DEMAND_MODEL_LOAD", "").strip().lower() in {"1", "true", "yes"}
+# Lets a request name another downloaded DiT (the editor's AI parts use a base
+# model for lego while the generation page stays on turbo); acestep-api swaps
+# the primary model in place, so only one DiT is in VRAM at a time.
+ACE_STEP_ON_DEMAND_MODEL_LOAD = os.getenv("ACE_STEP_ON_DEMAND_MODEL_LOAD", "true").strip().lower() in {"1", "true", "yes"}
 YUE2_SERVER_PORT = int(os.getenv("YUE2_SERVER_PORT", "8080"))
 YUE2_SERVER_HOST = os.getenv("YUE2_SERVER_HOST", "127.0.0.1")
 YUE2_DEVICE = os.getenv("YUE2_DEVICE", "").strip()

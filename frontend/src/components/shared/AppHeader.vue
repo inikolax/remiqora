@@ -13,7 +13,7 @@ const route = useRoute()
 const { selectModel } = useModelSwitch()
 const { t, locale } = useI18n()
 const helpOpen = ref(false)
-const HELP_SECTIONS = ['what', 'engines', 'ace', 'yue', 'lora', 'stems', 'editor', 'library', 'local'] as const
+const HELP_SECTIONS = ['what', 'engines', 'ace', 'yue', 'lora', 'stems', 'editor', 'arranger', 'library', 'local'] as const
 
 function toggleLocale() {
   const next: LocaleCode = currentLocale() === 'ru' ? 'en' : 'ru'

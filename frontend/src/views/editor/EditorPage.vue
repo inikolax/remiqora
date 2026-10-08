@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useEditorStore } from '../../stores/editor'
+import { useAiPartsStore } from '../../stores/aiParts'
 import { useTimelineEngine } from '../../composables/useTimelineEngine'
 import { getSharedAudioCtx } from '../../composables/audioPlayback'
 import { decodeStem, defaultMasterSettings, defaultChannelSettings } from '../../audio/mixerEngine'
@@ -11,6 +12,7 @@ import { clipDuration, stretchFactor } from '../../audio/timelineTypes'
 import type { Clip } from '../../audio/timelineTypes'
 import { encodeWav } from '../../audio/wavEncoder'
 import { encodeMp3 } from '../../audio/mp3Encoder'
+import { exportForDaw } from '../../utils/dawExport'
 import { timeStretchBuffer } from '../../audio/timeStretchEngine'
 import { TRACK_COLORS } from '../../utils/trackColors'
 import { detectBpm } from '../../audio/bpmDetector'
@@ -19,12 +21,14 @@ import ChannelStrip from '../../components/shared/ChannelStrip.vue'
 import TimelineLane from '../../components/editor/TimelineLane.vue'
 import LibraryPicker from '../../components/editor/LibraryPicker.vue'
 import EditorHelpModal from '../../components/editor/EditorHelpModal.vue'
+import AiPartPanel from '../../components/editor/AiPartPanel.vue'
 import PlayIcon from '../../components/shared/icons/PlayIcon.vue'
 import PauseIcon from '../../components/shared/icons/PauseIcon.vue'
 
 const props = defineProps<{ id: string }>()
 
 const store = useEditorStore()
+const aiParts = useAiPartsStore()
 const engine = useTimelineEngine()
 const router = useRouter()
 const { t } = useI18n()
@@ -32,11 +36,18 @@ const { t } = useI18n()
 const buffers = ref<Map<string, AudioBuffer>>(new Map())
 const loadingAudio = ref(true)
 const pickerOpenForNewLane = ref(false)
-const exportFormat = ref<'wav' | 'mp3'>('wav')
+const exportFormat = ref<'wav' | 'mp3' | 'stems' | 'dawproject'>('wav')
+/** Stem export progress ("3/7"), shown on the export button. */
+const exportProgress = ref('')
+/** Which success note to show after an export. */
+const exportedKind = ref<'mix' | 'daw'>('mix')
 const exporting = ref(false)
 const exportError = ref<string | null>(null)
 const exportedOk = ref(false)
 const showHelpModal = ref(false)
+/** The AI part panel stays mounted once opened, so its jobs keep landing on lanes while it is hidden. */
+const showAiPanel = ref(false)
+const aiPanelMounted = ref(false)
 
 const laneLevels = ref<{ peak: number; clipping: boolean; peakL: number; peakR: number }[]>([])
 const masterLevel = ref<{ peak: number; clipping: boolean; peakL: number; peakR: number }>({ peak: 0, clipping: false, peakL: 0, peakR: 0 })
@@ -143,6 +154,17 @@ function pause(): void {
 function seek(value: number): void {
   store.playheadSec = value
   if (store.playing) void startEngine(value)
+}
+
+/** "Listen" on an AI part variant: play from the start of the range it was generated for. */
+function playFrom(sec: number): void {
+  seek(sec)
+  if (!store.playing) void play()
+}
+
+function toggleAiPanel(): void {
+  aiPanelMounted.value = true
+  showAiPanel.value = !showAiPanel.value
 }
 
 let loopDragMode: 'start' | 'end' | 'move' | null = null
@@ -378,6 +400,11 @@ let skipIdLoad: string | null = null
 async function doSave(): Promise<void> {
   const wasNew = store.projectId == null
   const ok = await store.save()
+  if (ok) {
+    // AI variants thrown away before this save are no longer reachable by undo from a saved state.
+    const used = new Set(store.project.lanes.flatMap((l) => l.clips.map((c) => c.sourceUrl).filter((u): u is string => !!u)))
+    void aiParts.purgeDiscarded(used)
+  }
   // save() returns false when another project was opened meanwhile; the route
   // check covers a navigation that has started but not loaded yet.
   if (ok && wasNew && store.projectId != null && props.id === 'new' && !unmounted) {
@@ -386,34 +413,48 @@ async function doSave(): Promise<void> {
   }
 }
 
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 async function doExport(): Promise<void> {
   exporting.value = true
   exportError.value = null
   exportedOk.value = false
   try {
+    const fmt = exportFormat.value
+    if (fmt === 'stems' || fmt === 'dawproject') {
+      const out = await exportForDaw(fmt, store.project, buffers.value, engine.render, store.projectName,
+        (bpm, files) => t('editor.dawReadme', { name: store.projectName, bpm, files: files.join('\n') }),
+        (done, total) => { exportProgress.value = `${done}/${total}` })
+      downloadBlob(out.blob, out.fileName)
+      exportedKind.value = 'daw'
+      exportedOk.value = true
+      return
+    }
     const rendered = await engine.render(store.project, buffers.value, store.totalDuration)
-    const blob = exportFormat.value === 'wav' ? encodeWav(rendered) : encodeMp3(rendered)
-    
-    // Automatically trigger file download
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${store.projectName || 'mix'}.${exportFormat.value}`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    const blob = fmt === 'wav' ? encodeWav(rendered) : encodeMp3(rendered)
+    downloadBlob(blob, `${store.projectName || 'mix'}.${fmt}`)
 
     await tracksApi.saveTrack(
       { model: 'editor', title: store.projectName, lyrics: '', params: { project_export: true, project_id: store.projectId } },
       blob,
-      exportFormat.value,
+      fmt,
     )
+    exportedKind.value = 'mix'
     exportedOk.value = true
   } catch (e) {
     exportError.value = e instanceof Error ? e.message : String(e)
   } finally {
     exporting.value = false
+    exportProgress.value = ''
   }
 }
 
@@ -877,6 +918,8 @@ onBeforeRouteLeave((_to, _from, next) => {
         <select v-model="exportFormat" class="rounded-lg border border-border bg-panel-2 px-2 py-1 text-xs text-text">
           <option value="wav">WAV</option>
           <option value="mp3">MP3</option>
+          <option value="stems">{{ t('editor.exportStems') }}</option>
+          <option value="dawproject">{{ t('editor.exportDawproject') }}</option>
         </select>
         <button
           type="button"
@@ -884,7 +927,7 @@ onBeforeRouteLeave((_to, _from, next) => {
           :disabled="exporting"
           @click="doExport"
         >
-          {{ exporting ? t('editor.exporting') : t('editor.export') }}
+          {{ exporting ? `${t('editor.exporting')} ${exportProgress}` : t('editor.export') }}
         </button>
       </div>
     </div>
@@ -976,6 +1019,16 @@ onBeforeRouteLeave((_to, _from, next) => {
             </div>
           </div>
 
+          <button
+            type="button"
+            class="rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-95"
+            :class="showAiPanel ? 'border-accent1 bg-accent1/10 text-accent1' : 'border-accent1/50 text-text hover:bg-panel'"
+            :aria-pressed="showAiPanel"
+            :title="t('aiPart.buttonTitle')"
+            @click="toggleAiPanel"
+          >
+            ✦ {{ t('aiPart.button') }}
+          </button>
           <button type="button" class="rounded-lg border border-border/60 px-3 py-1.5 text-xs font-medium text-text hover:bg-panel transition-all duration-200 active:scale-95" @click="onAddLaneClick">
             {{ t('editor.addTrack') }}
           </button>
@@ -1138,10 +1191,17 @@ onBeforeRouteLeave((_to, _from, next) => {
 
       <!-- Panels moved to top -->
       <p v-if="exportError" class="rounded-lg bg-status-failed/10 p-2 text-xs text-status-failed">{{ exportError }}</p>
-      <p v-if="exportedOk" class="rounded-lg bg-panel-2 p-2 text-xs text-text-dim">{{ t('editor.exportedAsNewTrack') }}</p>
+      <p v-if="exportedOk" class="rounded-lg bg-panel-2 p-2 text-xs text-text-dim">{{ exportedKind === 'daw' ? t('editor.exportedForDaw') : t('editor.exportedAsNewTrack') }}</p>
     </template>
 
     <LibraryPicker v-if="pickerOpenForNewLane" @pick="onPickForNewLane" @close="pickerOpenForNewLane = false" />
     <EditorHelpModal :show="showHelpModal" @close="showHelpModal = false" />
+    <AiPartPanel
+      v-if="aiPanelMounted && !store.loading && !loadingAudio"
+      v-show="showAiPanel"
+      :buffers="buffers"
+      @play-from="playFrom"
+      @close="showAiPanel = false"
+    />
   </div>
 </template>

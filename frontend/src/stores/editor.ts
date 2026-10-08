@@ -2,7 +2,7 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import * as projectsApi from '../api/projects'
 import { defaultChannelSettings, defaultMasterSettings } from '../audio/mixerEngine'
 import type { ChannelSettings, MasterSettings } from '../audio/mixerEngine'
-import { projectDuration } from '../audio/timelineTypes'
+import { clipEnd, projectDuration, stretchFactor } from '../audio/timelineTypes'
 import type { Clip, TimelineLane, TimelineProject } from '../audio/timelineTypes'
 import { i18n } from '../i18n'
 
@@ -15,6 +15,15 @@ const HISTORY_LIMIT = 31
 import { TRACK_COLORS } from '../utils/trackColors'
 
 let laneColorIndex = 0
+
+/** A clip that `holdRange` split, so throwing the AI variants away can put the original back. */
+export interface HeldClip {
+  laneId: string
+  original: Clip
+  /** Ids of the pieces the original was split into; the muted inner one is `innerId`. */
+  pieceIds: string[]
+  innerId: string
+}
 
 function newLane(name: string): TimelineLane {
   const colorId = TRACK_COLORS[laneColorIndex % TRACK_COLORS.length].id
@@ -218,6 +227,93 @@ export const useEditorStore = defineStore('editor', {
       this.project.lanes.push(lane)
       this.snapshot()
       return lane
+    },
+    /** Adds several lanes in one undo step (the variants of an AI part). Returns their ids. */
+    insertLanes(specs: { name: string; colorId?: string; muted?: boolean; clips: Clip[] }[]): string[] {
+      const ids: string[] = []
+      for (const spec of specs) {
+        const lane = newLane(spec.name)
+        if (spec.colorId) lane.colorId = spec.colorId
+        lane.settings.muted = !!spec.muted
+        lane.clips.push(...spec.clips)
+        this.project.lanes.push(lane)
+        ids.push(lane.id)
+      }
+      this.snapshot()
+      return ids
+    },
+    /**
+     * Keeps one variant lane (unmuted, optionally renamed) and drops the others, in one undo step.
+     * `held` are the originals a variant plays over (see holdRange): with a kept variant their muted
+     * inner pieces are deleted (the variant replaces them); without one the originals are put back.
+     */
+    resolveVariantLanes(keepId: string | null, dropIds: string[], name?: string, held: HeldClip[] = []) {
+      this.project.lanes = this.project.lanes.filter((l) => !dropIds.includes(l.id))
+      const kept = keepId ? this.project.lanes.find((l) => l.id === keepId) : undefined
+      if (kept) {
+        kept.settings = { ...kept.settings, muted: false }
+        if (name) kept.name = name
+      }
+      for (const h of held) {
+        const lane = this.project.lanes.find((l) => l.id === h.laneId)
+        if (!lane) continue
+        if (kept) {
+          lane.clips = lane.clips.filter((c) => c.id !== h.innerId)
+        } else if (h.pieceIds.every((id) => lane.clips.some((c) => c.id === id))) {
+          // Untouched since the split: restore the original clip exactly.
+          const at = lane.clips.findIndex((c) => c.id === h.pieceIds[0])
+          lane.clips = lane.clips.filter((c) => !h.pieceIds.includes(c.id))
+          lane.clips.splice(Math.min(at, lane.clips.length), 0, h.original)
+        } else {
+          const inner = lane.clips.find((c) => c.id === h.innerId)
+          if (inner) inner.muted = false
+        }
+      }
+      if (this.selectedLaneId && dropIds.includes(this.selectedLaneId)) this.selectedLaneId = null
+      if (this.selectedClipId && held.some((h) => h.innerId === this.selectedClipId)) this.selectedClipId = null
+      this.snapshot()
+    },
+    /**
+     * Silences [start, end) on the given lanes so an AI variant can play there instead: every
+     * audio clip crossing the range is split at its edges and the inner piece is muted (the outer
+     * pieces get `fadeOut` / `fadeIn` at the cut).
+     * No undo step of its own: the caller commits it together with the variant lanes.
+     */
+    holdRange(laneIds: string[], start: number, end: number, fadeOut: number, fadeIn: number): HeldClip[] {
+      const held: HeldClip[] = []
+      const bpm = this.project.bpm
+      for (const lane of this.project.lanes) {
+        if (!laneIds.includes(lane.id)) continue
+        const next: Clip[] = []
+        for (const clip of lane.clips) {
+          const ts = clip.timelineStart
+          const te = clipEnd(clip, bpm)
+          if (clip.type === 'midi' || clip.muted || te <= start || ts >= end) {
+            next.push(clip)
+            continue
+          }
+          const sf = stretchFactor(clip, bpm)
+          const at = (time: number) => clip.trimStart + (time - ts) / sf // timeline -> source seconds
+          const pieces: Clip[] = []
+          if (ts < start) pieces.push({ ...clip, id: crypto.randomUUID(), trimEnd: at(start), fadeOutDuration: fadeOut })
+          const inner: Clip = {
+            ...clip,
+            id: crypto.randomUUID(),
+            timelineStart: Math.max(ts, start),
+            trimStart: at(Math.max(ts, start)),
+            trimEnd: at(Math.min(te, end)),
+            muted: true,
+          }
+          pieces.push(inner)
+          if (te > end) {
+            pieces.push({ ...clip, id: crypto.randomUUID(), timelineStart: end, trimStart: at(end), fadeInDuration: fadeIn })
+          }
+          next.push(...pieces)
+          held.push({ laneId: lane.id, original: { ...clip }, pieceIds: pieces.map((p) => p.id), innerId: inner.id })
+        }
+        lane.clips = next
+      }
+      return held
     },
     /** Live edit; the lane commits one undo step when the name field loses focus. */
     renameLane(laneId: string, name: string) {

@@ -157,6 +157,40 @@ const { onKeydown } = useDialogA11y(dialogEl, () => props.show, () => emit('clos
                   <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
                   <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.snapDesc') }}</p>
                 </li>
+                <li class="flex items-start gap-3">
+                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
+                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.exportDesc') }}</p>
+                </li>
+              </ul>
+            </section>
+
+            <!-- AI arranger -->
+            <section>
+              <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-text">
+                <span class="text-accent2" aria-hidden="true">✦</span>
+                {{ t('editor.help.aiTitle') }}
+              </h3>
+              <ul class="space-y-3">
+                <li class="flex items-start gap-3">
+                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
+                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiOpen') }}</p>
+                </li>
+                <li class="flex items-start gap-3">
+                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
+                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiLego') }}</p>
+                </li>
+                <li class="flex items-start gap-3">
+                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
+                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiOther') }}</p>
+                </li>
+                <li class="flex items-start gap-3">
+                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
+                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiVariants') }}</p>
+                </li>
+                <li class="flex items-start gap-3">
+                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
+                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiTips') }}</p>
+                </li>
               </ul>
             </section>
 
