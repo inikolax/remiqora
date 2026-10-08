@@ -4,7 +4,10 @@ Windows has no SIGTERM, so "graceful" stop means sending CTRL_BREAK_EVENT to
 the process group (requires the child to have been started with
 CREATE_NEW_PROCESS_GROUP) and waiting; if it doesn't exit in time we fall
 back to `taskkill /T /F`, which also reaps children `uv run` / `cmd` spawn
-that CTRL_BREAK alone would miss.
+that CTRL_BREAK alone would miss. The top process can also exit on CTRL_BREAK
+while a child keeps running (uv exits at once; acestep-api's Python shuts
+uvicorn down but can hang with the GPU still allocated), so the whole tree is
+snapshotted before the stop and any survivor is killed afterwards.
 """
 from __future__ import annotations
 
@@ -44,6 +47,56 @@ def tail_log(name: str, lines: int = LOG_TAIL_LINES) -> str:
     except OSError:
         return ""
     return "\n".join(content.splitlines()[-lines:])
+
+
+def _windows_descendants(pid: int) -> list[int]:
+    """PIDs of every live process below `pid`, from one ToolHelp32 snapshot of the parent links."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    k32 = ctypes.windll.kernel32
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = k32.CreateToolhelp32Snapshot(0x00000002, 0)  # TH32CS_SNAPPROCESS
+    if not snap or snap == wintypes.HANDLE(-1).value:
+        return []
+    children: dict[int, list[int]] = {}
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        ok = k32.Process32FirstW(snap, ctypes.byref(entry))
+        while ok:
+            children.setdefault(entry.th32ParentProcessID, []).append(entry.th32ProcessID)
+            ok = k32.Process32NextW(snap, ctypes.byref(entry))
+    finally:
+        k32.CloseHandle(snap)
+    found, todo = [], [pid]
+    while todo:
+        for child in children.get(todo.pop(), []):
+            if child not in found and child != pid:
+                found.append(child)
+                todo.append(child)
+    return found
+
+
+def _windows_alive(pid: int) -> bool:
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        return bool(k32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+    finally:
+        k32.CloseHandle(handle)
 
 
 class ManagedProcess:
@@ -123,6 +176,7 @@ class ManagedProcess:
             self._close_log()
             return
         pid = self._proc.pid
+        tree = _windows_descendants(pid) if IS_WINDOWS else []
         if IS_WINDOWS:
             try:
                 self._proc.send_signal(signal.CTRL_BREAK_EVENT)
@@ -134,7 +188,19 @@ class ManagedProcess:
         if not stopped:
             await self._force_kill(pid)
             await self.wait_stopped(10.0)
+        if tree:
+            await self._reap(tree)
         self._close_log()
+
+    async def _reap(self, pids: list[int]) -> None:
+        """Gives the children the same grace period, then kills whatever of the tree still runs."""
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + self.spec.shutdown_timeout
+        while loop.time() < deadline and any(_windows_alive(p) for p in pids):
+            await asyncio.sleep(0.5)
+        for p in pids:
+            if _windows_alive(p):
+                await self._force_kill(p)
 
     async def _force_kill(self, pid: int) -> None:
         if IS_WINDOWS:
