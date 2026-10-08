@@ -1,239 +1,163 @@
 <script setup lang="ts">
+// The editor's detailed help: quick start, a map of the screen, tracks and clips, tempo and loop, the mixer,
+// a pointer to the shortcut sheet, saving and export, the AI arranger (with a button to its own guide), tips and limits.
+// Same look as AiArrangerGuide.
 import { useI18n } from 'vue-i18n'
-import { ref } from 'vue'
-import { useDialogA11y } from '../../composables/useDialogA11y'
+import HelpModal from '../shared/HelpModal.vue'
+import KeyboardIcon from '../shared/icons/KeyboardIcon.vue'
+import SparklesIcon from '../shared/icons/SparklesIcon.vue'
 
-const props = defineProps<{
-  show: boolean
-}>()
-
+defineProps<{ show: boolean }>()
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'open-guide'): void
+  (e: 'open-hotkeys'): void
 }>()
+const { t, tm } = useI18n()
 
-const { t } = useI18n()
-
-const dialogEl = ref<HTMLElement | null>(null)
-const { onKeydown } = useDialogA11y(dialogEl, () => props.show, () => emit('close'))
+interface Step { title: string; text: string }
+interface Effect { key: string; text: string }
+/** Clip bars for the tracks zone of the screen map: lane colors, rough lengths. */
+const MAP_CLIPS = [
+  { color: '#ec4899', parts: [[4, 38], [48, 30]] },
+  { color: '#f97316', parts: [[10, 80]] },
+  { color: '#3b82f6', parts: [[4, 50], [58, 34]] },
+]
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="fade">
-      <div 
-        v-if="show" 
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm bg-black/40"
-        @click.self="emit('close')"
-      >
-        <div
-          ref="dialogEl"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="editor-help-title"
-          class="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-border/60 bg-panel-2/95 shadow-2xl backdrop-blur-xl"
-          @keydown="onKeydown"
-        >
-          <!-- Header -->
-          <div class="flex items-center justify-between border-b border-border/40 bg-panel/50 px-6 py-4">
-            <h2 id="editor-help-title" class="text-xl font-bold bg-gradient-to-r from-accent1 to-accent2 bg-clip-text text-transparent">
-              {{ t('editor.help.title') }}
-            </h2>
-            <button 
-              type="button"
-              class="flex h-8 w-8 items-center justify-center rounded-full bg-panel hover:bg-border/50 text-text-dim hover:text-text transition-colors"
-              :aria-label="t('common.close')"
-              :title="t('common.close')"
-              @click="emit('close')"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-            </button>
+  <HelpModal :open="show" :title="t('editor.guide.title')" wide @close="emit('close')">
+    <div class="space-y-7">
+      <p class="text-[15px] leading-relaxed text-text">{{ t('editor.guide.lead') }}</p>
+
+      <!-- Quick start: a real sequence, so the steps are numbered -->
+      <section>
+        <h4 class="mb-2.5 text-sm font-semibold text-text">{{ t('editor.guide.startTitle') }}</h4>
+        <ol class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <li v-for="(s, i) in (tm('editor.guide.steps') as Step[])" :key="i" class="flex gap-3 rounded-lg border border-border/60 bg-panel-2/50 p-3">
+            <span class="accent-gradient flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" aria-hidden="true">{{ i + 1 }}</span>
+            <div class="min-w-0">
+              <p class="font-medium text-text">{{ s.title }}</p>
+              <p class="mt-0.5 text-xs leading-relaxed">{{ s.text }}</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <!-- A map of the screen, laid out like the editor itself -->
+      <section>
+        <h4 class="mb-2.5 text-sm font-semibold text-text">{{ t('editor.guide.mapTitle') }}</h4>
+        <div class="grid grid-cols-[minmax(0,1fr)_minmax(7rem,30%)] gap-1.5 text-xs">
+          <div v-for="zone in ['project', 'transport']" :key="zone" class="col-span-2 rounded-md border border-border/60 bg-panel-2/50 px-3 py-2">
+            <span class="font-medium text-text">{{ t(`editor.guide.map.${zone}.title`) }}</span>
+            <span class="ml-2 text-text-dim">{{ t(`editor.guide.map.${zone}.text`) }}</span>
           </div>
-
-          <!-- Content -->
-          <div class="p-6 max-h-[70vh] overflow-y-auto grid gap-8 custom-scrollbar">
-            
-            <!-- Hotkeys -->
-            <section>
-              <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-text">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent1"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x2="6" y1="8" y2="5"></line><line x2="10" y1="8" y2="5"></line><line x2="14" y1="8" y2="5"></line></svg>
-                {{ t('editor.help.hotkeys') }}
-              </h3>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.playPause') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Space</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.split') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">S</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.delete') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Del</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.duplicate') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Ctrl+D</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.undo') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Ctrl+Z</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.redo') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Ctrl+Y</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.save') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Ctrl+S</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.movePlayhead') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">← →</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.startEnd') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Home / End</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.zoom') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">+ / -</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.selectByKeyboard') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Tab</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.moveClip') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">← →</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.trimClipEnd') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Shift+← →</kbd>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.handles') }}</span>
-                  <kbd class="rounded bg-panel-2 px-2 py-1 text-xs font-mono text-accent1 border border-border/50 shadow-sm">Tab, ← →</kbd>
-                </div>
+          <div class="rounded-md border border-border/60 bg-panel-2/50 px-3 py-2">
+            <p class="font-medium text-text">{{ t('editor.guide.map.tracks.title') }}</p>
+            <p class="mt-0.5 text-text-dim">{{ t('editor.guide.map.tracks.text') }}</p>
+            <div class="mt-2 space-y-1" aria-hidden="true">
+              <div v-for="(lane, i) in MAP_CLIPS" :key="i" class="relative h-2.5 rounded-sm bg-panel/60">
+                <span
+                  v-for="(p, j) in lane.parts"
+                  :key="j"
+                  class="absolute inset-y-0 rounded-sm"
+                  :style="{ left: `${p[0]}%`, width: `${p[1]}%`, backgroundColor: lane.color, opacity: 0.75 }"
+                ></span>
               </div>
-            </section>
-
-            <!-- Mouse -->
-            <section>
-              <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-text">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent2"><path d="M12 2a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4Z"></path><path d="M12 6v3"></path></svg>
-                {{ t('editor.help.mouse') }}
-              </h3>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.zoom') }}</span>
-                  <span class="text-xs text-text-dim text-right">Ctrl + Scroll</span>
-                </div>
-                <div class="flex items-center justify-between rounded-lg bg-panel/40 px-4 py-3 border border-border/30">
-                  <span class="text-sm text-text">{{ t('editor.help.pan') }}</span>
-                  <span class="text-xs text-text-dim text-right">Shift+Click / Mid-Click</span>
-                </div>
-              </div>
-            </section>
-
-            <!-- Basics -->
-            <section>
-              <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-text">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-status-done"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
-                {{ t('editor.help.basics') }}
-              </h3>
-              <ul class="space-y-3">
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.addTrackDesc') }}</p>
-                </li>
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.loopDesc') }}</p>
-                </li>
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.snapDesc') }}</p>
-                </li>
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.exportDesc') }}</p>
-                </li>
-              </ul>
-            </section>
-
-            <!-- AI arranger -->
-            <section>
-              <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-text">
-                <span class="text-accent2" aria-hidden="true">✦</span>
-                {{ t('editor.help.aiTitle') }}
-              </h3>
-              <ul class="space-y-3">
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiOpen') }}</p>
-                </li>
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiLego') }}</p>
-                </li>
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiOther') }}</p>
-                </li>
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiVariants') }}</p>
-                </li>
-                <li class="flex items-start gap-3">
-                  <div class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent1"></div>
-                  <p class="text-sm text-text-dim leading-relaxed">{{ t('editor.help.aiTips') }}</p>
-                </li>
-              </ul>
-            </section>
-
+            </div>
+          </div>
+          <div class="row-span-2 rounded-md border border-accent1/40 bg-accent1/[0.06] px-3 py-2">
+            <p class="flex items-center gap-1.5 font-medium text-text"><SparklesIcon class="h-3.5 w-3.5 text-accent1" />{{ t('editor.guide.map.arranger.title') }}</p>
+            <p class="mt-0.5 text-text-dim">{{ t('editor.guide.map.arranger.text') }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 bg-panel-2/50 px-3 py-2">
+            <span class="font-medium text-text">{{ t('editor.guide.map.mixer.title') }}</span>
+            <span class="ml-2 text-text-dim">{{ t('editor.guide.map.mixer.text') }}</span>
           </div>
         </div>
+      </section>
+
+      <!-- Tracks and clips -->
+      <div class="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+        <section>
+          <h4 class="mb-1.5 text-sm font-semibold text-text">{{ t('editor.guide.laneTitle') }}</h4>
+          <ul class="list-disc space-y-1.5 pl-4">
+            <li v-for="x in (tm('editor.guide.lane') as string[])" :key="x">{{ x }}</li>
+          </ul>
+        </section>
+        <section>
+          <h4 class="mb-1.5 text-sm font-semibold text-text">{{ t('editor.guide.clipTitle') }}</h4>
+          <ul class="list-disc space-y-1.5 pl-4">
+            <li v-for="x in (tm('editor.guide.clip') as string[])" :key="x">{{ x }}</li>
+          </ul>
+        </section>
       </div>
-    </Transition>
-  </Teleport>
+
+      <section>
+        <h4 class="mb-1.5 text-sm font-semibold text-text">{{ t('editor.guide.tempoTitle') }}</h4>
+        <ul class="list-disc space-y-1.5 pl-4">
+          <li v-for="x in (tm('editor.guide.tempo') as string[])" :key="x">{{ x }}</li>
+        </ul>
+      </section>
+
+      <!-- Mixer: the eight effects of every channel -->
+      <section>
+        <h4 class="mb-1.5 text-sm font-semibold text-text">{{ t('editor.guide.mixTitle') }}</h4>
+        <p class="mb-2.5">{{ t('editor.guide.mixIntro') }}</p>
+        <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          <div v-for="fx in (tm('editor.guide.effects') as Effect[])" :key="fx.key" class="rounded-md border border-border/60 bg-panel-2/40 px-2.5 py-2">
+            <p class="text-xs font-semibold text-text">{{ t(`channelStrip.modules.${fx.key}`) }}</p>
+            <p class="mt-0.5 text-[11px] leading-snug">{{ fx.text }}</p>
+          </div>
+        </div>
+        <ul class="mt-2.5 list-disc space-y-1.5 pl-4">
+          <li v-for="x in (tm('editor.guide.mixNotes') as string[])" :key="x">{{ x }}</li>
+        </ul>
+      </section>
+
+      <!-- Shortcuts live on their own sheet -->
+      <section class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border/60 bg-panel-2/40 p-3">
+        <KeyboardIcon class="h-5 w-5 shrink-0 text-accent1" />
+        <div class="min-w-[14rem] flex-1">
+          <h4 class="text-sm font-semibold text-text">{{ t('editor.guide.hotkeysTitle') }}</h4>
+          <p class="mt-0.5 text-xs leading-relaxed">{{ t('editor.guide.hotkeysText') }}</p>
+        </div>
+        <button type="button" class="rounded-lg border border-border px-3 py-1.5 text-sm text-text hover:border-accent1/60 hover:bg-accent1/10" @click="emit('open-hotkeys')">
+          {{ t('editor.hotkeys.open') }}
+        </button>
+      </section>
+
+      <!-- Saving and export, and the AI arranger -->
+      <div class="grid gap-x-6 gap-y-5 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <section>
+          <h4 class="mb-1.5 text-sm font-semibold text-text">{{ t('editor.guide.saveTitle') }}</h4>
+          <ul class="list-disc space-y-1.5 pl-4">
+            <li v-for="x in (tm('editor.guide.save') as string[])" :key="x">{{ x }}</li>
+          </ul>
+        </section>
+        <section class="flex flex-col gap-2 self-start rounded-lg border border-accent1/30 bg-accent1/[0.06] p-3">
+          <h4 class="flex items-center gap-1.5 text-sm font-semibold text-text"><SparklesIcon class="h-4 w-4 text-accent1" />{{ t('editor.guide.aiTitle') }}</h4>
+          <p>{{ t('editor.guide.aiText') }}</p>
+          <button type="button" class="self-start rounded-lg border border-accent1/40 px-3 py-1.5 text-sm text-accent1 hover:bg-accent1/10" @click="emit('open-guide')">
+            {{ t('aiPart.guide.open') }}
+          </button>
+        </section>
+      </div>
+
+      <div class="grid gap-3 sm:grid-cols-2">
+        <section class="rounded-lg border border-accent1/25 bg-accent1/[0.06] p-3">
+          <h4 class="mb-1.5 text-sm font-semibold text-text">{{ t('editor.guide.tipsTitle') }}</h4>
+          <ul class="list-disc space-y-1.5 pl-4">
+            <li v-for="x in (tm('editor.guide.tips') as string[])" :key="x">{{ x }}</li>
+          </ul>
+        </section>
+        <section class="rounded-lg border border-status-queued/30 bg-status-queued/[0.05] p-3">
+          <h4 class="mb-1.5 text-sm font-semibold text-text">{{ t('editor.guide.limitsTitle') }}</h4>
+          <ul class="list-disc space-y-1.5 pl-4">
+            <li v-for="x in (tm('editor.guide.limits') as string[])" :key="x">{{ x }}</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </HelpModal>
 </template>
-
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-.fade-enter-active .rounded-2xl,
-.fade-leave-active .rounded-2xl {
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
-}
-
-.fade-enter-from .rounded-2xl,
-.fade-leave-to .rounded-2xl {
-  transform: scale(0.96) translateY(10px);
-  opacity: 0;
-}
-
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 10px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-dim);
-}
-</style>

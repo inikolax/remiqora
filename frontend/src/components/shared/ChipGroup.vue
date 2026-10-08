@@ -9,6 +9,8 @@ const props = defineProps<{
   modelValue: string | number | (string | number)[]
   options: ChipOption[]
   multiple?: boolean
+  /** Smaller chips, for dense panels such as the editor's AI arranger. */
+  small?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string | number | (string | number)[]] }>()
 
@@ -37,8 +39,8 @@ function onClick(value: string | number) {
       :key="opt.value"
       type="button"
       :disabled="opt.disabled"
-      class="rounded-full border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-      :class="isActive(opt.value) ? 'accent-gradient border-transparent text-white' : 'border-border bg-panel-2 text-text hover:border-accent1/60'"
+      class="rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      :class="[small ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm', isActive(opt.value) ? 'accent-gradient border-transparent text-white' : 'border-border bg-panel-2 text-text hover:border-accent1/60']"
       @click="onClick(opt.value)"
     >
       {{ opt.label }}

@@ -1,15 +1,50 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MemoryHolder } from '../../api/system'
 import { useSystemStore } from '../../stores/system'
+import { useOrchestratorStore } from '../../stores/orchestrator'
+import { MODEL_LABELS } from '../../composables/useModelSwitch'
+import ChevronIcon from './icons/ChevronIcon.vue'
 
 // RAM and video memory in use: two small meters in the header, and the details (who holds how much, the card's
 // load and temperature) in a panel on click. A meter turns amber from 80 % and red from 92 %: that is where a
 // render starts to swap or runs out of memory. Same as Remiqora Video's header.
+/** stacked: RAM above video memory, in aligned columns (the header's layout); the numbers only from 1536 px,
+ *  narrower the header needs the room, and they are in the panel a click away. */
+const props = defineProps<{ stacked?: boolean }>()
 const { t } = useI18n()
 const system = useSystemStore()
 const open = ref(false)
+watch(open, (v) => { if (!v) confirming.value = false })
+
+// Unloading: stops the engine that holds the GPU, freeing its video memory; the next generation starts it again.
+// It cuts a running generation short, so the first click only asks.
+const orchestrator = useOrchestratorStore()
+const confirming = ref(false)
+const unloading = ref(false)
+const unloadError = ref('')
+const loaded = computed(() => {
+  const id = orchestrator.activeModel
+  const status = id ? orchestrator.statuses[id]?.status : undefined
+  return id && (status === 'running' || status === 'starting' || status === 'error') ? id : null
+})
+async function unload() {
+  if (!confirming.value) {
+    confirming.value = true
+    return
+  }
+  unloading.value = true
+  unloadError.value = ''
+  try {
+    await orchestrator.stopActive()
+  } catch (err) {
+    unloadError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    unloading.value = false
+    confirming.value = false
+  }
+}
 const root = ref<HTMLElement | null>(null)
 
 const ram = computed(() => system.resources?.ram ?? null)
@@ -62,24 +97,30 @@ onBeforeUnmount(() => {
     <!-- the header: two small meters -->
     <button
       type="button"
-      class="flex items-center gap-3 rounded-md px-2 py-0.5 text-xs text-text-dim hover:bg-panel hover:text-text"
+      class="rounded-lg border px-2.5 py-0.5 text-xs text-text-dim transition-colors hover:border-accent1/50 hover:bg-panel hover:text-text"
+      :class="[
+        props.stacked ? 'grid grid-cols-[auto_3rem_auto] items-center gap-x-2 gap-y-1 py-1.5 2xl:grid-cols-[auto_3rem_auto_auto]' : 'flex items-center gap-3',
+        open ? 'border-accent1/50 bg-panel text-text' : 'border-border bg-panel-2/40',
+      ]"
       :aria-expanded="open"
       :aria-label="t('resources.title')"
       :title="vramTitle || t('resources.title')"
       @click="open = !open"
     >
       <span v-for="m in [ram && { key: 'ram', label: t('resources.ram'), ...ram }, vram && { key: 'vram', label: t('resources.vram'), ...vram }]" :key="m ? m.key : 'none'" class="contents">
-        <span v-if="m" class="flex items-center gap-1.5">
-          <span class="whitespace-nowrap">{{ m.label }}</span>
+        <span v-if="m" :class="props.stacked ? 'contents' : 'flex items-center gap-1.5'">
+          <span class="whitespace-nowrap text-left">{{ m.label }}</span>
           <span class="flex h-1.5 w-12 overflow-hidden rounded-full bg-panel-2" role="progressbar" :aria-valuenow="pct(m.used, m.total)" aria-valuemin="0" aria-valuemax="100" :aria-label="m.label">
             <template v-if="m.key === 'vram' && segments.length">
               <span v-for="g in segments" :key="g.key" class="block h-full transition-[width] duration-500" :style="{ width: g.pct + '%', background: g.color }"></span>
             </template>
             <span v-else class="block h-full transition-[width] duration-500" :class="level(m.used, m.total)" :style="{ width: pct(m.used, m.total) + '%' }"></span>
           </span>
-          <span class="whitespace-nowrap tabular-nums text-text">{{ gb(m.used) }}<span class="text-text-dim">/{{ gb(m.total) }} {{ t('resources.unit') }}</span></span>
+          <span class="whitespace-nowrap text-right tabular-nums text-text" :class="props.stacked && 'hidden 2xl:inline'">{{ gb(m.used) }}<span class="text-text-dim">/{{ gb(m.total) }} {{ t('resources.unit') }}</span></span>
         </span>
       </span>
+      <!-- a button, not a readout: the arrow says a click opens the details -->
+      <ChevronIcon class="h-3.5 w-3.5 shrink-0 transition-transform" :class="[props.stacked && 'row-span-2 row-start-1 [grid-column:-2]', open && 'rotate-180']" />
     </button>
 
     <!-- the details -->
@@ -125,6 +166,32 @@ onBeforeUnmount(() => {
         <p v-if="vram.load != null || vram.temp != null" class="mt-2 text-text-dim">
           <template v-if="vram.load != null">{{ t('resources.load', { n: vram.load }) }}</template><template v-if="vram.load != null && vram.temp != null"> · </template><template v-if="vram.temp != null">{{ vram.temp }}°C</template>
         </p>
+      </div>
+      <!-- the loaded engine, and a way to unload it -->
+      <div class="border-t border-border/60 pt-3">
+        <template v-if="loaded">
+          <div class="flex items-center gap-3">
+            <p class="min-w-0 flex-1 text-text-dim">
+              {{ confirming ? t('resources.unloadConfirm') : t('resources.loaded', { model: MODEL_LABELS[loaded] }) }}
+            </p>
+            <button
+              type="button"
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium transition-colors disabled:opacity-50"
+              :class="confirming ? 'border-status-failed/60 bg-status-failed/15 text-status-failed hover:bg-status-failed/25' : 'border-border text-text hover:border-accent1/50 hover:bg-panel-2'"
+              :disabled="unloading"
+              @click="unload"
+            >
+              <span v-if="unloading" class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true"></span>
+              {{ unloading ? t('resources.unloading') : confirming ? t('resources.unloadYes') : t('resources.unload') }}
+            </button>
+            <button v-if="confirming && !unloading" type="button" class="shrink-0 rounded-lg px-2 py-1.5 text-text-dim hover:text-text" @click="confirming = false">
+              {{ t('common.cancel') }}
+            </button>
+          </div>
+          <p v-if="!confirming" class="mt-1 text-[11px] leading-snug text-text-dim">{{ t('resources.unloadHint') }}</p>
+        </template>
+        <p v-else class="text-text-dim">{{ t('resources.noneLoaded') }}</p>
+        <p v-if="unloadError" class="mt-1 text-status-failed">{{ unloadError }}</p>
       </div>
     </div>
   </div>

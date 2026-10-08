@@ -243,6 +243,30 @@ export const useEditorStore = defineStore('editor', {
       return ids
     },
     /**
+     * Replaces a lane that plays one whole track (`sourceUrl`) with one lane per stem of that track: every clip is
+     * copied onto each stem lane with the same position, trims, fades and warp, and each stem lane takes the
+     * lane's volume, pan and effects. One undo step. Returns the new lane ids ([] if the lane is gone or holds
+     * other sources too).
+     */
+    splitLaneIntoStems(laneId: string, sourceUrl: string, stems: { label: string; url: string; colorId: string }[]): string[] {
+      const idx = this.project.lanes.findIndex((l) => l.id === laneId)
+      const lane = this.project.lanes[idx]
+      if (!lane || !stems.length || lane.clips.some((c) => c.sourceUrl !== sourceUrl)) return []
+      const settings = JSON.stringify(lane.settings)
+      const stemLanes = stems.map((s) => {
+        const stemLane = newLane(`${lane.name}: ${s.label}`)
+        stemLane.colorId = s.colorId
+        stemLane.settings = JSON.parse(settings)
+        stemLane.clips = lane.clips.map((c) => ({ ...c, id: crypto.randomUUID(), sourceUrl: s.url, sourceLabel: `${c.sourceLabel}: ${s.label}` }))
+        return stemLane
+      })
+      this.project.lanes.splice(idx, 1, ...stemLanes)
+      if (this.selectedLaneId === laneId) this.selectedLaneId = stemLanes[0].id
+      this.selectedClipId = null
+      this.snapshot()
+      return stemLanes.map((l) => l.id)
+    },
+    /**
      * Keeps one variant lane (unmuted, optionally renamed) and drops the others, in one undo step.
      * `held` are the originals a variant plays over (see holdRange): with a kept variant their muted
      * inner pieces are deleted (the variant replaces them); without one the originals are put back.

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { decodeStem } from '../../audio/mixerEngine'
 import type { Clip } from '../../audio/timelineTypes'
@@ -15,12 +16,24 @@ import {
   audioBufferToWavFile, correlationWithContext, renderContext,
 } from '../../utils/aiParts'
 import type { AiMode, AiTrack } from '../../utils/aiParts'
+import type { DockSide } from '../../utils/dock'
+import { guessVocalLanguage, VOCAL_LANGUAGES, vocalLanguageLabel } from '../../utils/vocalLanguages'
 import ChipGroup from '../shared/ChipGroup.vue'
+import AddPartIcon from '../shared/icons/AddPartIcon.vue'
+import ContinueIcon from '../shared/icons/ContinueIcon.vue'
+import CoverIcon from '../shared/icons/CoverIcon.vue'
+import RepaintIcon from '../shared/icons/RepaintIcon.vue'
+import SparklesIcon from '../shared/icons/SparklesIcon.vue'
+import HelpIconButton from '../shared/HelpIconButton.vue'
+import HelpModal from '../shared/HelpModal.vue'
 
-const props = defineProps<{ buffers: Map<string, AudioBuffer> }>()
-const emit = defineEmits<{ close: []; 'play-from': [sec: number] }>()
+/** dock: where the editor put the panel; beside the timeline it is a narrow column, so it does not cap its height. */
+const props = defineProps<{ buffers: Map<string, AudioBuffer>; dock?: DockSide }>()
+/** Beside the timeline: the top row is laid out on purpose (title and close, modes 2x2, hint, action). */
+const narrow = computed(() => props.dock === 'right')
+const emit = defineEmits<{ close: []; 'play-from': [sec: number]; guide: [] }>()
 
-const { t } = useI18n()
+const { t, tm } = useI18n()
 const store = useEditorStore()
 const aiStore = useAiPartsStore()
 const aceStore = useAceStepStore()
@@ -59,6 +72,9 @@ const mode = ref<AiMode>('lego')
 const track = ref<AiTrack>('drums')
 const captions = reactive<Record<AiMode, string>>({ lego: '', repaint: '', continue: '', cover: '' })
 const lyrics = ref('')
+/** '' = auto: read from the letters of the lyrics (ACE-Step itself would assume English). */
+const vocalLanguage = ref('')
+const autoLanguage = computed(() => guessVocalLanguage(lyrics.value))
 const scope = ref<'whole' | 'loop'>('whole')
 const lengthSec = ref(60)
 const continueFrom = ref<'end' | 'loop'>('end')
@@ -70,10 +86,30 @@ const models = reactive<Record<AiMode, string>>({ lego: '', repaint: '', continu
 const preparing = ref(false)
 const formError = ref<string | null>(null)
 
-const modeOptions = computed(() => AI_MODES.map((m) => ({ value: m, label: t(`aiPart.modes.${m}`) })))
-const trackOptions = computed(() => AI_TRACKS.map((v) => ({ value: v, label: t(`aiPart.tracks.${v}`) })))
+const MODE_ICONS: Record<AiMode, Component> = { lego: AddPartIcon, repaint: RepaintIcon, continue: ContinueIcon, cover: CoverIcon }
+const modeOptions = computed(() => AI_MODES.map((m) => ({ value: m, label: t(`aiPart.modes.${m}`), icon: MODE_ICONS[m] })))
+const trackOptions = computed(() => AI_TRACKS.map((v) => ({ value: v, label: t(`aiPart.tracks.${v}`), color: laneColor(AI_TRACK_COLOR[v]) })))
+/** A segment of a two-way switch (where the result goes): raised when chosen, quieter than the mode switch. */
+function segmentClass(active: boolean): string {
+  return `rounded-md px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+    active ? 'bg-panel text-text shadow-sm ring-1 ring-border' : 'text-text-dim hover:text-text'
+  }`
+}
 const placeholder = computed(() => (mode.value === 'lego' ? PART_PLACEHOLDERS[track.value] : MODE_PLACEHOLDERS[mode.value]))
+
+// ---- Help on writing the description and the lyrics ----
+const helpOpen = ref<null | 'description' | 'lyrics'>(null)
+/** An example from the help goes into the "Add a part" description, with its instrument picked. */
+function applyExample(ex: { track: AiTrack; text: string }) {
+  mode.value = 'lego'
+  track.value = ex.track
+  captions.lego = ex.text
+  helpOpen.value = null
+}
 const showLyrics = computed(() => (mode.value === 'lego' ? VOCAL_TRACKS.has(track.value) : true))
+/** Outside lego the lyrics are optional, so the field waits behind a button until it is needed. */
+const lyricsOpen = ref(false)
+const lyricsVisible = computed(() => showLyrics.value && (mode.value === 'lego' || lyricsOpen.value || !!lyrics.value.trim()))
 
 // ---- ACE-Step state ----
 const aceStatus = computed(() => orchestrator.statuses.ace_step?.status ?? 'stopped')
@@ -219,6 +255,7 @@ async function generate() {
         track: track.value,
         caption: captions[m].trim() || placeholder.value,
         lyrics: showLyrics.value ? lyrics.value.trim() : '',
+        vocalLanguage: showLyrics.value && lyrics.value.trim() ? vocalLanguage.value || autoLanguage.value : '',
         laneIds: [...listenIds.value],
         ...sp,
         model: models[m],
@@ -354,197 +391,375 @@ function statusText(job: AiPartJob): string {
 </script>
 
 <template>
-  <aside
-    class="fixed right-0 top-0 bottom-0 z-40 flex w-[420px] max-w-full flex-col gap-4 overflow-y-auto border-l border-border bg-panel p-4 shadow-2xl"
+  <section
+    class="flex flex-col gap-2.5 rounded-xl border border-border/60 bg-panel/70 p-3 shadow-sm backdrop-blur-md"
+    :class="props.dock === 'right' ? 'shrink-0' : 'lg:max-h-[48svh] lg:min-h-[8rem] lg:overflow-y-auto'"
     :aria-label="t('aiPart.title')"
   >
-    <div class="flex items-center justify-between gap-2">
-      <h2 class="text-base font-semibold text-text">✦ {{ t('aiPart.title') }}</h2>
-      <button type="button" class="rounded-lg border border-border px-2 py-1 text-xs text-text-dim hover:bg-panel-2" :aria-label="t('aiPart.close')" @click="emit('close')">✕</button>
+    <!-- A horizontal panel above the timeline: the mode in the top row, the form in columns, the jobs as a strip of
+         cards. The comment sits inside <section>: at the template root it would make the component a fragment and
+         break v-show. -->
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div class="flex items-center gap-1">
+        <!-- the editor's grip for moving the panel (DockHandle) -->
+        <slot name="handle" />
+        <h2 class="flex items-center gap-1.5 text-sm font-semibold text-text"><SparklesIcon class="h-4 w-4 shrink-0 text-accent1" />{{ t('aiPart.title') }}</h2>
+        <HelpIconButton class="ml-0.5" :title="t('aiPart.guide.open')" :aria-label="t('aiPart.guide.open')" @click="emit('guide')" />
+      </div>
+      <div
+        class="rounded-lg border border-border bg-panel-2 p-0.5"
+        :class="narrow ? 'order-2 flex w-full' : 'inline-flex flex-wrap'"
+        role="group"
+        :aria-label="t('aiPart.modeLabel')"
+      >
+        <button
+          v-for="o in modeOptions"
+          :key="o.value"
+          type="button"
+          class="flex items-center justify-center gap-1.5 rounded-md py-1 transition-colors"
+          :class="[
+            narrow ? 'flex-auto whitespace-nowrap px-2 text-xs' : 'px-3 text-sm',
+            mode === o.value ? 'accent-gradient text-white shadow-sm' : 'text-text-dim hover:text-text',
+          ]"
+          :aria-pressed="mode === o.value"
+          @click="mode = o.value"
+        >
+          <!-- no icons in the narrow column: the four labels only just fit there -->
+          <component :is="o.icon" v-if="!narrow" class="h-3.5 w-3.5 shrink-0" />
+          {{ o.label }}
+        </button>
+      </div>
+      <p class="min-w-[12rem] flex-1 text-xs text-text-dim" :class="narrow && 'order-3 basis-full'">{{ t(`aiPart.modeHints.${mode}`) }}</p>
+      <!-- the action stays in view however small the panel gets -->
+      <div class="flex items-center gap-2" :class="narrow && 'order-4'">
+        <span class="text-[13px] font-medium text-text">{{ t('aiPart.variants') }}</span>
+        <ChipGroup v-model="count" small :options="[{ value: 2, label: '2' }, { value: 3, label: '3' }, { value: 4, label: '4' }]" />
+      </div>
+      <button
+        type="button"
+        class="accent-gradient flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium text-white shadow-md shadow-accent1/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+        :class="narrow && 'order-5'"
+        :disabled="!canGenerate"
+        @click="generate"
+      >
+        <SparklesIcon class="h-4 w-4 shrink-0" />
+        {{ preparing ? t('aiPart.preparing') : t(`aiPart.generateBtn.${mode}`) }}
+      </button>
+      <button
+        type="button"
+        class="rounded-lg border border-border px-2 py-1 text-xs text-text-dim hover:bg-panel-2"
+        :class="narrow && 'order-1 ml-auto'"
+        :aria-label="t('aiPart.close')"
+        @click="emit('close')"
+      >✕</button>
     </div>
+    <p v-if="aceRunning && models[mode] && !selectedModelLoaded" class="-mt-1 text-right text-[11px] text-text-dim">{{ t('aiPart.firstLoadNote') }}</p>
+    <p v-if="formError" class="rounded-lg bg-status-failed/10 p-2 text-xs text-status-failed">{{ formError }}</p>
 
     <!-- ACE-Step must be running -->
-    <div v-if="!aceRunning" class="rounded-lg border border-border bg-panel-2 p-3 text-sm">
+    <div v-if="!aceRunning" class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-panel-2 p-3 text-sm">
       <p v-if="aceStatus === 'starting'" class="flex items-center gap-2 text-text-dim">
         <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent1 border-t-transparent"></span>
         {{ t('aiPart.aceStarting') }}
       </p>
       <template v-else>
-        <p class="mb-2 text-text-dim">{{ t('aiPart.aceOffline') }}</p>
+        <p class="text-text-dim">{{ t('aiPart.aceOffline') }}</p>
         <button type="button" class="accent-gradient rounded-lg px-3 py-1.5 text-xs font-medium text-white" :disabled="orchestrator.switching" @click="startAce">{{ t('aiPart.startAce') }}</button>
       </template>
-    </div>
-
-    <!-- Mode -->
-    <div class="flex flex-col gap-1.5">
-      <ChipGroup v-model="mode" :options="modeOptions" />
-      <p class="text-xs text-text-dim">{{ t(`aiPart.modeHints.${mode}`) }}</p>
     </div>
     <p v-if="aceRunning && missingLegoModel" class="rounded-lg bg-status-failed/10 p-3 text-xs text-status-failed">
       {{ t('aiPart.noModel', { cmd: DOWNLOAD_CMD }) }}
     </p>
 
-    <!-- Instrument (lego) -->
-    <div v-if="mode === 'lego'" class="flex flex-col gap-1.5">
-      <span class="text-[13px] font-medium text-text">{{ t('aiPart.instrument') }}</span>
-      <ChipGroup v-model="track" :options="trackOptions" />
-    </div>
-
-    <!-- Description -->
-    <label class="flex flex-col gap-1.5">
-      <span class="text-[13px] font-medium text-text">{{ t(`aiPart.descriptionLabel.${mode}`) }}</span>
-      <textarea v-model="captions[mode]" rows="2" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="placeholder"></textarea>
-      <span class="text-[11px] text-text-dim">{{ t('aiPart.descriptionHint') }}</span>
-    </label>
-    <label v-if="showLyrics" class="flex flex-col gap-1.5">
-      <span class="text-[13px] font-medium text-text">{{ mode === 'lego' ? t('aiPart.lyrics') : t('aiPart.lyricsOptional') }}</span>
-      <textarea v-model="lyrics" :rows="mode === 'lego' ? 4 : 2" class="w-full rounded-lg border border-border bg-panel-2 p-2 font-mono text-sm text-text"></textarea>
-    </label>
-
-    <!-- Source lanes -->
-    <fieldset class="flex flex-col gap-1.5">
-      <legend class="mb-1.5 text-[13px] font-medium text-text">{{ t(`aiPart.sourceLabel.${mode}`) }}</legend>
-      <p v-if="candidateLanes.length === 0" class="text-xs text-text-dim">{{ mode === 'lego' ? t('aiPart.noLanes') : t('aiPart.nothingToUse') }}</p>
-      <label v-for="lane in candidateLanes" :key="lane.id" class="flex items-center gap-2 text-sm text-text">
-        <input v-model="listenIds" type="checkbox" :value="lane.id" class="rounded border-border" />
-        <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: laneColor(lane.colorId) }"></span>
-        <span class="truncate">{{ lane.name }}</span>
-      </label>
-      <p v-if="candidateLanes.length" class="text-[11px] text-text-dim">{{ t(`aiPart.sourceHint.${mode}`) }}</p>
-    </fieldset>
-
-    <!-- Where -->
-    <fieldset class="flex flex-col gap-1.5">
-      <legend class="mb-1.5 text-[13px] font-medium text-text">{{ t('aiPart.where') }}</legend>
-      <template v-if="mode === 'lego' || mode === 'cover'">
-        <label class="flex items-center gap-2 text-sm text-text">
-          <input v-model="scope" type="radio" value="whole" />
-          {{ t('aiPart.whole', { range: `0:00–${fmt(projectEmpty && mode === 'lego' ? lengthSec : store.totalDuration)}` }) }}
-        </label>
-        <label class="flex items-center gap-2 text-sm" :class="loop ? 'text-text' : 'text-text-dim'">
-          <input v-model="scope" type="radio" value="loop" :disabled="!loop" />
-          <span v-if="loop">{{ t('aiPart.selection', { range: `${fmt(loop.start)}–${fmt(loop.end)}` }) }}</span>
-          <span v-else>{{ t('aiPart.selectionOff') }}</span>
-        </label>
-        <label v-if="mode === 'lego' && projectEmpty && scope === 'whole'" class="flex items-center gap-2 text-xs text-text-dim">
-          {{ t('aiPart.length') }}
-          <input v-model.number="lengthSec" type="number" min="5" :max="MAX_CONTEXT_SEC" class="w-20 rounded border border-border bg-panel-2 px-1.5 py-0.5 text-text" />
-        </label>
-      </template>
-      <template v-else-if="mode === 'repaint'">
-        <p class="text-sm" :class="loop ? 'text-text' : 'text-text-dim'">
-          {{ loop ? t('aiPart.selection', { range: `${fmt(loop.start)}–${fmt(loop.end)}` }) : t('aiPart.selectionOff') }}
-        </p>
-      </template>
-      <template v-else>
-        <label class="flex items-center gap-2 text-sm text-text">
-          <input v-model="continueFrom" type="radio" value="end" />
-          {{ t('aiPart.fromEnd', { t: fmt(store.totalDuration) }) }}
-        </label>
-        <label class="flex items-center gap-2 text-sm" :class="loop ? 'text-text' : 'text-text-dim'">
-          <input v-model="continueFrom" type="radio" value="loop" :disabled="!loop" />
-          <span v-if="loop">{{ t('aiPart.fromLoop', { t: fmt(loop.end) }) }}</span>
-          <span v-else>{{ t('aiPart.selectionOff') }}</span>
-        </label>
-        <label class="flex items-center gap-2 text-xs text-text-dim">
-          {{ t('aiPart.continueBars') }}
-          <input v-model.number="continueBars" type="number" min="1" max="128" class="w-16 rounded border border-border bg-panel-2 px-1.5 py-0.5 text-text" />
-          {{ t('aiPart.continueLength', { sec: Math.round(continueBars * barSec) }) }}
-        </label>
-      </template>
-      <p v-if="spanError" class="text-xs text-status-failed">{{ spanError }}</p>
-    </fieldset>
-
-    <!-- Cover closeness -->
-    <label v-if="mode === 'cover'" class="flex flex-col gap-1.5">
-      <span class="text-[13px] font-medium text-text">{{ t('aiPart.closeness', { v: coverStrength.toFixed(2) }) }}</span>
-      <input v-model.number="coverStrength" type="range" min="0" max="1" step="0.05" class="w-full accent-accent1" />
-      <span class="text-[11px] text-text-dim">{{ t('aiPart.closenessHint') }}</span>
-    </label>
-
-    <!-- Key / model / variants -->
-    <div class="grid grid-cols-2 gap-3">
-      <label class="flex flex-col gap-1.5">
-        <span class="text-[13px] font-medium text-text">{{ t('aiPart.key') }}</span>
-        <select v-model="keyScale" class="rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
-          <option value="">{{ t('aiPart.keyAuto') }}</option>
-          <option v-for="k in KEY_SCALES" :key="k" :value="k">{{ k }}</option>
-        </select>
-      </label>
-      <label class="flex flex-col gap-1.5">
-        <span class="text-[13px] font-medium text-text">{{ t('aiPart.model') }}</span>
-        <select v-model="models[mode]" class="rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :disabled="modeModels.length === 0">
-          <option v-for="m in modeModels" :key="m.name" :value="m.name">{{ m.name.replace('acestep-v15-', '') }}</option>
-        </select>
-      </label>
-    </div>
-    <p class="text-xs text-text-dim">{{ t('aiPart.tempo', { bpm: store.project.bpm || 120 }) }}</p>
-    <div class="flex flex-col gap-1.5">
-      <span class="text-[13px] font-medium text-text">{{ t('aiPart.variants') }}</span>
-      <ChipGroup v-model="count" :options="[{ value: 2, label: '2' }, { value: 3, label: '3' }, { value: 4, label: '4' }]" />
-    </div>
-
-    <button
-      type="button"
-      class="accent-gradient rounded-lg px-4 py-2 text-sm font-medium text-white shadow-md shadow-accent1/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
-      :disabled="!canGenerate"
-      @click="generate"
-    >
-      {{ preparing ? t('aiPart.preparing') : t(`aiPart.generateBtn.${mode}`) }}
-    </button>
-    <p v-if="aceRunning && models[mode] && !selectedModelLoaded" class="-mt-2 text-[11px] text-text-dim">{{ t('aiPart.firstLoadNote') }}</p>
-    <p v-if="formError" class="rounded-lg bg-status-failed/10 p-2 text-xs text-status-failed">{{ formError }}</p>
-
-    <!-- Jobs -->
-    <div v-for="job in jobs" :key="job.id" class="flex flex-col gap-2 rounded-lg border border-border bg-panel-2 p-3">
-      <div class="flex items-start justify-between gap-2">
-        <div class="min-w-0">
-          <p class="flex items-center gap-1.5 text-sm font-medium text-text">
-            <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: laneColor(job.request.mode === 'lego' ? AI_TRACK_COLOR[job.request.track] : 'pink') }"></span>
-            {{ jobLabel(job.request) }}
-            <span class="text-xs font-normal text-text-dim">{{ fmt(job.request.regionStart) }}–{{ fmt(job.request.regionEnd) }}</span>
-          </p>
-          <p class="truncate text-xs text-text-dim" :title="job.request.caption">{{ job.request.caption }}</p>
+    <!-- The form reads left to right: what to make, how to describe it, what the model hears and where it goes.
+         Columns wrap on a narrow window. -->
+    <div class="flex flex-wrap items-start gap-x-6 gap-y-3">
+      <!-- Instrument (lego): each chip carries the color its new lane will get -->
+      <div v-if="mode === 'lego'" class="flex min-w-[15rem] flex-[1.2] flex-col gap-1">
+        <span id="ai-part-instrument" class="text-[13px] font-medium text-text" :title="t('aiPart.instrumentHint')">{{ t('aiPart.instrument') }}</span>
+        <div class="flex flex-wrap gap-1.5" role="group" aria-labelledby="ai-part-instrument">
+          <button
+            v-for="o in trackOptions"
+            :key="o.value"
+            type="button"
+            class="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
+            :class="track === o.value ? 'text-text' : 'border-border bg-panel-2 text-text-dim hover:text-text'"
+            :style="track === o.value ? { borderColor: o.color, backgroundColor: `${o.color}2e` } : undefined"
+            :aria-pressed="track === o.value"
+            @click="track = o.value"
+          >
+            <span class="h-2 w-2 shrink-0 rounded-full" :style="{ backgroundColor: o.color }" aria-hidden="true"></span>
+            {{ o.label }}
+          </button>
         </div>
-        <span class="shrink-0 text-xs" :class="job.status === 'failed' ? 'text-status-failed' : 'text-text-dim'">{{ statusText(job) }}</span>
       </div>
-      <div v-if="job.status === 'queued' || job.status === 'running'" class="h-1.5 overflow-hidden rounded-full bg-panel">
-        <div class="h-full bg-gradient-to-r from-accent1 to-accent2 transition-all" :style="{ width: Math.max(4, job.progress) + '%' }"></div>
-      </div>
-      <p v-if="job.error" class="text-xs text-status-failed">{{ job.error }}</p>
 
-      <template v-if="job.inserted && job.kept == null && job.session === store.session">
-        <div v-for="(v, i) in job.variants" :key="i" class="flex items-center gap-2 text-xs">
-          <span class="w-14 shrink-0 text-text">{{ t('aiPart.variantShort', { n: i + 1 }) }}</span>
-          <span
-            v-if="(v.copyScore ?? 0) >= COPY_THRESHOLD"
-            class="rounded bg-status-failed/15 px-1.5 py-0.5 text-[11px] text-status-failed"
-            :title="t('aiPart.copyWarningTitle')"
-          >{{ t('aiPart.copyWarning') }}</span>
-          <div class="ml-auto flex gap-1.5">
-            <button
-              type="button"
-              class="rounded border px-2 py-1"
-              :class="isAudible(job, i) ? 'border-accent1 text-accent1' : 'border-border text-text hover:bg-panel'"
-              :aria-pressed="isAudible(job, i)"
-              :disabled="!v.laneId"
-              @click="listen(job, i)"
-            >▶ {{ t('aiPart.listenVariant') }}</button>
-            <button type="button" class="rounded border border-border px-2 py-1 text-text hover:bg-panel" :disabled="!v.laneId" @click="keep(job, i)">{{ t('aiPart.keep') }}</button>
+      <!-- Description and lyrics (not wrapping <label>s: they would label the help button, the first control inside) -->
+      <div class="flex min-w-[16rem] flex-[1.4] flex-col gap-2.5">
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-1.5">
+            <label for="ai-part-description" class="text-[13px] font-medium text-text">{{ t(`aiPart.descriptionLabel.${mode}`) }}</label>
+            <HelpIconButton @click="helpOpen = 'description'" />
           </div>
+          <textarea id="ai-part-description" v-model="captions[mode]" rows="2" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="placeholder"></textarea>
+          <span class="text-[11px] text-text-dim">{{ t('aiPart.descriptionHint') }}</span>
         </div>
-        <button type="button" class="self-start text-xs text-text-dim hover:underline" @click="discardAll(job)">{{ job.held.length ? t('aiPart.discardRestore') : t('aiPart.discardAll') }}</button>
-      </template>
-      <div v-else-if="job.kept != null || job.status === 'failed' || job.status === 'cancelled'" class="flex items-center justify-between gap-2 text-xs text-text-dim">
-        <span v-if="job.kept != null">{{ t('aiPart.keptNote', { n: job.kept + 1 }) }}</span>
-        <button type="button" class="ml-auto hover:underline" @click="aiStore.removeJob(job.id)">{{ t('aiPart.dismiss') }}</button>
+        <button v-if="showLyrics && !lyricsVisible" type="button" class="self-start text-xs text-accent1 hover:underline" @click="lyricsOpen = true">
+          + {{ t('aiPart.addLyrics') }}
+        </button>
+        <div v-if="lyricsVisible" class="flex flex-col gap-1">
+          <div class="flex items-center gap-1.5">
+            <label for="ai-part-lyrics" class="text-[13px] font-medium text-text">{{ mode === 'lego' ? t('aiPart.lyrics') : t('aiPart.lyricsOptional') }}</label>
+            <HelpIconButton @click="helpOpen = 'lyrics'" />
+          </div>
+          <textarea id="ai-part-lyrics" v-model="lyrics" :rows="mode === 'lego' ? 3 : 2" class="w-full rounded-lg border border-border bg-panel-2 p-2 font-mono text-sm text-text" :placeholder="t('aceGen.lyricsPlaceholder')"></textarea>
+          <label class="flex items-center gap-2 text-xs text-text-dim">
+            <span class="shrink-0">{{ t('aiPart.vocalLanguage') }}</span>
+            <select v-model="vocalLanguage" class="min-w-0 flex-1 rounded-lg border border-border bg-panel-2 px-2 py-1 text-xs text-text">
+              <option value="">{{ t('aiPart.vocalLanguageAuto', { lang: vocalLanguageLabel(autoLanguage) }) }}</option>
+              <option v-for="l in VOCAL_LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
+            </select>
+          </label>
+        </div>
       </div>
-      <button
-        v-if="job.status === 'queued' || job.status === 'running'"
-        type="button"
-        class="self-start rounded border border-border px-2 py-1 text-xs text-text hover:bg-panel"
-        @click="aiStore.cancel(job.id)"
-      >{{ t('aiPart.cancel') }}</button>
+
+      <!-- What the model hears -->
+      <div class="flex min-w-[13rem] flex-1 flex-col gap-1">
+        <span id="ai-part-sources" class="text-[13px] font-medium text-text">{{ t(`aiPart.sourceLabel.${mode}`) }}</span>
+        <p v-if="candidateLanes.length === 0" class="text-xs text-text-dim">{{ mode === 'lego' ? t('aiPart.noLanes') : t('aiPart.nothingToUse') }}</p>
+        <!-- lanes as toggles in their own colors: a filled dot is heard, a hollow one is not -->
+        <div v-else class="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto" role="group" aria-labelledby="ai-part-sources">
+          <label
+            v-for="lane in candidateLanes"
+            :key="lane.id"
+            class="flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent1"
+            :class="listenIds.includes(lane.id) ? 'border-text-dim/50 bg-panel-2 text-text' : 'border-border/60 text-text-dim hover:text-text'"
+          >
+            <input v-model="listenIds" type="checkbox" :value="lane.id" class="sr-only" />
+            <span
+              class="h-2 w-2 shrink-0 rounded-full border"
+              :style="{ borderColor: laneColor(lane.colorId), backgroundColor: listenIds.includes(lane.id) ? laneColor(lane.colorId) : 'transparent' }"
+              aria-hidden="true"
+            ></span>
+            <span class="max-w-[10rem] truncate">{{ lane.name }}</span>
+          </label>
+        </div>
+        <p v-if="candidateLanes.length" class="text-[11px] text-text-dim">{{ t(`aiPart.sourceHint.${mode}`) }}</p>
+      </div>
+
+      <!-- Where the result goes, key and model -->
+      <div class="flex min-w-[15rem] flex-1 flex-col gap-2.5">
+        <div class="flex flex-col gap-1">
+          <span id="ai-part-where" class="text-[13px] font-medium text-text">{{ t('aiPart.where') }}</span>
+          <template v-if="mode === 'lego' || mode === 'cover'">
+            <div class="inline-flex flex-wrap self-start rounded-lg border border-border bg-panel-2 p-0.5" role="group" aria-labelledby="ai-part-where">
+              <button type="button" :class="segmentClass(scope === 'whole')" :aria-pressed="scope === 'whole'" @click="scope = 'whole'">
+                {{ t('aiPart.whole', { range: `0:00–${fmt(projectEmpty && mode === 'lego' ? lengthSec : store.totalDuration)}` }) }}
+              </button>
+              <button type="button" :class="segmentClass(scope === 'loop')" :aria-pressed="scope === 'loop'" :disabled="!loop" @click="scope = 'loop'">
+                {{ loop ? t('aiPart.selection', { range: `${fmt(loop.start)}–${fmt(loop.end)}` }) : t('aiPart.loopOff') }}
+              </button>
+            </div>
+            <p v-if="!loop" class="text-[11px] text-text-dim">{{ t('aiPart.selectionOff') }}</p>
+            <label v-if="mode === 'lego' && projectEmpty && scope === 'whole'" class="flex items-center gap-2 text-xs text-text-dim">
+              {{ t('aiPart.length') }}
+              <input v-model.number="lengthSec" type="number" min="5" :max="MAX_CONTEXT_SEC" class="w-20 rounded border border-border bg-panel-2 px-1.5 py-0.5 text-text" />
+            </label>
+          </template>
+          <p v-else-if="mode === 'repaint'" class="text-sm" :class="loop ? 'text-text' : 'text-text-dim'">
+            {{ loop ? t('aiPart.selection', { range: `${fmt(loop.start)}–${fmt(loop.end)}` }) : t('aiPart.selectionOff') }}
+          </p>
+          <template v-else>
+            <div class="inline-flex flex-wrap self-start rounded-lg border border-border bg-panel-2 p-0.5" role="group" aria-labelledby="ai-part-where">
+              <button type="button" :class="segmentClass(continueFrom === 'end')" :aria-pressed="continueFrom === 'end'" @click="continueFrom = 'end'">
+                {{ t('aiPart.fromEnd', { t: fmt(store.totalDuration) }) }}
+              </button>
+              <button type="button" :class="segmentClass(continueFrom === 'loop')" :aria-pressed="continueFrom === 'loop'" :disabled="!loop" @click="continueFrom = 'loop'">
+                {{ loop ? t('aiPart.fromLoop', { t: fmt(loop.end) }) : t('aiPart.loopOff') }}
+              </button>
+            </div>
+            <label class="flex items-center gap-2 text-xs text-text-dim">
+              {{ t('aiPart.continueBars') }}
+              <input v-model.number="continueBars" type="number" min="1" max="128" class="w-16 rounded border border-border bg-panel-2 px-1.5 py-0.5 text-text" />
+              {{ t('aiPart.continueLength', { sec: Math.round(continueBars * barSec) }) }}
+            </label>
+          </template>
+          <p v-if="spanError" class="text-xs text-status-failed">{{ spanError }}</p>
+        </div>
+
+        <!-- Cover closeness -->
+        <label v-if="mode === 'cover'" class="flex max-w-md flex-col gap-1.5">
+          <span class="text-[13px] font-medium text-text">{{ t('aiPart.closeness', { v: coverStrength.toFixed(2) }) }}</span>
+          <input v-model.number="coverStrength" type="range" min="0" max="1" step="0.05" class="w-full accent-accent1" />
+          <span class="text-[11px] text-text-dim">{{ t('aiPart.closenessHint') }}</span>
+        </label>
+
+        <!-- Key and model in one row, the tempo after them -->
+        <div class="flex flex-wrap items-end gap-x-3 gap-y-2">
+          <label class="flex flex-col gap-1">
+            <span class="text-[13px] font-medium text-text">{{ t('aiPart.key') }}</span>
+            <select v-model="keyScale" class="rounded-lg border border-border bg-panel-2 px-2 py-1.5 text-sm text-text">
+              <option value="">{{ t('aiPart.keyAuto') }}</option>
+              <option v-for="k in KEY_SCALES" :key="k" :value="k">{{ k }}</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-[13px] font-medium text-text">{{ t('aiPart.model') }}</span>
+            <select v-model="models[mode]" class="rounded-lg border border-border bg-panel-2 px-2 py-1.5 text-sm text-text" :disabled="modeModels.length === 0">
+              <option v-for="m in modeModels" :key="m.name" :value="m.name">{{ m.name.replace('acestep-v15-', '') }}</option>
+            </select>
+          </label>
+          <span class="pb-2 text-xs text-text-dim">{{ t('aiPart.tempo', { bpm: store.project.bpm || 120 }) }}</span>
+        </div>
+      </div>
     </div>
-  </aside>
+
+    <!-- Jobs, newest first, as a strip of cards -->
+    <div v-if="jobs.length" class="flex gap-3 overflow-x-auto pb-1">
+      <div v-for="job in jobs" :key="job.id" class="flex w-80 shrink-0 flex-col gap-2 rounded-lg border border-border bg-panel-2 p-3">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <p class="flex items-center gap-1.5 text-sm font-medium text-text">
+              <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: laneColor(job.request.mode === 'lego' ? AI_TRACK_COLOR[job.request.track] : 'pink') }"></span>
+              {{ jobLabel(job.request) }}
+              <span class="text-xs font-normal text-text-dim">{{ fmt(job.request.regionStart) }}–{{ fmt(job.request.regionEnd) }}</span>
+            </p>
+            <p class="truncate text-xs text-text-dim" :title="job.request.caption">{{ job.request.caption }}</p>
+          </div>
+          <span class="shrink-0 text-xs" :class="job.status === 'failed' ? 'text-status-failed' : 'text-text-dim'">{{ statusText(job) }}</span>
+        </div>
+        <div v-if="job.status === 'queued' || job.status === 'running'" class="h-1.5 overflow-hidden rounded-full bg-panel">
+          <div class="h-full bg-gradient-to-r from-accent1 to-accent2 transition-all" :style="{ width: Math.max(4, job.progress) + '%' }"></div>
+        </div>
+        <p v-if="job.error" class="text-xs text-status-failed">{{ job.error }}</p>
+
+        <template v-if="job.inserted && job.kept == null && job.session === store.session">
+          <div v-for="(v, i) in job.variants" :key="i" class="flex items-center gap-2 text-xs">
+            <span class="w-14 shrink-0 text-text">{{ t('aiPart.variantShort', { n: i + 1 }) }}</span>
+            <span
+              v-if="(v.copyScore ?? 0) >= COPY_THRESHOLD"
+              class="rounded bg-status-failed/15 px-1.5 py-0.5 text-[11px] text-status-failed"
+              :title="t('aiPart.copyWarningTitle')"
+            >{{ t('aiPart.copyWarning') }}</span>
+            <div class="ml-auto flex gap-1.5">
+              <button
+                type="button"
+                class="rounded border px-2 py-1"
+                :class="isAudible(job, i) ? 'border-accent1 text-accent1' : 'border-border text-text hover:bg-panel'"
+                :aria-pressed="isAudible(job, i)"
+                :disabled="!v.laneId"
+                @click="listen(job, i)"
+              >▶ {{ t('aiPart.listenVariant') }}</button>
+              <button type="button" class="rounded border border-border px-2 py-1 text-text hover:bg-panel" :disabled="!v.laneId" @click="keep(job, i)">{{ t('aiPart.keep') }}</button>
+            </div>
+          </div>
+          <button type="button" class="self-start text-xs text-text-dim hover:underline" @click="discardAll(job)">{{ job.held.length ? t('aiPart.discardRestore') : t('aiPart.discardAll') }}</button>
+        </template>
+        <div v-else-if="job.kept != null || job.status === 'failed' || job.status === 'cancelled'" class="flex items-center justify-between gap-2 text-xs text-text-dim">
+          <span v-if="job.kept != null">{{ t('aiPart.keptNote', { n: job.kept + 1 }) }}</span>
+          <button type="button" class="ml-auto hover:underline" @click="aiStore.removeJob(job.id)">{{ t('aiPart.dismiss') }}</button>
+        </div>
+        <button
+          v-if="job.status === 'queued' || job.status === 'running'"
+          type="button"
+          class="self-start rounded border border-border px-2 py-1 text-xs text-text hover:bg-panel"
+          @click="aiStore.cancel(job.id)"
+        >{{ t('aiPart.cancel') }}</button>
+      </div>
+    </div>
+
+    <HelpModal :open="helpOpen === 'description'" :title="t('aiPart.help.title')" @close="helpOpen = null">
+      <p>{{ t('aiPart.help.intro') }}</p>
+      <table class="w-full border-collapse text-xs">
+        <thead>
+          <tr class="border-b border-border text-left text-text">
+            <th class="py-1 pl-1 pr-2">{{ t('aiPart.help.modeHeader') }}</th>
+            <th class="py-1 pr-2">{{ t('aiPart.help.whatHeader') }}</th>
+            <th class="py-1">{{ t('aiPart.help.exampleHeader') }}</th>
+          </tr>
+        </thead>
+        <tbody class="align-top">
+          <!-- the mode the panel is in is highlighted -->
+          <tr
+            v-for="row in (tm('aiPart.help.modes') as { mode: AiMode; what: string; example: string }[])"
+            :key="row.mode"
+            class="border-b border-border/60"
+            :class="row.mode === mode ? 'bg-accent1/10' : ''"
+          >
+            <td class="whitespace-nowrap py-1.5 pl-1 pr-2 font-medium text-text">{{ t(`aiPart.modes.${row.mode}`) }}</td>
+            <td class="py-1.5 pr-2">{{ row.what }}</td>
+            <td class="py-1.5 pr-1 font-mono text-[11px]">{{ row.example }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="font-medium text-text">{{ t('aiPart.help.partTitle') }}</p>
+      <table class="w-full border-collapse text-xs">
+        <thead>
+          <tr class="border-b border-border text-left text-text">
+            <th class="py-1 pr-2">{{ t('aiPart.help.dimHeader') }}</th>
+            <th class="py-1">{{ t('aiPart.help.wordsHeader') }}</th>
+          </tr>
+        </thead>
+        <tbody class="align-top">
+          <tr v-for="row in (tm('aiPart.help.dims') as { dim: string; words: string }[])" :key="row.dim" class="border-b border-border/60">
+            <td class="whitespace-nowrap py-1.5 pr-2 font-medium text-text">{{ row.dim }}</td>
+            <td class="py-1.5">{{ row.words }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="font-medium text-text">{{ t('aiPart.help.tipsTitle') }}</p>
+      <ul class="list-disc space-y-1 pl-4">
+        <li v-for="tip in (tm('aiPart.help.tips') as string[])" :key="tip">{{ tip }}</li>
+      </ul>
+      <p class="font-medium text-text">{{ t('aiPart.help.examplesTitle') }}</p>
+      <p class="text-xs">{{ t('aiPart.help.useExample') }}</p>
+      <div class="flex flex-col gap-1.5">
+        <button
+          v-for="ex in (tm('aiPart.help.examples') as { track: AiTrack; text: string }[])"
+          :key="ex.track"
+          type="button"
+          class="rounded bg-panel-2 p-2 text-left text-xs hover:bg-accent1/10"
+          @click="applyExample(ex)"
+        >
+          <span class="mr-1.5 font-medium text-text">{{ t(`aiPart.tracks.${ex.track}`) }}:</span>
+          <span class="font-mono">{{ ex.text }}</span>
+        </button>
+      </div>
+    </HelpModal>
+
+    <!-- The tag tables and the example are the ones from ACE-Step generation: the same model reads the lyrics. -->
+    <HelpModal :open="helpOpen === 'lyrics'" :title="t('aiPart.lyricsHelp.title')" @close="helpOpen = null">
+      <p>{{ t('aiPart.lyricsHelp.intro') }}</p>
+      <table class="w-full border-collapse text-xs">
+        <thead>
+          <tr class="border-b border-border text-left text-text">
+            <th class="py-1 pr-2">{{ t('aceGen.help.lyrics.tagHeader') }}</th>
+            <th class="py-1">{{ t('aceGen.help.lyrics.purposeHeader') }}</th>
+          </tr>
+        </thead>
+        <tbody class="align-top">
+          <tr v-for="row in (tm('aceGen.help.lyrics.rows') as { tag: string; purpose: string }[])" :key="row.tag" class="border-b border-border/60">
+            <td class="py-1.5 pr-2 font-mono text-text">{{ row.tag }}</td>
+            <td class="py-1.5">{{ row.purpose }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="font-medium text-text">{{ t('aceGen.help.lyrics.marksTitle') }}</p>
+      <p>{{ t('aceGen.help.lyrics.marksIntro') }}</p>
+      <table class="w-full border-collapse text-xs">
+        <tbody class="align-top">
+          <tr v-for="row in (tm('aceGen.help.lyrics.marks') as { tag: string; purpose: string }[])" :key="row.tag" class="border-b border-border/60">
+            <td class="py-1.5 pr-2 font-mono text-text">{{ row.tag }}</td>
+            <td class="py-1.5">{{ row.purpose }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="font-medium text-text">{{ t('aiPart.lyricsHelp.tipsTitle') }}</p>
+      <ul class="list-disc space-y-1 pl-4">
+        <li v-for="tip in (tm('aiPart.lyricsHelp.tips') as string[])" :key="tip">{{ tip }}</li>
+      </ul>
+      <p class="font-medium text-text">{{ t('aceGen.help.lyrics.exampleTitle') }}</p>
+      <p class="whitespace-pre-line rounded bg-panel-2 p-2 font-mono text-xs">{{ t('aceGen.help.lyrics.example') }}</p>
+    </HelpModal>
+  </section>
 </template>

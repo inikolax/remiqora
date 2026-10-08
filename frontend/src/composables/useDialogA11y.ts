@@ -1,6 +1,6 @@
 /**
  * Keyboard behaviour every modal dialog needs: focus moves into the dialog when
- * it opens and goes back to what had it before when it closes, Tab stays inside,
+ * it opens (to its [data-autofocus] element, else the first focusable one) and goes back to what had it before when it closes, Tab stays inside,
  * and Escape closes it. Bind the returned `onKeydown` to the dialog element
  * (which also carries role="dialog" and aria-modal="true").
  */
@@ -24,7 +24,8 @@ export function useDialogA11y(dialogEl: Ref<HTMLElement | null>, active: () => b
         await nextTick()
         const el = dialogEl.value
         if (!el) return
-        const first = focusableIn(el)[0]
+        // A dialog can name its starting point (e.g. a search field) with data-autofocus.
+        const first = el.querySelector<HTMLElement>('[data-autofocus]') ?? focusableIn(el)[0]
         if (first) first.focus()
         else {
           el.tabIndex = -1

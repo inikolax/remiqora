@@ -16,6 +16,8 @@ export interface AiPartRequest {
   track: AiTrack
   caption: string
   lyrics: string
+  /** ACE-Step language code for the lyrics ('' = none sent: no lyrics, or an instrumental part). */
+  vocalLanguage: string
   /** Lanes mixed into the audio sent to the model. */
   laneIds: string[]
   /** Timeline span of that audio. */
@@ -76,6 +78,8 @@ function buildRequest(r: AiPartRequest): GenerateMusicRequest {
     bpm: r.bpm || undefined,
     key_scale: r.keyScale || undefined,
     time_signature: '4',
+    // Without it release_task assumes English and sings Russian words as English.
+    vocal_language: r.vocalLanguage || undefined,
     inference_steps: /turbo/i.test(r.model) ? 8 : 50,
     guidance_scale: 7.0,
     // Fresh random seeds every time: reusing the seed of a part that is already

@@ -218,23 +218,23 @@ const bcMix = computed({
     <div class="flex flex-wrap items-stretch gap-2 flex-1 min-w-0">
       
       <!-- EQ Module -->
-      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-28">
+      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-36">
         <div class="bg-panel-2/50 px-2 py-0.5 border-b border-border/50 flex items-center justify-between">
           <span class="text-[11px] font-bold text-text uppercase tracking-wider">{{ t('channelStrip.modules.eq') }}</span>
         </div>
         <div class="flex flex-col gap-1.5 p-1.5">
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.low') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.low') }}</span>
             <input v-model.number="eqLow" type="range" min="-12" max="12" step="0.5" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-6 text-right tabular-nums text-[11px]">{{ eqLow > 0 ? '+' + eqLow : eqLow }}</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.mid') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.mid') }}</span>
             <input v-model.number="eqMid" type="range" min="-12" max="12" step="0.5" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-6 text-right tabular-nums text-[11px]">{{ eqMid > 0 ? '+' + eqMid : eqMid }}</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.high') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.high') }}</span>
             <input v-model.number="eqHigh" type="range" min="-12" max="12" step="0.5" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-6 text-right tabular-nums text-[11px]">{{ eqHigh > 0 ? '+' + eqHigh : eqHigh }}</span>
           </label>
@@ -242,18 +242,18 @@ const bcMix = computed({
       </div>
 
       <!-- Dynamics Module -->
-      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-28">
+      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-36">
         <div class="bg-panel-2/50 px-2 py-0.5 border-b border-border/50 flex items-center justify-between">
           <span class="text-[11px] font-bold text-text uppercase tracking-wider">{{ t('channelStrip.modules.dynamics') }}</span>
         </div>
         <div class="flex flex-col gap-1.5 p-1.5">
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-8 truncate">{{ t('channelStrip.params.thresh') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.thresh') }}</span>
             <input v-model.number="compThreshold" type="range" min="-60" max="0" step="1" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-5 text-right tabular-nums text-[11px]">{{ compThreshold }}</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-8 truncate">{{ t('channelStrip.params.ratio') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.ratio') }}</span>
             <input v-model.number="compRatio" type="range" min="1" max="20" step="0.5" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-5 text-right tabular-nums text-[11px]">{{ compRatio }}</span>
           </label>
@@ -261,7 +261,7 @@ const bcMix = computed({
       </div>
 
       <!-- Filter Module -->
-      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-28" :class="!filterEnabled ? 'opacity-60' : ''">
+      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-36" :class="!filterEnabled ? 'opacity-60' : ''">
         <div class="bg-panel-2/50 px-2 py-0.5 border-b border-border/50 flex items-center justify-between gap-1">
           <label class="flex items-center gap-1 cursor-pointer">
             <input v-model="filterEnabled" type="checkbox" class="accent-accent1 w-2.5 h-2.5" />
@@ -275,12 +275,12 @@ const bcMix = computed({
         <div class="flex flex-col gap-1.5 p-1.5 relative">
           <div v-if="!filterEnabled" class="absolute inset-0 bg-panel-2/40 z-10"></div>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.freq') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.freq') }}</span>
             <input v-model.number="filterFreq" type="range" min="20" max="22000" step="1" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-7 text-right tabular-nums text-[11px]">{{ filterFreq >= 1000 ? (filterFreq/1000).toFixed(1) + 'k' : filterFreq }}</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.res') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.res') }}</span>
             <input v-model.number="filterRes" type="range" min="0.1" max="20" step="0.1" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-7 text-right tabular-nums text-[11px]">{{ filterRes.toFixed(1) }}</span>
           </label>
@@ -288,7 +288,7 @@ const bcMix = computed({
       </div>
 
       <!-- Chorus Module -->
-      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-28" :class="!chorusEnabled ? 'opacity-60' : ''">
+      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-36" :class="!chorusEnabled ? 'opacity-60' : ''">
         <div class="bg-panel-2/50 px-2 py-0.5 border-b border-border/50 flex items-center justify-between">
           <label class="flex items-center gap-1 cursor-pointer">
             <input v-model="chorusEnabled" type="checkbox" class="accent-accent1 w-2.5 h-2.5" />
@@ -298,17 +298,17 @@ const bcMix = computed({
         <div class="flex flex-col gap-1.5 p-1.5 relative">
           <div v-if="!chorusEnabled" class="absolute inset-0 bg-panel-2/40 z-10"></div>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-7 truncate">{{ t('channelStrip.params.rate') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.rate') }}</span>
             <input v-model.number="chorusRate" type="range" min="0.1" max="5" step="0.1" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-6 text-right tabular-nums text-[11px]">{{ chorusRate.toFixed(1) }}</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-7 truncate">{{ t('channelStrip.params.depth') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.depth') }}</span>
             <input v-model.number="chorusDepth" type="range" min="0.001" max="0.01" step="0.001" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-6 text-right tabular-nums text-[11px]">{{ (chorusDepth * 1000).toFixed(0) }}</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-7 truncate">{{ t('channelStrip.params.mix') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.mix') }}</span>
             <input v-model.number="chorusMix" type="range" min="0" max="1" step="0.01" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-6 text-right tabular-nums text-[11px]">{{ Math.round(chorusMix * 100) }}%</span>
           </label>
@@ -316,7 +316,7 @@ const bcMix = computed({
       </div>
       
       <!-- Delay Module -->
-      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-28" :class="!delayEnabled ? 'opacity-60' : ''">
+      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-36" :class="!delayEnabled ? 'opacity-60' : ''">
         <div class="bg-panel-2/50 px-2 py-0.5 border-b border-border/50 flex items-center justify-between">
           <label class="flex items-center gap-1 cursor-pointer">
             <input v-model="delayEnabled" type="checkbox" class="accent-accent1 w-2.5 h-2.5" />
@@ -326,17 +326,17 @@ const bcMix = computed({
         <div class="flex flex-col gap-1.5 p-1.5 relative">
           <div v-if="!delayEnabled" class="absolute inset-0 bg-panel-2/40 z-10"></div>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.time') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.time') }}</span>
             <input v-model.number="delayTime" type="range" min="0.01" max="2" step="0.01" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-7 text-right tabular-nums text-[11px]">{{ delayTime.toFixed(2) }}</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.fdbk') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.fdbk') }}</span>
             <input v-model.number="delayFeedback" type="range" min="0" max="0.95" step="0.01" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-7 text-right tabular-nums text-[11px]">{{ Math.round(delayFeedback * 100) }}%</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.mix') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.mix') }}</span>
             <input v-model.number="delayMix" type="range" min="0" max="1" step="0.01" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-7 text-right tabular-nums text-[11px]">{{ Math.round(delayMix * 100) }}%</span>
           </label>
@@ -344,13 +344,13 @@ const bcMix = computed({
       </div>
       
       <!-- Reverb Module -->
-      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-28">
+      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-36">
         <div class="bg-panel-2/50 px-2 py-0.5 border-b border-border/50 flex items-center justify-between">
           <span class="text-[11px] font-bold text-text uppercase tracking-wider">{{ t('channelStrip.modules.reverb') }}</span>
         </div>
         <div class="flex flex-col gap-1.5 p-1.5">
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.mix') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.mix') }}</span>
             <input v-model.number="reverbMix" type="range" min="0" max="1" step="0.01" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-7 text-right tabular-nums text-[11px]">{{ Math.round(reverbMix * 100) }}%</span>
           </label>
@@ -358,7 +358,7 @@ const bcMix = computed({
       </div>
 
       <!-- Distortion Module -->
-      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-28" :class="!distEnabled ? 'opacity-60' : ''">
+      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-36" :class="!distEnabled ? 'opacity-60' : ''">
         <div class="bg-panel-2/50 px-2 py-0.5 border-b border-border/50 flex items-center justify-between">
           <label class="flex items-center gap-1 cursor-pointer">
             <input v-model="distEnabled" type="checkbox" class="accent-accent1 w-2.5 h-2.5" />
@@ -368,12 +368,12 @@ const bcMix = computed({
         <div class="flex flex-col gap-1.5 p-1.5 relative">
           <div v-if="!distEnabled" class="absolute inset-0 bg-panel-2/40 z-10"></div>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-7 truncate">{{ t('channelStrip.params.drive') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.drive') }}</span>
             <input v-model.number="distAmount" type="range" min="0" max="1" step="0.01" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-6 text-right tabular-nums text-[11px]">{{ Math.round(distAmount * 100) }}%</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-7 truncate">{{ t('channelStrip.params.mix') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.mix') }}</span>
             <input v-model.number="distMix" type="range" min="0" max="1" step="0.01" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-6 text-right tabular-nums text-[11px]">{{ Math.round(distMix * 100) }}%</span>
           </label>
@@ -381,7 +381,7 @@ const bcMix = computed({
       </div>
 
       <!-- Bitcrusher Module -->
-      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-28" :class="!bcEnabled ? 'opacity-60' : ''">
+      <div class="flex flex-col rounded-lg border border-border/50 bg-panel/30 overflow-hidden shrink-0 shadow-inner w-36" :class="!bcEnabled ? 'opacity-60' : ''">
         <div class="bg-panel-2/50 px-2 py-0.5 border-b border-border/50 flex items-center justify-between">
           <label class="flex items-center gap-1 cursor-pointer">
             <input v-model="bcEnabled" type="checkbox" class="accent-accent1 w-2.5 h-2.5" />
@@ -391,12 +391,12 @@ const bcMix = computed({
         <div class="flex flex-col gap-1.5 p-1.5 relative">
           <div v-if="!bcEnabled" class="absolute inset-0 bg-panel-2/40 z-10"></div>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.bits') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.bits') }}</span>
             <input v-model.number="bcBits" type="range" min="2" max="16" step="1" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-7 text-right tabular-nums text-[11px]">{{ bcBits }}</span>
           </label>
           <label class="flex items-center gap-1 text-[11px] text-text-dim">
-            <span class="w-6 truncate">{{ t('channelStrip.params.mix') }}</span>
+            <span class="w-[3.25rem] shrink-0 truncate">{{ t('channelStrip.params.mix') }}</span>
             <input v-model.number="bcMix" type="range" min="0" max="1" step="0.01" class="flex-1 min-w-0 h-1 bg-panel-2 rounded-full appearance-none accent-accent1" />
             <span class="w-7 text-right tabular-nums text-[11px]">{{ Math.round(bcMix * 100) }}%</span>
           </label>

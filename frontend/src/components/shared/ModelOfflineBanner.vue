@@ -9,7 +9,8 @@ const { selectModel } = useModelSwitch()
 
 async function start() {
   try {
-    await selectModel(props.modelId)
+    // the banner sits on the model's own page (or its LoRA page): start it here, don't leave
+    await selectModel(props.modelId, { stay: true })
   } catch {
     // orchestrator.switchError is already surfaced in the header.
   }

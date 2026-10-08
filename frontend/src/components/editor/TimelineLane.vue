@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import type { ChannelSettings } from '../../audio/mixerEngine'
 import type { Clip, TimelineLane } from '../../audio/timelineTypes'
 import TimelineClip from './TimelineClip.vue'
+import SplitStemsIcon from '../shared/icons/SplitStemsIcon.vue'
+import UploadIcon from '../shared/icons/UploadIcon.vue'
 import { TRACK_COLORS } from '../../utils/trackColors'
 
 const props = defineProps<{
@@ -17,6 +19,10 @@ const props = defineProps<{
   selectedClipId: string | null
   widthPx: number
   level: { peak: number; clipping: boolean; peakL: number; peakR: number }
+  /** The lane plays one whole library track, so it can be split into stems. */
+  canSplit?: boolean
+  /** A split in progress or failed (EditorPage polls Demucs). */
+  split?: { status: 'queued' | 'running' | 'failed'; error: string | null } | null
 }>()
 
 const theme = computed(() => TRACK_COLORS.find(c => c.id === props.lane.colorId) || TRACK_COLORS[0])
@@ -37,6 +43,8 @@ const emit = defineEmits<{
   removeLane: []
   dropAudio: [payload: { file: File; timelineStart: number }]
   selectLane: []
+  splitStems: []
+  cancelSplit: []
 }>()
 
 const { t } = useI18n()
@@ -76,7 +84,7 @@ function bufferFor(clip: Clip): AudioBuffer | null {
 </script>
 
 <template>
-  <div class="flex flex-1 min-h-[80px] border-b border-border/40 group hover:bg-white/[0.02] transition-colors">
+  <div class="flex shrink-0 min-h-[80px] border-b border-border/40 group hover:bg-white/[0.02] transition-colors">
     <div 
       class="w-56 min-w-0 shrink-0 flex flex-col justify-center gap-1.5 overflow-hidden border-r p-1.5 transition-colors cursor-pointer track-header sticky left-0 z-10 bg-panel-2"
       :class="selected ? '' : 'border-border/40'"
@@ -116,6 +124,31 @@ function bufferFor(clip: Clip): AudioBuffer | null {
         >
           S
         </button>
+        <button
+          v-if="canSplit && (!split || split.status === 'failed')"
+          type="button"
+          class="w-5 h-5 flex items-center justify-center rounded bg-panel text-text-dim transition-all hover:text-white active:scale-95"
+          :aria-label="t('timeline.splitStems')"
+          :title="t('timeline.splitStems')"
+          @click.stop="emit('splitStems')"
+        >
+          <SplitStemsIcon class="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <!-- Row 3 while splitting into stems (or when it failed) -->
+      <div v-if="split" class="flex items-center gap-1.5 px-0.5 text-[11px]" :class="split.status === 'failed' ? 'text-status-failed' : 'text-text-dim'" role="status">
+        <span v-if="split.status !== 'failed'" class="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent1 border-t-transparent" aria-hidden="true"></span>
+        <span class="min-w-0 flex-1 truncate" :title="split.error ?? undefined">
+          {{ split.status === 'failed' ? t('timeline.splitFailed') : split.status === 'queued' ? t('timeline.splitQueued') : t('timeline.splitRunning') }}
+        </span>
+        <button
+          type="button"
+          class="shrink-0 hover:text-text"
+          :aria-label="split.status === 'failed' ? t('timeline.splitDismiss') : t('timeline.splitCancel')"
+          :title="split.status === 'failed' ? t('timeline.splitDismiss') : t('timeline.splitCancel')"
+          @click.stop="emit('cancelSplit')"
+        >✕</button>
       </div>
 
       <!-- Row 2: Vol, Range, Delete -->
@@ -162,7 +195,8 @@ function bufferFor(clip: Clip): AudioBuffer | null {
 
       <!-- Drop hint overlay -->
       <div v-if="isDragOver" class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-        <span class="rounded-lg bg-accent1/80 px-4 py-2 text-sm font-medium text-white shadow-lg">
+        <span class="flex items-center gap-2 rounded-lg bg-accent1/80 px-4 py-2 text-sm font-medium text-white shadow-lg">
+          <UploadIcon class="h-4 w-4 shrink-0" />
           {{ t('timeline.dropHint') }}
         </span>
       </div>

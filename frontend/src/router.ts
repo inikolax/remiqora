@@ -14,7 +14,8 @@ const router = createRouter({
     { path: '/ace-step/lora', name: 'ace-step-lora', component: LoraTrainingPage },
     { path: '/yue2', name: 'yue2', component: Yue2Page },
     { path: '/editor', name: 'editor-projects', component: ProjectsListPage },
-    { path: '/editor/:id', name: 'editor', component: EditorPage, props: true },
+    // A workspace: full width and one screen high on a desktop, no footer (see App.vue).
+    { path: '/editor/:id', name: 'editor', component: EditorPage, props: true, meta: { workspace: true } },
   ],
 })
 

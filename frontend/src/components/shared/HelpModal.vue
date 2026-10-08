@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDialogA11y } from '../../composables/useDialogA11y'
 
-const props = defineProps<{ open: boolean; title: string }>()
+/** wide: for long help with cards and columns (the AI arranger's guide). */
+const props = defineProps<{ open: boolean; title: string; wide?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 
@@ -20,7 +21,8 @@ const { onKeydown } = useDialogA11y(dialogEl, () => props.open, () => emit('clos
         role="dialog"
         aria-modal="true"
         aria-labelledby="help-modal-title"
-        class="my-8 w-full max-w-2xl rounded-xl border border-border bg-panel p-5 shadow-2xl"
+        class="my-8 w-full rounded-xl border border-border bg-panel p-5 shadow-2xl"
+        :class="props.wide ? 'max-w-4xl' : 'max-w-2xl'"
         @keydown="onKeydown"
       >
         <div class="mb-4 flex items-center justify-between">

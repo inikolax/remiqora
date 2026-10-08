@@ -11,6 +11,7 @@ import CollapsibleDetails from '../../components/shared/CollapsibleDetails.vue'
 import HelpModal from '../../components/shared/HelpModal.vue'
 import HelpIconButton from '../../components/shared/HelpIconButton.vue'
 import TagInput from '../../components/shared/TagInput.vue'
+import { guessVocalLanguage, VOCAL_LANGUAGES, vocalLanguageLabel } from '../../utils/vocalLanguages'
 
 const store = useAceStepStore()
 const { t, tm } = useI18n()
@@ -157,6 +158,14 @@ const bpm = ref<number | null>(null)
 const keyScale = ref('')
 const timeSignature = ref('')
 const vocalLanguage = ref('')
+/**
+ * "Auto" with lyrics typed in: the language read from their letters. Without vocal_language the API assumes
+ * English, and for cover / repaint / extract / lego / complete no LM runs to detect it, so Russian lyrics
+ * were sung as English. Empty in "simple" mode and for instrumentals: there the LM writes the lyrics.
+ */
+const autoVocalLanguage = computed(() =>
+  mode.value === 'custom' && !instrumental.value && customLyrics.value.trim() ? guessVocalLanguage(customLyrics.value) : '',
+)
 const inferenceSteps = ref<number | null>(null)
 const inferenceStepsTouched = ref(false)
 const guidanceScale = ref<number | null>(null)
@@ -182,60 +191,6 @@ const TASK_TYPES = computed<{ value: TaskType; label: string }[]>(() => [
 ])
 const TRACK_NAME_OPTIONS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'keys', 'strings', 'brass', 'woodwinds', 'synth', 'percussion', 'other']
 const TIME_SIGNATURES = ['4/4', '3/4', '6/8', '2/4', '5/4', '7/8']
-// Native self-names, not translated - matches constants.VALID_LANGUAGES in
-// the ACE-Step API (external/ACE-Step-1.5/acestep/constants.py).
-const VOCAL_LANGUAGES: { code: string; label: string }[] = [
-  { code: 'en', label: 'English' },
-  { code: 'ru', label: 'Русский' },
-  { code: 'zh', label: '中文' },
-  { code: 'ja', label: '日本語' },
-  { code: 'ko', label: '한국어' },
-  { code: 'es', label: 'Español' },
-  { code: 'fr', label: 'Français' },
-  { code: 'de', label: 'Deutsch' },
-  { code: 'it', label: 'Italiano' },
-  { code: 'pt', label: 'Português' },
-  { code: 'nl', label: 'Nederlands' },
-  { code: 'pl', label: 'Polski' },
-  { code: 'uk', label: 'Українська' },
-  { code: 'cs', label: 'Čeština' },
-  { code: 'sk', label: 'Slovenčina' },
-  { code: 'ro', label: 'Română' },
-  { code: 'hu', label: 'Magyar' },
-  { code: 'bg', label: 'Български' },
-  { code: 'sr', label: 'Српски' },
-  { code: 'hr', label: 'Hrvatski' },
-  { code: 'sv', label: 'Svenska' },
-  { code: 'no', label: 'Norsk' },
-  { code: 'da', label: 'Dansk' },
-  { code: 'fi', label: 'Suomi' },
-  { code: 'is', label: 'Íslenska' },
-  { code: 'el', label: 'Ελληνικά' },
-  { code: 'tr', label: 'Türkçe' },
-  { code: 'he', label: 'עברית' },
-  { code: 'ar', label: 'العربية' },
-  { code: 'fa', label: 'فارسی' },
-  { code: 'ur', label: 'اردو' },
-  { code: 'hi', label: 'हिन्दी' },
-  { code: 'bn', label: 'বাংলা' },
-  { code: 'pa', label: 'ਪੰਜਾਬੀ' },
-  { code: 'ta', label: 'தமிழ்' },
-  { code: 'te', label: 'తెలుగు' },
-  { code: 'ne', label: 'नेपाली' },
-  { code: 'sa', label: 'संस्कृतम्' },
-  { code: 'th', label: 'ไทย' },
-  { code: 'vi', label: 'Tiếng Việt' },
-  { code: 'id', label: 'Indonesia' },
-  { code: 'ms', label: 'Melayu' },
-  { code: 'tl', label: 'Tagalog' },
-  { code: 'sw', label: 'Kiswahili' },
-  { code: 'az', label: 'Azərbaycan' },
-  { code: 'lt', label: 'Lietuvių' },
-  { code: 'ca', label: 'Català' },
-  { code: 'ht', label: 'Kreyòl ayisyen' },
-  { code: 'la', label: 'Latina' },
-  { code: 'yue', label: '廣東話' },
-]
 
 const selectedModelInfo = computed(() => store.inventory?.models.find((m) => m.name === selectedModel.value))
 const isTurbo = computed(() => /turbo/i.test(selectedModelInfo.value?.name || selectedModel.value || ''))
@@ -363,7 +318,8 @@ async function submit() {
   if (bpm.value) req.bpm = bpm.value
   if (keyScale.value) req.key_scale = keyScale.value
   if (timeSignature.value) req.time_signature = timeSignature.value
-  if (vocalLanguage.value) req.vocal_language = vocalLanguage.value
+  const language = vocalLanguage.value || autoVocalLanguage.value
+  if (language) req.vocal_language = language
   if (inferenceSteps.value) req.inference_steps = inferenceSteps.value
   if (guidanceScale.value != null && !isTurbo.value) req.guidance_scale = guidanceScale.value
   if (seedValue.value != null) {
@@ -590,7 +546,7 @@ async function submit() {
           <div>
             <label class="text-[13px] font-medium text-text">{{ t('aceGen.vocalLanguage') }}</label>
             <select v-model="vocalLanguage" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
-              <option value="">{{ t('aceGen.vocalLanguageAuto') }}</option>
+              <option value="">{{ autoVocalLanguage ? `${t('aceGen.vocalLanguageAuto')}: ${vocalLanguageLabel(autoVocalLanguage)}` : t('aceGen.vocalLanguageAuto') }}</option>
               <option v-for="lang in VOCAL_LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
             </select>
           </div>
