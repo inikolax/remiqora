@@ -241,6 +241,20 @@ function buildComponents({ L, manifest, platform, resources }) {
     },
   };
 
+  // The editor's AI arranger adds parts with ACE-Step's lego task, which only the base DiT can do
+  // (turbo cannot). The backend loads it on demand when such a request comes in.
+  const aceBaseModel = {
+    id: 'ace-base-model',
+    weight: manifest.aceBaseModel.approxBytes,
+    version: 'ace-base-model-v1',
+    verify: () => exists(path.join(L.aceStep, 'checkpoints', manifest.aceBaseModel.folder, 'model.safetensors')),
+    async install(ctx, report) {
+      const checkpoints = path.join(L.aceStep, 'checkpoints');
+      await withCacheGrowth(checkpoints, manifest.aceBaseModel.approxBytes, report, () =>
+        runCommand(L.uvBin, ['run', 'acestep-download', '--model', manifest.aceBaseModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+    },
+  };
+
   const demucs = {
     id: 'demucs',
     weight: manifest.demucs.approxBytes,
@@ -279,7 +293,7 @@ function buildComponents({ L, manifest, platform, resources }) {
   };
 
   // Order matters: the backend venv provides the Python that runs the weights downloader.
-  return [uv, ffmpeg, engineStep, backendEnv, aceStep, aceModels, demucs, weights];
+  return [uv, ffmpeg, engineStep, backendEnv, aceStep, aceModels, aceBaseModel, demucs, weights];
 }
 
 /** Path of ffmpeg: a pinned build under tools/ffmpeg where there is one, otherwise whatever the system has. */

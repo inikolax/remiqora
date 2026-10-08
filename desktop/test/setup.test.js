@@ -94,7 +94,7 @@ test('the real plan has every component, in dependency order', () => {
   const L = layout(tmp(), 'win32-x64', manifest);
   const resources = { backend: path.join(__dirname, '..', '..', 'backend'), acePatch: path.join(__dirname, '..', '..', 'external', 'patches', 'ace-step.patch') };
   const ids = buildComponents({ L, manifest, platform: 'win32-x64', resources }).map((c) => c.id);
-  assert.deepEqual(ids, ['uv', 'ffmpeg', 'engine', 'backend-env', 'ace-step', 'ace-models', 'demucs', 'weights']);
+  assert.deepEqual(ids, ['uv', 'ffmpeg', 'engine', 'backend-env', 'ace-step', 'ace-models', 'ace-base-model', 'demucs', 'weights']);
 });
 
 test('Demucs gets the CUDA torch index off macOS only', () => {

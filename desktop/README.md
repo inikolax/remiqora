@@ -21,7 +21,7 @@ The frontend is unchanged: it uses relative `/api/...` URLs and the backend serv
 | macOS, Apple Silicon | packaged and set up by the same code, first tested by hand on a Mac (see the notes in the branch history); nothing needs to be installed beforehand |
 | Linux | packaging config exists, the first-run screen reports "not supported" until there are setup scripts (PR #2) |
 
-Plan for about 35 GB of disk (measured: a full first run plus one generation) and a download of roughly 30 GB; the first-run screen asks for at least 50 GB free.
+Plan for about 40 GB of disk (35 GB measured for a full first run plus one generation on 2026-09-20, plus the 4.8 GB ACE-Step base model added since) and a download of roughly 35 GB; the first-run screen asks for at least 50 GB free.
 
 The Windows requirement comes from the prebuilt engine: the upstream `audio.cpp` CUDA 13.3 build (compute capability
 7.5 or newer, driver 580 or newer). No CUDA Toolkit, Visual Studio Build Tools or compiler is needed.
@@ -66,7 +66,7 @@ Everything lives under the chosen folder, so removing it removes the app's data:
 | `tools/ffmpeg` | FFmpeg: a zip build on Windows, one static binary on macOS (GPL builds, downloaded, never redistributed) | Gyan builds / shaka-project static-ffmpeg-binaries, pinned |
 | `engines/YuE2` | `audiocpp_server`, CUDA/Metal libraries, model downloader | audio.cpp release, pinned |
 | `engines/ACE-Step-1.5` | ACE-Step at the pinned commit with `external/patches/ace-step.patch` applied, plus its `uv sync` environment | GitHub source archive |
-| `engines/ACE-Step-1.5/checkpoints` | ACE-Step generation models (~9.4 GB), fetched with `acestep-download` so the first generation does not stall | Hugging Face |
+| `engines/ACE-Step-1.5/checkpoints` | ACE-Step generation models (~9.4 GB), fetched with `acestep-download` so the first generation does not stall, plus the base DiT (`acestep-v15-base`, ~4.8 GB) the editor's AI arranger needs to add parts | Hugging Face (ModelScope as ACE-Step's fallback) |
 | `engines/Demucs` | a uv project with Demucs and CUDA torch | PyPI / PyTorch index |
 | `backend-venv` | the environment the Remiqora backend runs in | PyPI |
 | `data`, `logs` | database, generated audio, logs | created at run time |

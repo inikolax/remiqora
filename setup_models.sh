@@ -340,4 +340,6 @@ if [[ -z "${FFMPEG_BIN_DIR:-}" ]]; then
     echo "  - Install ffmpeg (./setup_prereqs.sh) and point FFMPEG_BIN_DIR at its bin folder."
 fi
 echo "  - ACE-Step's own checkpoints download automatically on its first request."
+echo "  - The editor's AI arranger adds parts with the ACE-Step base model (~4.8 GB). Fetch it once:"
+echo "      cd \"$ACE_DIR\" && uv run acestep-download --model acestep-v15-base"
 echo "  - Then run ./dev.sh or ./prod_run.sh."

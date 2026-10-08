@@ -288,4 +288,6 @@ if (-not $ffmpegBinDir) {
     Write-Host "  - Install ffmpeg (setup_prereqs.bat) and point FFMPEG_BIN_DIR at its bin folder."
 }
 Write-Host "  - ACE-Step's own checkpoints download automatically on its first request."
+Write-Host "  - The editor's AI arranger adds parts with the ACE-Step base model (~4.8 GB). Fetch it once:"
+Write-Host "      cd $aceDir; uv run acestep-download --model acestep-v15-base"
 Write-Host "  - Then run dev.bat or prod_run.bat."

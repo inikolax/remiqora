@@ -111,5 +111,9 @@
       "acestep-5Hz-lm-1.7B",
       "vae"
     ]
+  },
+  "aceBaseModel": {
+    "folder": "acestep-v15-base",
+    "approxBytes": 4800000000
   }
 }
