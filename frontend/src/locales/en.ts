@@ -1196,7 +1196,7 @@ export default {
       ],
       limitsTitle: 'Limits',
       limits: [
-        '"Add a part" runs on the ACE-Step base model only (about 4.8 GB). The installer downloads it; with the scripts, setup_models prints the command for it at the end.',
+        '"Add a part" runs on the ACE-Step base model only (about 4.8 GB). In the desktop app it is an option at install; if it was left out, the arranger shows an Install button. With the scripts, setup_models prints the command for it at the end.',
         'base is slower than turbo: on an RTX 4080 a variant for a 2-3 minute track takes about 10 seconds, and the first run takes longer while the model loads.',
         'The model keeps to the key and chords of what it hears better than to rhythmic ideas: "plays in the gaps of the vocal" may not come out.',
         'The sound quality is whatever the model gives. There is no MIDI to audio: the model works with audio only.',
