@@ -19,6 +19,9 @@
   "dependencies": {
     "diff": "^9.0.0"
   },
+  "overrides": {
+    "http-cache-semantics": "^4.3.0"
+  },
   "devDependencies": {
     "electron": "^44.4.3",
     "electron-builder": "^26.15.3"
