@@ -13,6 +13,7 @@ import PlusIcon from '../shared/icons/PlusIcon.vue'
 import SearchIcon from '../shared/icons/SearchIcon.vue'
 import SplitStemsIcon from '../shared/icons/SplitStemsIcon.vue'
 import UploadIcon from '../shared/icons/UploadIcon.vue'
+import { useFeaturesStore } from '../../stores/features'
 
 const { t, locale } = useI18n()
 
@@ -82,6 +83,8 @@ const STEM_LABELS = computed<Record<string, string>>(() => ({
   bass: t('library.stems.bass'),
   other: t('library.stems.other'),
 }))
+/** Without Demucs only tracks already split can come in as stems. */
+const features = useFeaturesStore()
 function hasStems(trk: SavedTrack): boolean {
   return !!trk.stems && Object.keys(trk.stems).length > 0
 }
@@ -309,6 +312,7 @@ function onDrop(e: DragEvent) {
                 </div>
                 <div class="flex shrink-0 items-center gap-1.5 max-sm:w-full max-sm:pl-11">
                   <button
+                    v-if="hasStems(trk) || features.has('demucs')"
                     type="button"
                     class="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-text-dim transition-colors hover:border-accent1/60 hover:text-text"
                     :title="hasStems(trk) ? t('library.addStemsReady') : t('library.addStemsSplit')"

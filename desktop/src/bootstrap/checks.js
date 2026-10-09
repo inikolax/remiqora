@@ -80,10 +80,12 @@ async function isOnline(fetchImpl = fetch) {
 
 /**
  * Everything the first-run screen shows before downloading. `items` is the list of rows,
- * `blocking` is the first problem that stops the setup (or null).
+ * `blocking` is the first problem that stops the setup (or null). `requiredBytes`: the free space the chosen parts
+ * need (main.js derives it from the plan); the manifest's figure is for everything.
  */
-async function runChecks({ platform, dataRoot, manifest, fetchImpl = fetch }) {
+async function runChecks({ platform, dataRoot, manifest, requiredBytes, fetchImpl = fetch }) {
   const req = manifest.requirements;
+  const needBytes = requiredBytes ?? req.minFreeBytes;
   const items = [];
   let blocking = null;
   const fail = (code, extra = {}) => { blocking ||= { code, ...extra }; };
@@ -110,9 +112,9 @@ async function runChecks({ platform, dataRoot, manifest, fetchImpl = fetch }) {
     items.push({ id: 'gpu', ok: true, name: 'Apple Silicon', vramMiB: Math.round(os.totalmem() / 2 ** 20) });
   }
 
-  const enoughDisk = free >= req.minFreeBytes;
-  items.push({ id: 'disk', ok: enoughDisk, freeBytes: free, requiredBytes: req.minFreeBytes });
-  if (!enoughDisk) fail('no-disk', { free, required: req.minFreeBytes });
+  const enoughDisk = free >= needBytes;
+  items.push({ id: 'disk', ok: enoughDisk, freeBytes: free, requiredBytes: needBytes });
+  if (!enoughDisk) fail('no-disk', { free, required: needBytes });
 
   items.push({ id: 'network', ok: online });
   if (!online) fail('offline');

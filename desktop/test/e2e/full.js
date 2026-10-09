@@ -4,12 +4,16 @@
 //   set E2E_EXE=<install dir>/Remiqora.exe   and   set E2E_ROOT=<empty folder on a big drive>
 //   set PHASE=setup      then: node test/e2e/full.js    first run with every component, no skips (deletes E2E_ROOT first)
 //   set PHASE=generate   then: node test/e2e/full.js    YuE2 + MIDI + ACE-Step + Demucs, quit, restart
+//   set PHASE=add        then: node test/e2e/full.js    from the app: open "add components", go back, then add the base model
 //
 // Everything runs against E2E_ROOT/home (data) and E2E_ROOT/user (Electron settings), never real profile data.
 // Report: results-<phase>.json and screenshots in E2E_REPORT (default: system temp).
 // What each phase does:
 //   setup    : real first run with every component (no skips), then checks that the environments really see CUDA
 //   generate : YuE2 track, MIDI, ACE-Step track, Demucs stems, quit without leftovers, restart with persisted tracks
+//   add      : the parts left out at setup (the defaults leave out the base models) are reported as not installed; the
+//              app's Install path opens the setup screen while the backend keeps running, "Back" returns without a
+//              restart and without keeping the pick, then the ACE-Step base model is added and reported installed
 const { _electron: electron } = require('playwright');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -114,6 +118,8 @@ async function setupPhase() {
   const { app, win } = await launch();
   await win.waitForSelector('#start', { timeout: 90000 });
   log('checks:', (await win.locator('.rows li').allInnerTexts()).map((s) => s.replace(/\s+/g, ' ')).join(' | '));
+  results.picked = await win.locator('.pick').evaluateAll((els) => els.map((e) => `${e.querySelector('.name').textContent}=${e.querySelector('input.box') ? e.querySelector('input.box').checked : 'fixed'}`).join(' | '));
+  log('parts picked by default:', results.picked);
   await win.screenshot({ path: path.join(OUT, 'shots', 'setup-1-check.png') });
   await win.click('#start');
   await win.waitForSelector('#comps', { timeout: 15000 });
@@ -170,6 +176,9 @@ async function setupPhase() {
   await sleep(2000);
   await win.screenshot({ path: path.join(OUT, 'shots', 'setup-4-app.png') });
   log('app opened:', win.url());
+  const feats = await call('GET', new URL(win.url()).origin + '/api/system/features');
+  results.features = feats.text;
+  log('features after setup:', feats.text);
   await app.close();
   await sleep(3000);
   log('leftovers after quit:', procsUnder(NEEDLE).join(', ') || 'none');
@@ -334,10 +343,67 @@ async function generatePhase() {
   });
 }
 
+// ---------------------------------------------------------------- phase 3
+async function addPhase() {
+  const { app, win } = await launch();
+  await win.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\//, { timeout: 120000 });
+  const base = new URL(win.url()).origin;
+  const features = async () => (await call('GET', base + '/api/system/features')).json();
+  log('app at', base);
+
+  await step('add-reported-missing', async () => {
+    const f = await features();
+    if (f.ace_base) throw new Error('the base model is already installed: run the setup phase first');
+    return JSON.stringify(f);
+  });
+
+  await step('add-back-without-installing', async () => {
+    // not awaited: the main process swaps this page for the setup screen before the call returns
+    await win.evaluate(() => { void window.remiqora.addFeatures(['aceXl']); });
+    await win.waitForSelector('#back', { timeout: 60000 });
+    const picked = await win.locator('[data-pick="aceXl"]').isChecked();
+    // only what was asked for: the precision left out at setup must not come pre-ticked
+    const extra = await win.locator('[data-prec="q4_0"]:checked:not(:disabled)').count();
+    if (extra) throw new Error('q4_0 is ticked on the add screen though setup left it out');
+    await win.screenshot({ path: path.join(OUT, 'shots', 'add-1-screen.png') });
+    await win.click('#back');
+    await win.waitForURL((u) => u.origin === base, { timeout: 30000 });
+    const cfg = JSON.parse(fs.readFileSync(path.join(USER, 'config.json'), 'utf8'));
+    if (!picked) throw new Error('XL was not picked on the add screen');
+    if (cfg.features && cfg.features.aceXl) throw new Error('going back kept XL picked: ' + JSON.stringify(cfg.features));
+    return `same backend ${base}, pick dropped: ${JSON.stringify(cfg.features)}`;
+  });
+
+  await step('add-base-model', async () => {
+    // not awaited: the main process swaps this page for the setup screen before the call returns
+    await win.evaluate(() => { void window.remiqora.addFeatures(['aceBase']); });
+    await win.waitForSelector('#start', { timeout: 60000 });
+    const note = await win.locator('.note').first().innerText();
+    await win.click('#start');
+    await win.waitForSelector('#comps', { timeout: 15000 });
+    for (let i = 0; i < 720; i++) { // up to 60 minutes
+      if (await win.locator('#open').count()) break;
+      if (await win.locator('#retry').count()) throw new Error('add failed: ' + (await win.locator('pre').innerText().catch(() => '')).slice(0, 800));
+      await sleep(5000);
+    }
+    await win.screenshot({ path: path.join(OUT, 'shots', 'add-2-done.png') });
+    await win.click('#open');
+    await win.waitForURL((u) => u.origin === base, { timeout: 60000 });
+    const f = await features();
+    if (!f.ace_base) throw new Error('not reported installed after the add: ' + JSON.stringify(f));
+    return `${note} -> ${JSON.stringify(f)}`;
+  });
+
+  await app.close();
+  await sleep(3000);
+  results.addLeftovers = procsUnder(NEEDLE);
+  log('leftovers after quit:', results.addLeftovers.join(', ') || 'none');
+}
+
 (async () => {
-  if (!EXE || !ROOT || !['setup', 'generate'].includes(PHASE)) { console.log('usage: set E2E_EXE, E2E_ROOT and PHASE=setup|generate, then: node test/e2e/full.js'); process.exit(2); }
+  if (!EXE || !ROOT || !['setup', 'generate', 'add'].includes(PHASE)) { console.log('usage: set E2E_EXE, E2E_ROOT and PHASE=setup|generate|add, then: node test/e2e/full.js'); process.exit(2); }
   log(`phase ${PHASE} with ${EXE}`);
-  if (PHASE === 'setup') await setupPhase(); else await generatePhase();
+  if (PHASE === 'setup') await setupPhase(); else if (PHASE === 'add') await addPhase(); else await generatePhase();
   save();
   log('PHASE COMPLETE');
 })().catch((e) => { log('PHASE CRASHED:', e && e.stack ? e.stack.slice(0, 900) : e); process.exit(1); });

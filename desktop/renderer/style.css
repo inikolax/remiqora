@@ -72,3 +72,25 @@ details pre { margin: 6px 0 0; padding: 14px 16px; background: var(--panel); bor
 .spinner { width: 34px; height: 34px; margin-top: 30px; border: 3px solid #2e2e3a; border-top-color: var(--violet); border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: var(--violet); border-right-color: var(--violet); } }
+
+/* The parts to install: always-installed ACE-Step, then the optional ones with their sizes. */
+.pickbox { margin-top: 26px; }
+.pickbox h2 { margin: 0 0 4px; font-size: 1.05rem; font-weight: 700; }
+.picks { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid var(--hairline); }
+.pick { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 4px 14px; align-items: start; padding: 13px 0; border-bottom: 1px solid var(--hairline); }
+.pick .box { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--violet); cursor: pointer; }
+.pick .box.fixed { color: var(--ok); cursor: default; }
+.pick .box.fixed svg { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pick .what { display: flex; flex-direction: column; cursor: pointer; }
+.pick .name { font-weight: 600; }
+.pick .text { color: var(--mute); font-size: .875rem; }
+.pick .size { color: var(--mute); font-size: .875rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.precs { grid-column: 2 / 4; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 24px; margin-top: 6px; }
+.precs .lbl { flex-basis: 100%; color: var(--mute); font-size: .8125rem; }
+.prec { display: flex; gap: 10px; align-items: flex-start; font-size: .875rem; cursor: pointer; max-width: 30ch; }
+.prec input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--violet); }
+.prec input:disabled { cursor: default; }
+.prec b { font-weight: 600; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+.note.bad { color: var(--err); }
+.warnline { grid-column: 2 / 4; margin: 4px 0 0; color: var(--warn); font-size: .8125rem; }
+.warnline.bad { color: var(--err); }

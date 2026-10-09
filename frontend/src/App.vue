@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useOrchestratorStore } from './stores/orchestrator'
 import { useSystemStore } from './stores/system'
+import { useFeaturesStore } from './stores/features'
 import AppFooter from './components/shared/AppFooter.vue'
 import AppHeader from './components/shared/AppHeader.vue'
 import ArtistDialog from './components/shared/ArtistDialog.vue'
@@ -11,6 +12,7 @@ import { useSettingsStore } from './stores/settings'
 
 const orchestrator = useOrchestratorStore()
 const system = useSystemStore()
+const features = useFeaturesStore()
 const settings = useSettingsStore()
 const { t } = useI18n()
 const route = useRoute()
@@ -25,6 +27,7 @@ watchEffect(() => {
 onMounted(() => {
   orchestrator.startPolling()
   system.startPolling()
+  void features.refresh()
   void settings.load()
 })
 onBeforeUnmount(() => {

@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from .. import db
-from .. import stems
+from .. import features, stems
 
 router = APIRouter(prefix="/api/tracks", tags=["stems"])
 
@@ -30,6 +30,9 @@ async def start_stems(track_id: int, force: bool = False):
     row = db.get_track(track_id)
     if not row or not Path(row["audio_path"]).exists():
         raise HTTPException(status_code=404, detail="track or audio not found")
+    # Stems already on disk are served without Demucs; a new separation needs it installed.
+    if not features.has_demucs() and (force or not _stem_urls(track_id, row)):
+        raise HTTPException(status_code=409, detail="Demucs (stem separation) is not installed")
     job = await stems.start(track_id, force=force)
     return {"status": job.status, "error": job.error}
 

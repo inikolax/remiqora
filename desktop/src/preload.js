@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('remiqora', {
   openExternal: (key) => ipcRenderer.invoke('setup:open-external', key),
   openLogs: () => ipcRenderer.invoke('setup:open-logs'),
   showData: () => ipcRenderer.invoke('setup:show-data'),
+  setFeatures: (picked) => ipcRenderer.invoke('setup:set-features', picked),
+  // For the app itself (the same window shows it): what is installed, and adding a part left out at install.
+  installed: () => ipcRenderer.invoke('app:features'),
+  addFeatures: (ids) => ipcRenderer.invoke('app:add-features', ids),
   onEvent: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('setup:event', handler);

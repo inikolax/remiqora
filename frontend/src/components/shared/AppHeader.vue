@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useOrchestratorStore } from '../../stores/orchestrator'
+import { useFeaturesStore } from '../../stores/features'
 import { MODEL_LABELS, MODEL_ROUTES, useModelSwitch } from '../../composables/useModelSwitch'
 import { setLocale, currentLocale, type LocaleCode } from '../../i18n'
 import type { ModelId, ModelRuntimeStatus } from '../../types'
@@ -17,6 +18,7 @@ import TimelineIcon from './icons/TimelineIcon.vue'
 import WaveIcon from './icons/WaveIcon.vue'
 
 const orchestrator = useOrchestratorStore()
+const features = useFeaturesStore()
 const route = useRoute()
 const onEditor = computed(() => route.path.startsWith('/editor'))
 const { selectModel } = useModelSwitch()
@@ -90,6 +92,7 @@ const STATUS_TEXT_CLASSES: Record<ModelRuntimeStatus, string> = {
 const DESC_KEYS: Record<ModelId, string> = { ace_step: 'header.desc.ace', yue2: 'header.desc.yue' }
 /** The tab's tooltip: what the engine is for, its state, and, unless it runs, that a click starts it. */
 function engineTitle(id: ModelId): string {
+  if (id === 'yue2' && !features.has('yue2')) return t('notInstalled.yue2.title')
   const title = t('header.engineTitle', { model: MODEL_LABELS[id], desc: t(DESC_KEYS[id]), status: t(STATUS_LABEL_KEYS[statusOf(id)]) })
   return statusOf(id) === 'running' ? title : `${title}
 ${t('header.engineStart')}`
@@ -191,8 +194,12 @@ async function onSelect(id: ModelId) {
           <span class="flex flex-col">
             <span class="flex items-center gap-2 text-[15px] leading-5 whitespace-nowrap" :class="route.name === MODEL_ROUTES.yue2 ? 'font-semibold' : 'font-medium'">
               {{ MODEL_LABELS.yue2 }}
-              <span class="h-2 w-2 shrink-0 rounded-full" :class="LED_CLASSES[statusOf('yue2')]" aria-hidden="true"></span>
-              <span v-if="statusShown('yue2')" class="hidden text-[11px] font-medium xl:inline" :class="STATUS_TEXT_CLASSES[statusOf('yue2')]">{{ t(STATUS_LABEL_KEYS[statusOf('yue2')]) }}</span>
+              <!-- left out at install: no light, it cannot run; it says so instead -->
+              <span v-if="!features.has('yue2')" class="hidden rounded border border-border px-1.5 text-[11px] font-medium text-text-dim xl:inline">{{ t('notInstalled.installed') }}</span>
+              <template v-else>
+                <span class="h-2 w-2 shrink-0 rounded-full" :class="LED_CLASSES[statusOf('yue2')]" aria-hidden="true"></span>
+                <span v-if="statusShown('yue2')" class="hidden text-[11px] font-medium xl:inline" :class="STATUS_TEXT_CLASSES[statusOf('yue2')]">{{ t(STATUS_LABEL_KEYS[statusOf('yue2')]) }}</span>
+              </template>
             </span>
             <span class="mt-0.5 hidden text-xs leading-4 font-normal whitespace-nowrap text-text-dim xl:block">{{ t('header.desc.yue') }}</span>
           </span>

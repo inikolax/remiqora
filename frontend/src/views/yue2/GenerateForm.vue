@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useYue2Store } from '../../stores/yue2'
+import { useFeaturesStore } from '../../stores/features'
 import * as api from '../../api/yue2'
 import type { CotMode, GenerateOptions } from '../../api/yue2'
 import ChipGroup from '../../components/shared/ChipGroup.vue'
@@ -106,6 +107,12 @@ const lyrics = ref('')
 const style = ref('')
 const cot = ref<CotMode>('off')
 const precision = ref<'q8_0' | 'q4_0'>('q8_0')
+// Only the precisions installed (the installer may have fetched one); a remembered one that is gone falls back.
+const features = useFeaturesStore()
+const precisions = computed(() => (features.features.yue2_precisions.length ? features.features.yue2_precisions : (['q8_0', 'q4_0'] as const)))
+watch([precision, precisions], () => {
+  if (!precisions.value.includes(precision.value)) precision.value = precisions.value[0]
+}, { immediate: true })
 const abc = ref('')
 
 const coverFile = ref<File | null>(null)
@@ -333,8 +340,7 @@ async function submit() {
         <div>
           <label class="mb-1 block text-[13px] font-medium text-text">{{ t('yueGen.precisionLabel') }}</label>
           <select v-model="precision" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text">
-            <option value="q8_0">q8_0</option>
-            <option value="q4_0">q4_0</option>
+            <option v-for="p in precisions" :key="p" :value="p">{{ p }}</option>
           </select>
         </div>
       </div>

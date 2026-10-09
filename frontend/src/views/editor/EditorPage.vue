@@ -41,6 +41,7 @@ import RedoIcon from '../../components/shared/icons/RedoIcon.vue'
 import SaveIcon from '../../components/shared/icons/SaveIcon.vue'
 import SparklesIcon from '../../components/shared/icons/SparklesIcon.vue'
 import UndoIcon from '../../components/shared/icons/UndoIcon.vue'
+import { useFeaturesStore } from '../../stores/features'
 
 const props = defineProps<{ id: string }>()
 
@@ -100,6 +101,7 @@ const STEM_LANES = [
 const STEM_POLL_MS = 2000
 
 /** The library track a lane plays as a whole, or null (stems, mixed sources, MIDI, empty lanes cannot be split). */
+const features = useFeaturesStore()
 function splittableTrackId(lane: { clips: Clip[] }): number | null {
   const first = lane.clips[0]
   if (!first?.sourceUrl || lane.clips.some((c) => c.sourceUrl !== first.sourceUrl || c.type === 'midi')) return null
@@ -1354,7 +1356,7 @@ onBeforeRouteLeave((_to, _from, next) => {
                 :selected-clip-id="store.selectedClipId"
                 :width-px="timelineWidthPx"
                 :level="laneLevels[idx] ?? SILENT_LEVEL"
-                :can-split="splittableTrackId(lane) != null"
+                :can-split="features.has('demucs') && splittableTrackId(lane) != null"
                 :split="splits[lane.id] ?? null"
                 @split-stems="splitLane(lane.id)"
                 @cancel-split="cancelSplit(lane.id)"

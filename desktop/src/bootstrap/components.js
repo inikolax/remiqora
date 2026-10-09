@@ -8,6 +8,7 @@ const { extract, extractAtomic } = require('./extract');
 const { applyGitPatch } = require('./patch');
 const { runCommand, cleanEnv } = require('../proc');
 const { IS_WINDOWS } = require('../paths');
+const { PRECISIONS, weightPackages, excludedComponents } = require('./features');
 
 const exists = (p) => fsp.access(p).then(() => true, () => false);
 const sum = (list) => list.reduce((a, b) => a + b, 0);
@@ -113,8 +114,10 @@ async function placeEngineFiles(extracted, L) {
  *   id, weight (bytes, for the overall bar), version (a change re-runs it),
  *   verify(ctx) -> bool (sanity check on disk), install(ctx, report).
  * report({ done, total, note }): byte progress is optional, `note` is a human line (uv output, ...).
+ * `selection` (bootstrap/features.js) leaves out the optional parts the user did not pick; without one, all of them.
  */
-function buildComponents({ L, manifest, platform, resources }) {
+function buildComponents({ L, manifest, platform, resources, selection }) {
+  const sel = selection || { yue2: true, yue2Precisions: [...PRECISIONS], demucs: true, aceBase: true, aceXl: false };
   const engine = manifest.engine.assets[platform];
   const uvAsset = manifest.uv.assets[platform];
   const ffAsset = manifest.ffmpeg.assets[platform];
@@ -255,6 +258,19 @@ function buildComponents({ L, manifest, platform, resources }) {
     },
   };
 
+  // The XL base model: an optional, bigger alternative for the arranger's parts (four weight shards, about 20 GB).
+  const aceXlModel = {
+    id: 'ace-xl-model',
+    weight: manifest.aceXlModel.approxBytes,
+    version: 'ace-xl-model-v1',
+    verify: () => exists(path.join(L.aceStep, 'checkpoints', manifest.aceXlModel.folder, manifest.aceXlModel.lastFile)),
+    async install(ctx, report) {
+      const checkpoints = path.join(L.aceStep, 'checkpoints');
+      await withCacheGrowth(checkpoints, manifest.aceXlModel.approxBytes, report, () =>
+        runCommand(L.uvBin, ['run', 'acestep-download', '--model', manifest.aceXlModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+    },
+  };
+
   const demucs = {
     id: 'demucs',
     weight: manifest.demucs.approxBytes,
@@ -271,18 +287,25 @@ function buildComponents({ L, manifest, platform, resources }) {
     },
   };
 
+  // The common weights plus the YuE2 precisions picked. The version is the package list, so adding a precision later
+  // re-runs this step; the downloader skips packages that are already there.
+  const packages = weightPackages(manifest, sel);
+  const weightsBytes = manifest.weights.commonBytes + sel.yue2Precisions.reduce((a, p) => a + manifest.weights.precisions[p].bytes, 0);
   const weights = {
     id: 'weights',
-    weight: manifest.weights.approxBytes,
-    version: manifest.weights.packages.join('+'),
-    verify: () => exists(path.join(L.yue2, 'models')),
+    weight: weightsBytes,
+    version: packages.join('+'),
+    verify: async () => {
+      for (const p of sel.yue2Precisions) if (!(await exists(path.join(L.yue2, 'models', 'Yue2-3B-GGUF', `yue2-3b-${p}.gguf`)))) return false;
+      return exists(path.join(L.yue2, 'models'));
+    },
     async install(ctx, report) {
-      const total = manifest.weights.approxBytes;
+      const total = weightsBytes;
       const modelsDir = path.join(L.yue2, 'models');
       // The downloader prints little; growth of the models folder is the honest progress signal.
       const timer = setInterval(async () => report({ done: Math.min(await dirSize(modelsDir), total), total }), 1500);
       try {
-        for (const pkg of manifest.weights.packages) {
+        for (const pkg of packages) {
           report({ note: pkg });
           await runCommand(L.backendPython, [path.join('tools', 'model_manager_v2.py'), 'install', pkg], { cwd: L.yue2, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile });
         }
@@ -293,7 +316,8 @@ function buildComponents({ L, manifest, platform, resources }) {
   };
 
   // Order matters: the backend venv provides the Python that runs the weights downloader.
-  return [uv, ffmpeg, engineStep, backendEnv, aceStep, aceModels, aceBaseModel, demucs, weights];
+  const left = new Set(excludedComponents(sel));
+  return [uv, ffmpeg, engineStep, backendEnv, aceStep, aceModels, aceBaseModel, aceXlModel, demucs, weights].filter((c) => !left.has(c.id));
 }
 
 /** Path of ffmpeg: a pinned build under tools/ffmpeg where there is one, otherwise whatever the system has. */

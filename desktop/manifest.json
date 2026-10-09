@@ -95,14 +95,23 @@
     "model": "htdemucs"
   },
   "weights": {
-    "packages": [
+    "packageOrder": [
       "yue2_main_q8_0",
       "yue2_main_q4_0",
       "yue2_vae_f16",
       "sheetsage2_orig",
       "muscriptor_small_f32"
     ],
-    "approxBytes": 10300000000
+    "common": [
+      "yue2_vae_f16",
+      "sheetsage2_orig",
+      "muscriptor_small_f32"
+    ],
+    "commonBytes": 3390000000,
+    "precisions": {
+      "q8_0": { "package": "yue2_main_q8_0", "bytes": 4260000000 },
+      "q4_0": { "package": "yue2_main_q4_0", "bytes": 2670000000 }
+    }
   },
   "aceModels": {
     "approxBytes": 9400000000,
@@ -115,5 +124,11 @@
   "aceBaseModel": {
     "folder": "acestep-v15-base",
     "approxBytes": 4800000000
+  },
+  "aceXlModel": {
+    "folder": "acestep-v15-xl-base",
+    "lastFile": "model-00004-of-00004.safetensors",
+    "approxBytes": 19950000000,
+    "recommendedVramMiB": 16000
   }
 }

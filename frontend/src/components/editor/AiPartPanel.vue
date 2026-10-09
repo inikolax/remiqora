@@ -26,6 +26,8 @@ import RepaintIcon from '../shared/icons/RepaintIcon.vue'
 import SparklesIcon from '../shared/icons/SparklesIcon.vue'
 import HelpIconButton from '../shared/HelpIconButton.vue'
 import HelpModal from '../shared/HelpModal.vue'
+import NotInstalled from '../shared/NotInstalled.vue'
+import { useFeaturesStore } from '../../stores/features'
 
 /** dock: where the editor put the panel; beside the timeline it is a narrow column, so it does not cap its height. */
 const props = defineProps<{ buffers: Map<string, AudioBuffer>; dock?: DockSide }>()
@@ -118,6 +120,9 @@ const inventoryModels = computed(() => aceStore.inventory?.models ?? [])
 const modeModels = computed(() => inventoryModels.value.filter((m) => m.supported_task_types.includes(AI_MODE_TASK[mode.value])))
 const selectedModelLoaded = computed(() => modeModels.value.find((m) => m.name === models[mode.value])?.is_loaded ?? false)
 const missingLegoModel = computed(() => mode.value === 'lego' && !!aceStore.inventory && modeModels.value.length === 0)
+/** The base model left out at install: known from the disk, before ACE-Step is even running. */
+const features = useFeaturesStore()
+const baseNotInstalled = computed(() => mode.value === 'lego' && !features.has('aceBase'))
 
 watch(aceRunning, (running) => { if (running) void aceStore.loadInventory() }, { immediate: true })
 // Default model per mode: base for lego (turbo cannot), turbo for the rest. Not the inventory's
@@ -222,7 +227,7 @@ function fmt(sec: number): string {
 // ---- Generate ----
 /** Context audio per lego job, kept for the copy check when the variants arrive. */
 const contexts = new Map<string, AudioBuffer>()
-const canGenerate = computed(() => aceRunning.value && !!models[mode.value] && !preparing.value && !spanError.value
+const canGenerate = computed(() => aceRunning.value && !baseNotInstalled.value && !!models[mode.value] && !preparing.value && !spanError.value
   && (mode.value === 'lego' || listenIds.value.length > 0))
 
 async function generate() {
@@ -467,7 +472,8 @@ function statusText(job: AiPartJob): string {
         <button type="button" class="accent-gradient rounded-lg px-3 py-1.5 text-xs font-medium text-white" :disabled="orchestrator.switching" @click="startAce">{{ t('aiPart.startAce') }}</button>
       </template>
     </div>
-    <p v-if="aceRunning && missingLegoModel" class="rounded-lg bg-status-failed/10 p-3 text-xs text-status-failed">
+    <NotInstalled v-if="baseNotInstalled" feature="aceBase" compact />
+    <p v-else-if="aceRunning && missingLegoModel" class="rounded-lg bg-status-failed/10 p-3 text-xs text-status-failed">
       {{ t('aiPart.noModel', { cmd: DOWNLOAD_CMD }) }}
     </p>
 

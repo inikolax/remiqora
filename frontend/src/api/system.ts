@@ -15,3 +15,17 @@ export interface Resources {
 export function getResources(): Promise<Resources> {
   return apiFetch<Resources>('/api/system/resources')
 }
+
+/** Which optional parts are installed (backend/app/features.py): a user may leave them out at install. */
+export interface Features {
+  ace_step: boolean
+  yue2: boolean
+  yue2_precisions: ('q8_0' | 'q4_0')[]
+  demucs: boolean
+  ace_base: boolean
+  ace_xl: boolean
+}
+
+export function getFeatures(): Promise<Features> {
+  return apiFetch<Features>('/api/system/features')
+}

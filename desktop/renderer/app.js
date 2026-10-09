@@ -1,5 +1,6 @@
 'use strict';
-// First-run screen: checks, download progress, problems, hand-over to the app.
+// First-run screen: checks and the choice of parts, download progress, problems, hand-over to the app.
+// Opened from the app with ?state=add it adds parts that were left out (the app keeps running meanwhile).
 (() => {
   const api = window.remiqora;
   const view = document.getElementById('view');
@@ -12,6 +13,8 @@
   let rows = {};          // component id -> { status, done, total, note, weight }
   let paused = false;
   let samples = [];       // [time, overall bytes] for speed and ETA
+  let checkResult = null; // the last checks, kept so a change of parts only re-renders the screen
+  const adding = params.get('state') === 'add';
 
   const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
   const t = (key, vars = {}) => {
@@ -65,34 +68,135 @@
     setSteps(1);
     render(`<h1>${esc(t('check.title'))}</h1><p class="lead">${esc(t('check.lead'))}</p><ul class="rows" aria-busy="true"></ul>`, t('check.title'));
     const result = await api.checks(ctx.dataRoot);
-    if (result.blocking) return showProblem(result);
-    showCheckResult(result);
+    // Not enough space is fixed on the same screen, by picking fewer parts or another folder.
+    if (result.blocking && result.blocking.code !== 'no-disk') return showProblem(result);
+    checkResult = result;
+    await fitDefaultsToCard();
+    showCheckResult();
   }
 
   function checkRow(item) {
     let detail = '';
     if (item.id === 'gpu') detail = item.vramMiB ? `${item.name}, ${Math.round(item.vramMiB / 1024)} ${t('unit.gb')}` : item.name;
     if (item.id === 'driver') detail = t('row.driver.detail', { v: item.driver, r: item.required });
-    if (item.id === 'disk') detail = t('row.disk.detail', { free: fmtBytes(item.freeBytes), req: fmtBytes(item.requiredBytes) });
+    if (item.id === 'disk') detail = t('row.disk.detail', { free: fmtBytes(item.freeBytes), req: fmtBytes(ctx.neededBytes) });
     if (item.id === 'network') detail = item.ok ? t('row.network.ok') : t('row.network.bad');
     if (item.id === 'platform') detail = item.platform;
-    return `<li>${icon(item.ok ? 'ok' : 'err')}<span class="name">${esc(t('row.' + item.id))}</span><span class="state">${esc(detail)}</span></li>`;
+    const ok = item.id === 'disk' ? diskOk() : item.ok;
+    return `<li>${icon(ok ? 'ok' : 'err')}<span class="name">${esc(t('row.' + item.id))}</span><span class="state">${esc(detail)}</span></li>`;
   }
 
   function folderBlock() {
     return `<div class="folder"><span class="lbl">${esc(t('folder.label'))}</span><span class="path" id="path">${esc(ctx.dataRoot)}</span><button type="button" class="btn quiet" id="change">${esc(t('folder.change'))}</button></div>`;
   }
 
-  function showCheckResult(result) {
+  const diskOk = () => {
+    const disk = checkResult && checkResult.items.find((i) => i.id === 'disk');
+    return !disk || disk.freeBytes >= ctx.neededBytes;
+  };
+  const pendingBytes = () => ctx.plan.filter((c) => !c.done).reduce((a, c) => a + c.weight, 0);
+
+  // ---------- the parts to install ----------
+  /** One option: a checkbox (or a fixed mark for what is always or already installed), what it gives, its size. */
+  function pickRow({ id, checked, fixed, size, title, text, children = '' }) {
+    const box = fixed
+      ? `<span class="box fixed" aria-hidden="true">${ICON.ok}</span>`
+      : `<input type="checkbox" class="box" id="pick-${id}" data-pick="${id}"${checked ? ' checked' : ''}>`;
+    const state = fixed === 'installed' ? t('pick.installed') : fixed === 'always' ? t('pick.always', { size: fmtBytes(size) }) : fmtBytes(size);
+    return `<li class="pick${checked ? ' on' : ''}">
+      ${box}
+      <label class="what"${fixed ? '' : ` for="pick-${id}"`}><span class="name">${esc(title)}</span><span class="text">${esc(text)}</span></label>
+      <span class="size">${esc(state)}</span>
+      ${children}
+    </li>`;
+  }
+
+  function pickBlock() {
+    const f = ctx.features;
+    const sel = f.selection;
+    const inst = f.installed;
+    const precisions = f.precisions.map((p) => {
+      const has = inst.yue2Precisions.includes(p);
+      return `<label class="prec${has ? ' fixed' : ''}"><input type="checkbox" data-prec="${p}"${sel.yue2Precisions.includes(p) ? ' checked' : ''}${has || !sel.yue2 ? ' disabled' : ''}>
+        <span><b>${esc(p)}</b> ${esc(has ? t('pick.installed') : fmtBytes(f.sizes.precisions[p]))}<br><span class="text">${esc(t('pick.prec.' + p))}</span></span></label>`;
+    }).join('');
+    return `<section class="pickbox" aria-labelledby="pick-title">
+      <h2 id="pick-title">${esc(t(adding ? 'pick.titleAdd' : 'pick.title'))}</h2>
+      <ul class="picks">
+        ${pickRow({ id: 'ace', checked: true, fixed: adding ? 'installed' : 'always', size: f.baseBytes, title: t('pick.ace'), text: t('pick.ace.text') })}
+        ${pickRow({ id: 'yue2', checked: sel.yue2, fixed: inst.yue2 && 'installed', size: f.sizes.yue2, title: t('pick.yue2'), text: t('pick.yue2.text'),
+          children: `<div class="precs" role="group" aria-label="${esc(t('pick.prec'))}"><span class="lbl">${esc(t('pick.prec'))}</span>${precisions}</div>` })}
+        ${pickRow({ id: 'demucs', checked: sel.demucs, fixed: inst.demucs && 'installed', size: f.sizes.demucs, title: t('pick.demucs'), text: t('pick.demucs.text') })}
+        ${pickRow({ id: 'aceBase', checked: sel.aceBase, fixed: inst.aceBase && 'installed', size: f.sizes.aceBase, title: t('pick.aceBase'), text: t('pick.aceBase.text') })}
+        ${pickRow({ id: 'aceXl', checked: sel.aceXl, fixed: inst.aceXl && 'installed', size: f.sizes.aceXl, title: t('pick.aceXl'), text: t('pick.aceXl.text'), children: xlWarning() })}
+      </ul>
+      <p class="note">${esc(t('pick.later'))}</p>
+    </section>`;
+  }
+
+  /**
+   * Before anything is picked by hand: on a card under 10 GB YuE2's q8_0 does not fit (it peaks near 9 GB and fails
+   * with "bad allocation"), so the default becomes q4_0.
+   */
+  async function fitDefaultsToCard() {
+    const gpu = checkResult.items.find((i) => i.id === 'gpu');
+    const f = ctx.features;
+    if (!f.untouched || ctx.platform !== 'win32-x64' || !gpu || !gpu.vramMiB || gpu.vramMiB >= 10000) return;
+    if (f.installed.yue2Precisions.length || f.selection.yue2Precisions.join() !== 'q8_0') return;
+    await api.setFeatures({ ...f.selection, yue2Precisions: ['q4_0'] });
+    ctx = await api.context();
+  }
+
+  /** The XL model wants a big card: say so, and louder when the card found by the checks is smaller. */
+  function xlWarning() {
+    const gpu = checkResult && checkResult.items.find((i) => i.id === 'gpu');
+    const vram = gpu && gpu.vramMiB && ctx.platform === 'win32-x64' ? gpu.vramMiB : 0;
+    const small = vram > 0 && vram < ctx.features.xlVramMiB;
+    const text = small
+      ? t('pick.aceXl.small', { have: Math.round(vram / 1024), need: Math.round(ctx.features.xlVramMiB / 1000) })
+      : t('pick.aceXl.warn', { need: Math.round(ctx.features.xlVramMiB / 1000) });
+    return `<p class="warnline${small ? ' bad' : ''}">${esc(text)}</p>`;
+  }
+
+  /** A change of parts: save it, get the new plan and sizes, re-render keeping the focus on the same box. */
+  async function onPick(ev) {
+    const el = ev.target;
+    if (!(el instanceof HTMLInputElement)) return;
+    const sel = { ...ctx.features.selection, yue2Precisions: [...ctx.features.selection.yue2Precisions] };
+    if (el.dataset.pick) sel[el.dataset.pick] = el.checked;
+    if (el.dataset.prec) {
+      sel.yue2Precisions = el.checked ? [...sel.yue2Precisions, el.dataset.prec] : sel.yue2Precisions.filter((p) => p !== el.dataset.prec);
+      // YuE2 needs one precision at least: unticking the last one keeps it
+      if (sel.yue2Precisions.length === 0) { el.checked = true; return; }
+    }
+    const focusId = el.dataset.pick ? `[data-pick="${el.dataset.pick}"]` : `[data-prec="${el.dataset.prec}"]`;
+    await api.setFeatures(sel);
+    ctx = await api.context();
+    showCheckResult();
+    const again = $(focusId);
+    if (again) again.focus();
+  }
+
+  function showCheckResult() {
+    const nothing = pendingBytes() === 0;
+    const title = t(adding ? 'add.title' : 'check.title');
     render(`
-      <h1>${esc(t('check.title'))}</h1>
-      <p class="lead">${esc(t('check.lead'))}</p>
-      <ul class="rows">${result.items.map((i) => checkRow(i)).join('')}</ul>
-      ${folderBlock()}
-      <p class="note">${esc(t('check.note', { size: fmtBytes(ctx.totalBytes) }))}</p>
-      <div class="actions"><button type="button" class="btn primary" id="start">${esc(t('btn.start'))}</button></div>`, t('check.title'));
+      <h1>${esc(title)}</h1>
+      <p class="lead">${esc(t(adding ? 'add.lead' : 'check.lead'))}</p>
+      <ul class="rows">${checkResult.items.map((i) => checkRow(i)).join('')}</ul>
+      ${pickBlock()}
+      ${adding ? '' : folderBlock()}
+      <p class="note">${esc(nothing ? t('pick.nothing') : t(adding ? 'add.note' : 'check.note', { size: fmtBytes(pendingBytes()) }))}</p>
+      ${diskOk() ? '' : `<p class="note bad" role="alert">${esc(t('pick.noDisk', { need: fmtBytes(ctx.neededBytes) }))}</p>`}
+      <div class="actions">
+        <button type="button" class="btn primary" id="start"${diskOk() && !(adding && nothing) ? '' : ' disabled'}>${esc(t(adding ? 'btn.add' : 'btn.start'))}</button>
+        ${adding ? `<button type="button" class="btn" id="back">${esc(t('btn.back'))}</button>` : ''}
+      </div>`, title);
     bind('#start', startDownload);
     bind('#change', chooseFolder);
+    bind('#back', () => api.launch());
+    const box = $('.pickbox');
+    if (box) box.addEventListener('change', onPick);
   }
 
   async function chooseFolder() {

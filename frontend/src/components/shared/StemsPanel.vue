@@ -8,10 +8,14 @@ import * as projectsApi from '../../api/projects'
 import { decodeStem, defaultChannelSettings, defaultMasterSettings } from '../../audio/mixerEngine'
 import type { TimelineProject, TimelineLane, Clip } from '../../audio/timelineTypes'
 import WaveformPlayer from './WaveformPlayer.vue'
+import NotInstalled from './NotInstalled.vue'
+import { useFeaturesStore } from '../../stores/features'
 import type { ModelId } from '../../types'
 
 const props = defineProps<{ trackId: number; title: string; lyrics: string; model: ModelId }>()
 const { t } = useI18n()
+/** Without Demucs a new separation cannot run; stems already made still play, download and open. */
+const features = useFeaturesStore()
 
 const router = useRouter()
 const openingEditor = ref(false)
@@ -158,8 +162,9 @@ onBeforeUnmount(clearPoll)
     </button>
 
     <div v-if="expanded" class="space-y-2 border-t border-border/60 p-3">
+      <NotInstalled v-if="!features.has('demucs') && (status === 'idle' || status === 'failed' || status === 'cancelled')" feature="demucs" compact />
       <button
-        v-if="status === 'idle' || status === 'failed' || status === 'cancelled'"
+        v-else-if="status === 'idle' || status === 'failed' || status === 'cancelled'"
         type="button"
         class="accent-gradient rounded-lg px-2.5 py-1 text-xs font-medium text-white"
         @click="start(false)"
@@ -187,7 +192,7 @@ onBeforeUnmount(clearPoll)
           <button type="button" class="text-xs text-accent1 hover:underline" @click="download(name, stemUrls![name])">{{ t('stemsPanel.download') }}</button>
         </div>
         <div class="flex gap-2">
-          <button type="button" class="accent-gradient rounded-lg px-2.5 py-1 text-xs font-medium text-white" @click="start(true)">{{ t('stemsPanel.recreate') }}</button>
+          <button v-if="features.has('demucs')" type="button" class="accent-gradient rounded-lg px-2.5 py-1 text-xs font-medium text-white" @click="start(true)">{{ t('stemsPanel.recreate') }}</button>
           <button type="button" class="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-text" :disabled="openingEditor" @click="openInEditor">
             {{ openingEditor ? '...' : t('mixer.openInEditor') }}
           </button>

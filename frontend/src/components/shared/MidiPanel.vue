@@ -5,9 +5,13 @@ import * as midiApi from '../../api/midi'
 import type { MidiSource, MidiStatus } from '../../api/midi'
 import { drawPianoRoll, parseMidiBytes, playMidiNotes } from '../../audio/miniMidiPlayer'
 import type { MidiParsed, MidiSynthHandle } from '../../audio/miniMidiPlayer'
+import NotInstalled from './NotInstalled.vue'
+import { useFeaturesStore } from '../../stores/features'
 
 const props = defineProps<{ trackId: number }>()
 const { t } = useI18n()
+/** Transcription runs on the YuE2 engine: without it, MIDI made earlier still plays, nothing new can start. */
+const features = useFeaturesStore()
 
 const SOURCE_LABELS = computed<Record<MidiSource, string>>(() => ({
   full: t('midiPanel.sourceFull'),
@@ -176,6 +180,7 @@ onBeforeUnmount(() => {
     </button>
 
     <div v-if="expanded" class="space-y-2 border-t border-border/60 p-3">
+      <NotInstalled v-if="!features.has('yue2')" feature="yue2" compact />
       <div v-if="actionError" class="rounded-lg bg-status-failed/10 p-2 text-xs text-status-failed">{{ actionError }}</div>
 
       <div
@@ -209,7 +214,7 @@ onBeforeUnmount(() => {
             {{ t('midiPanel.notes') }}
           </button>
           <button type="button" class="text-xs text-accent1 hover:underline" @click="download(source)">{{ t('midiPanel.download') }}</button>
-          <button type="button" class="text-xs text-text-dim hover:underline" @click="start(source, true)">{{ t('midiPanel.recreate') }}</button>
+          <button v-if="features.has('yue2')" type="button" class="text-xs text-text-dim hover:underline" @click="start(source, true)">{{ t('midiPanel.recreate') }}</button>
 
           <div v-if="openRollSource === source" class="mt-2 w-full space-y-1">
             <div class="flex items-center justify-between text-xs text-text-dim">
@@ -223,7 +228,7 @@ onBeforeUnmount(() => {
           </div>
         </template>
 
-        <template v-else>
+        <template v-else-if="features.has('yue2')">
           <button
             type="button"
             class="accent-gradient rounded-lg px-2.5 py-1 text-xs font-medium text-white"
