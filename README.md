@@ -8,7 +8,7 @@
 <p align="center"><i>Made with AI. Made by you.</i></p>
 
 <p align="center">
-  A local, GPU-powered music generation and production studio — one interface for <b>ACE-Step 1.5</b> and <b>YuE2-3B</b>, with a built-in multitrack DAW.
+  A local, GPU-powered music generation and production studio — one interface for <b>ACE-Step 1.5</b> and <b>YuE2-3B</b>, with a built-in multitrack DAW and an <b>AI arranger</b> that writes new parts into your track.
 </p>
 
 <p align="center">🚧 Actively in development — expect breaking changes, bugs, and rough edges. Not a stable release yet.</p>
@@ -35,6 +35,7 @@
   <a href="#yue2-and-sheetsage2-generation">YuE2</a> ·
   <a href="#lora-training-ace-step">LoRA</a> ·
   <a href="#built-in-daw">DAW</a> ·
+  <a href="#ai-arranger">AI arranger</a> ·
   <a href="#desktop-app-experimental">Desktop app</a> ·
   <a href="#built-with">Built with</a> ·
   <a href="#license--liability-for-generated-content">License</a> ·
@@ -51,7 +52,9 @@ ACE-Step and YuE2 are two independent music generation engines, each with its ow
 - **Mutually-exclusive orchestrator**: pick a model in the header — it starts up, and the other one stops on its own. No need to manually kill processes before starting the other engine.
 - **Shared storage**: every track (generated, uploaded, or assembled in the editor) is tracked in a centralized SQLite database and shared folder, available from every module — Demucs, MuScriptor and the editor all work off the same library instead of three separate ones.
 - **A DAW on top of generation**: a generated track isn't the end point, it's raw material — split it into stems, drag it onto a timeline, process it with effects, blend it with other tracks, and export.
+- **An AI arranger inside the DAW**: instead of re-rolling a whole song, build it up part by part — the model listens to the lanes you pick and writes drums, bass, strings or a new section that fit their tempo and key, as variants on their own lanes.
 - **Built-in LoRA training**: not just generation — fine-tune ACE-Step on your own voice or style right from the browser, no console needed.
+- **Install only what you need**: the desktop installer lets you leave out YuE2, stem separation or the arranger's base models and add them later from the app; the header shows RAM and video memory and can unload the running model.
 
 ---
 
@@ -65,7 +68,8 @@ ACE-Step and YuE2 are two independent music generation engines, each with its ow
 | **LoRA training** | Dataset → auto-labeling → preprocessing → training → export — the whole ACE-Step fine-tuning pipeline for your own voice/style, in the browser. |
 | **Demucs** | Splits any track into 4 stems: vocals, drums, bass, other. |
 | **MuScriptor** | Transcribes audio (the full mix or a single stem) into MIDI notes. |
-| **Built-in DAW** | A multitrack timeline editor for assembling tracks/stems into a final mix: an effects rack on every channel, auto-BPM and time-stretch, WAV/MP3 export. |
+| **Built-in DAW** | A multitrack timeline editor for assembling tracks/stems into a final mix: an effects rack on every channel, auto-BPM and time-stretch, WAV/MP3 export, or stems with a Reaper project / DAWproject to finish in your own DAW. |
+| **AI arranger** | Adds a part (drums, bass, strings, keys, vocals and more) on top of the lanes you choose, repaints a section, continues the track or covers it in another style — each variant lands on its own lane. |
 
 The interface is fully bilingual (Russian/English). It starts in your system language, and the switcher in the header overrides it.
 
@@ -84,7 +88,7 @@ Attaching a reference track unlocks 5 remix scenarios:
 - **Add a part** — compose one missing instrument on top of the mix.
 - **Finish the composition** — the same, but for a whole list of parts at once.
 
-Plus: 10–300 s duration, batch of 1/2/4 variants, mp3/wav/flac formats, advanced parameters (BPM, key, time signature, vocal language, inference steps, guidance scale, seed), LoRA adapter support with adjustable strength, local presets, and a "Stop all" button for bulk job cancellation.
+Plus: 10–300 s duration, batch of 1/2/4 variants, mp3/wav/flac formats, advanced parameters (BPM, key, time signature, vocal language — guessed from the lyrics by default, inference steps, guidance scale, seed), LoRA adapter support with adjustable strength, local presets, and a "Stop all" button for bulk job cancellation.
 
 ## YuE2 and SheetSage2: generation
 
@@ -123,7 +127,9 @@ Transcribes the full mix, or any already-separated stem, into MIDI. Technically 
 
 ![Editor: a four-stem project on the timeline](docs/screenshots/en/08-editor-with-clip.png)
 
-Any number of tracks, onto which you can add anything from the shared library (a full mix, a single stem, a file uploaded from disk) — via a picker dialog or by dragging a file straight onto a track. The quickest way in is through stems: the **"Open in editor"** button on the stems panel creates a ready-made four-track project (vocals, drums, bass, other).
+Any number of tracks, onto which you can add anything from the shared library (a full mix, a single stem, a file uploaded from disk) — via a picker dialog or by dragging a file straight onto a track. The picker has search, a "with stems" filter, a preview player with seeking and an **"As stems"** button that brings a track in as four lanes (splitting it first if it has no stems yet). A lane that plays one whole library track can be split into stems right on the timeline. The quickest way in is still the **"Open in editor"** button on the stems panel, which creates a ready-made four-track project (vocals, drums, bass, other).
+
+The editor fills the whole window. The AI arranger and the mixer are panels you can drag to the top, the right or the bottom of the screen (by default the arranger sits on the right and the mixer at the bottom). Projects open from a list of cards that show each project's lanes, length, tempo and source track.
 
 ### Timeline and clips
 
@@ -146,12 +152,26 @@ Any number of tracks, onto which you can add anything from the shared library (a
 
 ![Built-in editor help](docs/screenshots/en/11-editor-help.png)
 
-The **"?"** button in the toolbar opens built-in help: a list of hotkeys, mouse controls, and short tips on Loop and Magnet.
+The **"?"** button in the toolbar opens a detailed guide: a quick start, a map of the screen, tracks and clips, tempo and loop, the eight effects, saving and export. The keyboard button (or the `?` key) shows the shortcut sheet, and the AI arranger has a guide of its own. The **?** in the app header explains every section, how the GPU is shared and which engine to pick.
 
 ### Project and export
 
 - Projects are stored on the server and opened from a list. There is no autosave — use the **Save** button; if you close the tab or navigate away with unsaved edits, the editor warns you about losing them.
 - Export the mixed-down project as **WAV** or **MP3** — rendered offline (the same processing graph as live playback) and saved back into the shared track library.
+- Or export every lane as its own file to finish the track elsewhere: **stems + a Reaper project** (`.zip`) or a **DAWproject** file for Bitwig, Studio One and Cubase.
+
+## AI arranger
+
+![The AI arranger docked next to a four-stem project](docs/screenshots/en/14-ai-arranger.png)
+
+The arranger builds a track up step by step instead of generating it in one go. Open it with **AI arranger** in the editor toolbar:
+
+- **Add a part** — pick an instrument (drums, bass, guitar, keys, synth, strings, brass, woodwinds, percussion, FX, vocals, backing vocals), describe it in a few words, and choose which lanes the model hears. It writes the part in their tempo and key. Vocals take lyrics, and the vocal language is guessed from the text.
+- **Repaint** — rewrite a section you don't like (the loop region) while the rest stays.
+- **Continue** — extend the track by a number of bars from its end or from the loop end.
+- **Cover** — a new version of the chosen lanes in another style, with a strength slider.
+
+Every run gives 2–4 variants, each on its own lane next to the source, so you can listen, keep the best one and go on to the next part; when a repaint is discarded, the original clip comes back. Adding parts needs ACE-Step's **base** model (about 4.8 GB, turbo cannot do it); the **XL base** model (about 20 GB, needs a 16 GB card or more) is an optional, more detailed alternative. The other modes run on turbo. In the desktop app both are optional at install and can be added later from the arranger itself.
 
 ---
 
@@ -202,14 +222,20 @@ There are two ways to install Remiqora: the **desktop app** (experimental, descr
 
 For anyone who would rather not use a terminal, Remiqora also comes as a **desktop app** for **Windows** (NVIDIA RTX 20-series or newer, driver 580 or newer) and **macOS** (Apple Silicon). It opens in its own window and sets everything up on the first launch, so there is no Git, Python, CUDA Toolkit or compiler to install. The Windows installer installs per user and needs no administrator rights.
 
-**Download (v0.2.2, pre-release):** [Windows installer (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.2.2/Remiqora-Setup-0.2.2.exe) · [macOS installer (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.2.2/Remiqora-0.2.2-arm64.dmg) · [all files and SHA-256 sums](https://github.com/inikolax/remiqora/releases/tag/v0.2.2)
+**Download (v0.3.0, pre-release):** [Windows installer (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.3.0/Remiqora-Setup-0.3.0.exe) · [macOS installer (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.3.0/Remiqora-0.3.0-arm64.dmg) · [all files and SHA-256 sums](https://github.com/inikolax/remiqora/releases/tag/v0.3.0)
 
 <p align="center">
-  <img src="docs/screenshots/en/12-desktop-check.png" alt="First launch: the app checks the GPU, driver, free space and connection, and asks where to keep models and projects" width="48%">
+  <img src="docs/screenshots/en/12-desktop-check.png" alt="First launch: the app checks the GPU, driver, free space and connection, asks where to keep models and projects, and what to install" width="48%">
   <img src="docs/screenshots/en/13-desktop-download.png" alt="First launch: components downloading and installing, with overall and per-component progress" width="48%">
 </p>
 
-- **First launch.** The app checks the GPU, driver, free disk space and connection, lets you choose one folder for models and projects, and installs into it: the prebuilt audio.cpp engine (CUDA on Windows, Metal on macOS), ACE-Step, Demucs, the model weights and FFmpeg. Plan for roughly 30 GB of downloads and about 35 GB on disk (measured on Windows); the screen asks for 50 GB free. If it is interrupted, finished steps are skipped and downloads resume.
+- **First launch.** The app checks the GPU, driver, free disk space and connection, lets you choose one folder for models and projects, and asks what to install. ACE-Step with the editor is always installed (about 18 GB: ACE-Step, its turbo model, FFmpeg and the Python environments). Everything else is a checkbox with its size:
+  - **YuE2** (about 8.5 GB): the audio.cpp engine (CUDA on Windows, Metal on macOS), YuE2, SheetSage2 and MuScriptor. Its precision is a choice too — `q8_0` sounds better and needs about 9 GB of video memory, `q4_0` (2.7 GB) is for cards with 8 GB or less and is picked by default on such a card;
+  - **Stem separation** (Demucs, about 4.5 GB);
+  - **ACE-Step base model** (about 4.8 GB) for adding parts with the AI arranger;
+  - **ACE-Step XL base model** (about 20 GB), off by default, with a warning when the card has less than 16 GB.
+
+  The free space it asks for follows what is picked. Anything left out shows up in the app as "not installed" with an **Install** button that downloads just that part while the app keeps running. If the setup is interrupted, finished steps are skipped and downloads resume.
 - **Every launch after that.** The app starts the server and opens the interface. Closing the window stops the model servers and frees the GPU.
 - **Where things live.** Models, the database, generated audio and logs stay in the folder you chose, and nothing is uploaded anywhere. The folder cannot be moved later, because the database stores absolute paths.
 
@@ -390,5 +416,5 @@ CUDA_BIN_DIR=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin
 - ACE-Step and YuE2 switch exclusively by default. On multi-GPU Linux hosts, explicitly setting both `ACE_STEP_DEVICE` and `YUE2_DEVICE` to different device values opts into concurrent residency and pins each engine to its own GPU.
 - MIDI transcription requires YuE2 specifically to be active (the MuScriptor model loads into its process).
 - Windows (NVIDIA CUDA), macOS/Apple Silicon (Metal/MPS), and Linux x86_64 (NVIDIA CUDA) have setup/run paths — `.bat`/`.ps1` scripts for the first, `.sh` scripts for the other two. Linux is community-contributed: it builds audio.cpp from source and needs a CUDA development toolkit in addition to the driver, and has been verified end-to-end on Ubuntu 24.04 (via WSL2 with GPU passthrough) rather than on bare metal or other distros.
-- The desktop installers are experimental: unsigned (a SmartScreen or Gatekeeper prompt), and the first launch downloads roughly 30 GB. The installer does not support Linux yet — Linux users run from source via `setup_linux.sh`.
+- The desktop installers are experimental: unsigned (a SmartScreen or Gatekeeper prompt), and the first launch downloads from about 18 GB (ACE-Step only) to about 60 GB (everything, including the XL model). The installer does not support Linux yet — Linux users run from source via `setup_linux.sh`.
 - The macOS/Metal path is newer and less battle-tested than the Windows/CUDA one; expect it to be slower. By default it installs a prebuilt YuE2 binary pinned to a fixed release tag (no compiler needed); `--from-source` instead builds the same `dev` commit Windows uses, and may occasionally need that pin bumped if `dev` drifts.

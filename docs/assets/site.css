@@ -84,9 +84,9 @@ h1 { margin: 0; font: 800 clamp(2.5rem, 4.5vw, 4rem)/1 var(--display); letter-sp
 .btn:hover { border-color: var(--paper); color: var(--paper); }
 .btn--primary { background: var(--grad); border-color: transparent; color: var(--night); box-shadow: 0 10px 34px -10px rgba(222, 75, 172, .7); }
 .btn--primary:hover { border-color: transparent; color: var(--night); filter: brightness(1.1); }
-.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 32px; margin-top: 36px; }
-.flow li { position: relative; padding: 8px 16px; border: 1px solid rgba(255, 255, 255, .13); border-radius: 10px; background: rgba(255, 255, 255, .045); font-size: .9375rem; font-weight: 500; }
-.flow li:not(:last-child)::after { content: "\2192" / ""; position: absolute; right: -23px; top: 50%; transform: translateY(-52%); color: var(--violet); }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 26px; margin-top: 36px; }
+.flow li { position: relative; padding: 8px 14px; border: 1px solid rgba(255, 255, 255, .13); border-radius: 10px; background: rgba(255, 255, 255, .045); font-size: .9375rem; font-weight: 500; }
+.flow li:not(:last-child)::after { content: "\2192" / ""; position: absolute; right: -20px; top: 50%; transform: translateY(-52%); color: var(--violet); }
 .tag { margin: 34px 0 0; color: var(--soft); font-size: .8125rem; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
 
 /* hero cards: screenshots in window frames, tilted like the poster */

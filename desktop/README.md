@@ -21,7 +21,7 @@ The frontend is unchanged: it uses relative `/api/...` URLs and the backend serv
 | macOS, Apple Silicon | packaged and set up by the same code, first tested by hand on a Mac (see the notes in the branch history); nothing needs to be installed beforehand |
 | Linux | packaging config exists, the first-run screen reports "not supported" until there are setup scripts (PR #2) |
 
-Plan for about 40 GB of disk (35 GB measured for a full first run plus one generation on 2026-09-20, plus the 4.8 GB ACE-Step base model added since) and a download of roughly 35 GB; the first-run screen asks for at least 50 GB free.
+The download depends on what is picked on the first-run screen: about 18 GB for ACE-Step alone, about 36 GB with YuE2 (q8_0), stems and the ACE-Step base model, about 60 GB with everything including the XL base model. The screen asks for the picked parts' size plus a third for unpacking and caches.
 
 The Windows requirement comes from the prebuilt engine: the upstream `audio.cpp` CUDA 13.3 build (compute capability
 7.5 or newer, driver 580 or newer). No CUDA Toolkit, Visual Studio Build Tools or compiler is needed.
@@ -57,6 +57,22 @@ downloaded app as "damaged" (#33).
 
 ## What the first run installs
 
+The first-run screen asks what to install. Always: the tools, the backend environment, ACE-Step and its turbo, LM and VAE models.
+Optional (ids from [`src/bootstrap/features.js`](src/bootstrap/features.js)):
+
+| Feature | Components | Default |
+| --- | --- | --- |
+| `yue2` | `engine`, `weights` (the common weights plus `q8_0` and/or `q4_0`) | on; `q4_0` instead of `q8_0` when the card has less than 10 GB |
+| `demucs` | `demucs` | on |
+| `aceBase` | `ace-base-model` (`acestep-v15-base`, ~4.8 GB) | off |
+| `aceXl` | `ace-xl-model` (`acestep-v15-xl-base`, ~20 GB, warned below 16 GB of video memory) | off |
+
+The choice is saved as `features` in the user-data `config.json` and is always widened by what is already on disk, so a
+later run only adds. An install from before the choice existed (it has a `state.json`) keeps everything it had. The app
+asks the backend what is installed (`GET /api/system/features`, checked on disk) and shows a missing part as "not
+installed" with an Install button; that calls `window.remiqora.addFeatures([...])` (preload), which opens this screen in
+"add" mode while the backend keeps running, and "Back to Remiqora" returns to it without a restart.
+
 Everything lives under the chosen folder, so removing it removes the app's data:
 
 | Path | Content | Source |
@@ -66,11 +82,11 @@ Everything lives under the chosen folder, so removing it removes the app's data:
 | `tools/ffmpeg` | FFmpeg: a zip build on Windows, one static binary on macOS (GPL builds, downloaded, never redistributed) | Gyan builds / shaka-project static-ffmpeg-binaries, pinned |
 | `engines/YuE2` | `audiocpp_server`, CUDA/Metal libraries, model downloader | audio.cpp release, pinned |
 | `engines/ACE-Step-1.5` | ACE-Step at the pinned commit with `external/patches/ace-step.patch` applied, plus its `uv sync` environment | GitHub source archive |
-| `engines/ACE-Step-1.5/checkpoints` | ACE-Step generation models (~9.4 GB), fetched with `acestep-download` so the first generation does not stall, plus the base DiT (`acestep-v15-base`, ~4.8 GB) the editor's AI arranger needs to add parts | Hugging Face (ModelScope as ACE-Step's fallback) |
+| `engines/ACE-Step-1.5/checkpoints` | ACE-Step generation models (~9.4 GB), fetched with `acestep-download` so the first generation does not stall, plus, if picked, the base DiT (`acestep-v15-base`, ~4.8 GB) and the XL base (`acestep-v15-xl-base`, ~20 GB) the editor's AI arranger adds parts with | Hugging Face (ModelScope as ACE-Step's fallback) |
 | `engines/Demucs` | a uv project with Demucs and CUDA torch | PyPI / PyTorch index |
 | `backend-venv` | the environment the Remiqora backend runs in | PyPI |
 | `data`, `logs` | database, generated audio, logs | created at run time |
-| `engines/YuE2/models` | YuE2, SheetSage2 and MuScriptor weights (~10 GB) | audio.cpp model manager |
+| `engines/YuE2/models` | YuE2 (`q8_0` 4.3 GB and/or `q4_0` 2.7 GB), its VAE, SheetSage2 and MuScriptor weights (3.4 GB) | audio.cpp model manager |
 
 Model caches (`HF_HOME`, `TORCH_HOME`) are redirected into `cache/` under the same folder, so nothing large lands in the user profile.
 
@@ -103,8 +119,8 @@ of the file has the commands; it uses Playwright's Electron support (`npm i --no
 Last run (2026-09-20, RTX 4080): first run 12 min, YuE2 20 s of audio in 5 s, ACE-Step 12 s clip in 50 s, Demucs 10 s,
 closing the window with ACE-Step running ended all 10 processes in 1.8 s, and both torch environments reported CUDA.
 
-`npm test` runs the unit tests (downloader with resume, retry and hash checks, the JS patcher, system checks and the
-setup runner) with Node's built-in runner.
+`npm test` runs the unit tests (downloader with resume, retry and hash checks, the JS patcher, system checks, the
+setup runner and the choice of parts) with Node's built-in runner.
 
 ## Known gaps
 
