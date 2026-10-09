@@ -19,6 +19,25 @@ const sleep = (ms, signal) =>
     signal?.addEventListener('abort', () => { clearTimeout(t); reject(signal.reason); }, { once: true });
   });
 
+/**
+ * Runs `run` again when it fails, for downloaders that run as a child process: those stop at the
+ * first dropped connection, and on a slow line one drop can end a 10 GB step (issue #39). They skip
+ * what they already have, so a retry continues where the last try stopped. An abort is not retried.
+ */
+async function withRetries(run, { signal, attempts = 3, backoffMs = 5000, onRetry = () => {} } = {}) {
+  for (let i = 1; ; i++) {
+    signal?.throwIfAborted();
+    try {
+      return await run();
+    } catch (err) {
+      if (signal?.aborted) throw signal.reason ?? err;
+      if (i >= attempts) throw err;
+      onRetry(i + 1, attempts, err);
+      await sleep(backoffMs * i, signal);
+    }
+  }
+}
+
 async function sha256File(file) {
   const hash = crypto.createHash('sha256');
   await pipeline(fs.createReadStream(file), hash);
@@ -115,4 +134,4 @@ async function downloadFile({ url, dest, sha256, onProgress = () => {}, signal, 
   return dest;
 }
 
-module.exports = { downloadFile, sha256File, HashMismatchError };
+module.exports = { downloadFile, withRetries, sha256File, HashMismatchError };

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { downloadFile } = require('./download');
+const { downloadFile, withRetries } = require('./download');
 const { extract, extractAtomic } = require('./extract');
 const { applyGitPatch } = require('./patch');
 const { runCommand, cleanEnv } = require('../proc');
@@ -122,6 +122,8 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
   const uvAsset = manifest.uv.assets[platform];
   const ffAsset = manifest.ffmpeg.assets[platform];
   const logFile = path.join(L.logs, 'setup.log');
+  const retrying = (ctx, report, run) =>
+    withRetries(run, { signal: ctx.signal, onRetry: (n, of) => report({ note: `connection lost, trying again (${n}/${of})` }) });
   const patchHash = () => fsp.readFile(resources.acePatch, 'utf8').then(sha1).catch(() => 'nopatch');
 
   const uv = {
@@ -240,7 +242,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
     async install(ctx, report) {
       const checkpoints = path.join(L.aceStep, 'checkpoints');
       await withCacheGrowth(checkpoints, manifest.aceModels.approxBytes, report, () =>
-        runCommand(L.uvBin, ['run', 'acestep-download'], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+        retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'acestep-download'], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile })));
     },
   };
 
@@ -254,7 +256,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
     async install(ctx, report) {
       const checkpoints = path.join(L.aceStep, 'checkpoints');
       await withCacheGrowth(checkpoints, manifest.aceBaseModel.approxBytes, report, () =>
-        runCommand(L.uvBin, ['run', 'acestep-download', '--model', manifest.aceBaseModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+        retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'acestep-download', '--model', manifest.aceBaseModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile })));
     },
   };
 
@@ -267,7 +269,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
     async install(ctx, report) {
       const checkpoints = path.join(L.aceStep, 'checkpoints');
       await withCacheGrowth(checkpoints, manifest.aceXlModel.approxBytes, report, () =>
-        runCommand(L.uvBin, ['run', 'acestep-download', '--model', manifest.aceXlModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+        retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'acestep-download', '--model', manifest.aceXlModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile })));
     },
   };
 
@@ -283,7 +285,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
         runCommand(L.uvBin, ['sync'], { cwd: L.demucs, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
       // Fetch the separation model now (about 80 MB), so the first "split into stems" does not stall on a download.
       const fetchModel = `from demucs.pretrained import get_model; get_model('${manifest.demucs.model}')`;
-      await runCommand(L.uvBin, ['run', 'python', '-c', fetchModel], { cwd: L.demucs, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile });
+      await retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'python', '-c', fetchModel], { cwd: L.demucs, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
     },
   };
 
@@ -307,7 +309,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
       try {
         for (const pkg of packages) {
           report({ note: pkg });
-          await runCommand(L.backendPython, [path.join('tools', 'model_manager_v2.py'), 'install', pkg], { cwd: L.yue2, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile });
+          await retrying(ctx, report, () => runCommand(L.backendPython, [path.join('tools', 'model_manager_v2.py'), 'install', pkg], { cwd: L.yue2, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
         }
       } finally {
         clearInterval(timer);

@@ -112,3 +112,26 @@ test('leaves a finished file alone', async (t) => {
   await downloadFile({ url, dest, sha256: SHA });
   assert.equal(seen.length, 0);
 });
+
+test('withRetries runs a failing step again and gives up after the last attempt', async () => {
+  const { withRetries } = require('../src/bootstrap/download');
+  let calls = 0;
+  const retries = [];
+  const value = await withRetries(async () => { calls++; if (calls < 3) throw new Error('Broken pipe'); return 'ok'; },
+    { backoffMs: 1, onRetry: (n, of) => retries.push(`${n}/${of}`) });
+  assert.equal(value, 'ok');
+  assert.deepEqual(retries, ['2/3', '3/3']);
+
+  calls = 0;
+  await assert.rejects(withRetries(async () => { calls++; throw new Error('still down'); }, { backoffMs: 1 }), /still down/);
+  assert.equal(calls, 3);
+});
+
+test('withRetries does not retry after an abort', async () => {
+  const { withRetries } = require('../src/bootstrap/download');
+  const ac = new AbortController();
+  let calls = 0;
+  await assert.rejects(withRetries(async () => { calls++; ac.abort(new Error('cancelled')); throw new Error('killed'); },
+    { signal: ac.signal, backoffMs: 1 }), /cancelled/);
+  assert.equal(calls, 1);
+});
