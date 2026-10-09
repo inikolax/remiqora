@@ -1,6 +1,6 @@
 {
   "name": "remiqora-desktop",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "description": "Remiqora desktop app: first-run setup, server lifecycle and installers",
   "author": "Nikolay Cherkashin <inikolax@gmail.com>",
