@@ -106,7 +106,7 @@ jobs:
           Experimental desktop installers for Windows (NVIDIA GPU) and macOS (Apple Silicon).
 
           - They have no certificate yet. Windows shows a SmartScreen warning ("More info" → "Run anyway"); on macOS allow the app once via System Settings → Privacy & Security → "Open Anyway".
-          - The installer is small: the first launch downloads the engines and models (roughly 30 GB) into a folder you choose.
+          - The installer is small: the first launch asks what to install and downloads it into a folder you choose, from about 18 GB (ACE-Step only) to about 60 GB (everything, including the XL model). An existing install keeps what it has.
           - SHA-256 sums of every file are in `SHA256SUMS.txt`.
 
           Setup from scripts and the full list of limits are in the README.
