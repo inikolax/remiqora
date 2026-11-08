@@ -146,7 +146,9 @@ function checkText(id: string): { text: string; bad: boolean } | null {
   if (!c) return null
   if ('error' in c) return { text: t('models.checkFailed', { error: c.error }), bad: true }
   if (c.problems.length) return { text: t('models.checkBad', { files: c.problems.map((p) => `${p.file} (${p.reason})`).join('; ') }), bad: true }
-  const parts = [c.method === 'sha256' ? t('models.checkOkHash', { n: c.files, h: c.hashed }) : t('models.checkOkSize', { n: c.files })]
+  // no hash compared: either the source has another version of the file (then the size against our record is all there is) or it has no list
+  const parts = [c.method === 'sha256' ? t('models.checkOkHash', { n: c.files, h: c.hashed })
+    : c.outdated.length && !c.offline ? t('models.checkOkRecord', { n: c.files }) : t('models.checkOkSize', { n: c.files })]
   if (c.outdated.length) parts.push(t('models.checkOutdated', { files: c.outdated.join(', ') }))
   if (c.offline) parts.push(t('models.checkOffline'))
   return { text: parts.join(' '), bad: false }

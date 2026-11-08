@@ -120,3 +120,13 @@ test('a checkpoint counts as installed only with its text encoder, in any snapsh
     .find((c) => c.id === 'sa3-models');
   assert.equal(await step.verify(), true);
 });
+
+test('bf16 is a choice only: installs from before the picker do not get it, and its weights follow the manifest', () => {
+  const { PRECISIONS, LEGACY_PRECISIONS } = require('../src/bootstrap/features');
+  assert.ok(PRECISIONS.includes('bf16'));
+  assert.deepEqual(LEGACY_PRECISIONS, ['q8_0', 'q4_0']);
+  assert.ok(weightPackages(manifest, { yue2Precisions: ['bf16'] }).includes('yue2_main_bf16'));
+  const one = featureSizes(manifest, 'win32-x64', { yue2Precisions: ['q8_0'] });
+  const withBf16 = featureSizes(manifest, 'win32-x64', { yue2Precisions: ['q8_0', 'bf16'] });
+  assert.equal(withBf16.yue2 - one.yue2, manifest.weights.precisions.bf16.bytes);
+});

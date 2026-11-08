@@ -14,7 +14,9 @@ const path = require('node:path');
 const { IS_WINDOWS } = require('../paths');
 const MANIFEST = require('../../manifest.json');
 
-const PRECISIONS = ['q8_0', 'q4_0'];
+const PRECISIONS = ['q8_0', 'q4_0', 'bf16'];
+// what installs from before the picker had: bf16 is only ever added by choice (it is the largest file)
+const LEGACY_PRECISIONS = ['q8_0', 'q4_0'];
 const SA3_MODELS = ['medium', 'small-music', 'small-sfx'];
 const FEATURE_IDS = ['yue2', 'demucs', 'aceBase', 'aceXl', 'stableAudio', 'assistant'];
 
@@ -67,7 +69,7 @@ function detectInstalled(L, manifest = MANIFEST) {
 function resolveSelection(saved, installed, { legacyInstall = false } = {}) {
   const base = saved && typeof saved === 'object'
     ? saved
-    : legacyInstall ? { yue2: true, yue2Precisions: [...PRECISIONS], demucs: true, aceBase: installed.aceBase, aceXl: installed.aceXl, stableAudio: installed.stableAudio, assistant: installed.assistant } : DEFAULT_SELECTION;
+    : legacyInstall ? { yue2: true, yue2Precisions: [...LEGACY_PRECISIONS], demucs: true, aceBase: installed.aceBase, aceXl: installed.aceXl, stableAudio: installed.stableAudio, assistant: installed.assistant } : DEFAULT_SELECTION;
   const precisions = new Set([...(Array.isArray(base.yue2Precisions) ? base.yue2Precisions : []), ...installed.yue2Precisions]);
   // the checkpoints count only with Stable Audio itself picked; the ones on disk always do
   const sa3 = new Set([...(base.stableAudio && Array.isArray(base.sa3Models) ? base.sa3Models : []), ...(installed.sa3Models || [])]);
@@ -120,7 +122,7 @@ function excludedComponents(selection) {
 }
 
 module.exports = {
-  PRECISIONS, SA3_MODELS, FEATURE_IDS, FEATURE_COMPONENTS, DEFAULT_SELECTION,
+  PRECISIONS, LEGACY_PRECISIONS, SA3_MODELS, FEATURE_IDS, FEATURE_COMPONENTS, DEFAULT_SELECTION,
   sa3Offered, sa3Defaults, sa3ModelInstalled, sa3Bytes,
   detectInstalled, resolveSelection, weightPackages, featureSizes, excludedComponents,
 };

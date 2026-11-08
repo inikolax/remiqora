@@ -111,6 +111,7 @@
   "weights": {
     "packageOrder": [
       "yue2_main_q8_0",
+      "yue2_main_bf16",
       "yue2_main_q4_0",
       "yue2_vae_f16",
       "sheetsage2_orig",
@@ -124,6 +125,7 @@
     "commonBytes": 3390000000,
     "precisions": {
       "q8_0": { "package": "yue2_main_q8_0", "bytes": 4260000000 },
+      "bf16": { "package": "yue2_main_bf16", "bytes": 7260000000 },
       "q4_0": { "package": "yue2_main_q4_0", "bytes": 2670000000 }
     }
   },

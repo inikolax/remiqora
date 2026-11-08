@@ -8,7 +8,7 @@ const { extract, extractAtomic } = require('./extract');
 const { applyGitPatch } = require('./patch');
 const { runCommand, cleanEnv } = require('../proc');
 const { IS_WINDOWS } = require('../paths');
-const { PRECISIONS, weightPackages, excludedComponents, sa3ModelInstalled, sa3Bytes } = require('./features');
+const { LEGACY_PRECISIONS, weightPackages, excludedComponents, sa3ModelInstalled, sa3Bytes } = require('./features');
 
 const exists = (p) => fsp.access(p).then(() => true, () => false);
 const sum = (list) => list.reduce((a, b) => a + b, 0);
@@ -132,7 +132,7 @@ async function placeEngineFiles(extracted, L) {
  * `selection` (bootstrap/features.js) leaves out the optional parts the user did not pick; without one, all of them.
  */
 function buildComponents({ L, manifest, platform, resources, selection }) {
-  const sel = selection || { yue2: true, yue2Precisions: [...PRECISIONS], demucs: true, aceBase: true, aceXl: false, stableAudio: true, assistant: true };
+  const sel = selection || { yue2: true, yue2Precisions: [...LEGACY_PRECISIONS], demucs: true, aceBase: true, aceXl: false, stableAudio: true, assistant: true };
   const engine = manifest.engine.assets[platform];
   const uvAsset = manifest.uv.assets[platform];
   const ffAsset = manifest.ffmpeg.assets[platform];

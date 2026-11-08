@@ -1703,6 +1703,7 @@ export default {
     checking: 'Checking…',
     checkOkHash: 'All {n} files are whole; {h} matched the SHA-256 that Hugging Face lists.',
     checkOkSize: 'All {n} files are whole (checked by size and structure; there is no checksum list to compare with).',
+    checkOkRecord: 'All {n} files match their record by size.',
     checkOutdated: 'Whole, but the repository now holds a newer version of: {files}. Re-download to get it.',
     checkOffline: 'Hugging Face could not be reached, so only sizes were compared.',
     checkBad: 'Damaged or missing: {files}. Re-download this part.',
@@ -1777,6 +1778,10 @@ export default {
         name: 'YuE2 q4_0',
         text: 'For cards with 8 GB or less.',
       },
+      'yue2-bf16': {
+        name: 'YuE2 bf16',
+        text: 'The model unquantized. Needs more video memory than q8_0 (the most of the three).',
+      },
     },
     ace: {
       dit_model: 'DiT model for generation',
@@ -1785,7 +1790,7 @@ export default {
       lm_modelHint: 'Writes the song plan for the DiT. Only downloaded ones are listed.',
     },
     yue2: {
-      noSettings: 'The q8_0 or q4_0 precision is picked for each generation on the YuE2 page.',
+      noSettings: 'The q8_0, q4_0 or bf16 precision is picked for each generation on the YuE2 page.',
     },
     sa3: {
       preload: 'Model warmed up at start',
