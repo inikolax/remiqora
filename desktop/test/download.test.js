@@ -143,3 +143,19 @@ test('withRetries gives up at once on an error it is told not to retry', async (
   await assert.rejects(withRetries(async () => { calls++; throw refused; }, { backoffMs: 1, shouldRetry: (err) => err.code !== 'access' }), /licence/);
   assert.equal(calls, 1);
 });
+
+test('withRetries does not retry a permanent answer such as 404 and says it is not a connection problem', async () => {
+  const { withRetries } = require('../src/bootstrap/download');
+  let calls = 0;
+  await assert.rejects(
+    withRetries(async () => { calls++; throw new Error('huggingface_hub 404 Client Error: Repository Not Found'); }, { backoffMs: 1 }),
+    /not a connection problem/);
+  assert.equal(calls, 1);
+});
+
+test('downloadFile gives up at once on HTTP 404 instead of retrying', async () => {
+  let calls = 0;
+  const fetchImpl = async () => { calls++; return { ok: false, status: 404, headers: new Map() }; };
+  await assert.rejects(downloadFile({ url: 'http://x/y', dest: path.join(tmp(), 'n.bin'), sha256: SHA, retries: 4, backoffMs: 1, fetchImpl }), /HTTP 404/);
+  assert.equal(calls, 1);
+});

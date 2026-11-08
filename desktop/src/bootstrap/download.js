@@ -19,10 +19,22 @@ const sleep = (ms, signal) =>
     signal?.addEventListener('abort', () => { clearTimeout(t); reject(signal.reason); }, { once: true });
   });
 
+const PERMANENT_STATUSES = new Set([401, 403, 404, 410]);
+// what Hugging Face's tools and Python's urllib print when the source answers "no", not "try later"
+const PERMANENT_TEXT = /\bHTTP (?:401|403|404|410)\b|\b(?:401|403|404|410)\s+(?:Client Error|Not Found|Forbidden|Gone)|RepositoryNotFound|EntryNotFound|RevisionNotFound|Repository Not Found/i;
+
+/** The source said "no" (not found, forbidden): asking again changes nothing, and it is not a lost connection. */
+function isPermanentError(err) {
+  if (!err) return false;
+  if (PERMANENT_STATUSES.has(err.status)) return true;
+  return PERMANENT_TEXT.test(String(err.message || ''));
+}
+
 /**
  * Runs `run` again when it fails, for downloaders that run as a child process: those stop at the
  * first dropped connection, and on a slow line one drop can end a 10 GB step (issue #39). They skip
- * what they already have, so a retry continues where the last try stopped. An abort is not retried.
+ * what they already have, so a retry continues where the last try stopped. An abort is not retried,
+ * and neither is a permanent answer such as 404: it is rethrown at once with a note that says so.
  */
 async function withRetries(run, { signal, attempts = 3, backoffMs = 5000, onRetry = () => {}, shouldRetry = () => true } = {}) {
   for (let i = 1; ; i++) {
@@ -31,6 +43,13 @@ async function withRetries(run, { signal, attempts = 3, backoffMs = 5000, onRetr
       return await run();
     } catch (err) {
       if (signal?.aborted) throw signal.reason ?? err;
+      if (isPermanentError(err)) {
+        if (!err.permanentNoted) {
+          err.message = `The source refused the file, so trying again will not help (not a connection problem).\n${err.message}`;
+          err.permanentNoted = true;
+        }
+        throw err;
+      }
       if (i >= attempts || !shouldRetry(err)) throw err;
       onRetry(i + 1, attempts, err);
       await sleep(backoffMs * i, signal);
@@ -61,7 +80,11 @@ async function attempt({ url, part, signal, onBytes, fetchImpl }) {
     // Nothing left to send for that range: the part file is already complete (or stale).
     return 'range-satisfied';
   }
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`);
+  if (!res.ok || !res.body) {
+    const err = new Error(`HTTP ${res.status} for ${url}`);
+    err.status = res.status;
+    throw err;
+  }
 
   let flags = 'a';
   let offset = have;
@@ -116,7 +139,7 @@ async function downloadFile({ url, dest, sha256, onProgress = () => {}, signal, 
     } catch (err) {
       if (signal?.aborted) throw signal.reason ?? err;
       lastError = err;
-      if (i === retries) throw err;
+      if (i === retries || isPermanentError(err)) throw err;
       await sleep(backoffMs * 2 ** i, signal);
     }
   }
@@ -134,4 +157,4 @@ async function downloadFile({ url, dest, sha256, onProgress = () => {}, signal, 
   return dest;
 }
 
-module.exports = { downloadFile, withRetries, sha256File, HashMismatchError };
+module.exports = { downloadFile, withRetries, sha256File, isPermanentError, HashMismatchError };
