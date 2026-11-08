@@ -19,7 +19,7 @@ from .config import ACE_STEP_DIR, DEMUCS_DIR, MODELS, STABLE_AUDIO_DIR, YUE2_MOD
 
 ACE_BASE_MODEL = "acestep-v15-base"
 ACE_XL_MODEL = "acestep-v15-xl-base"
-YUE2_PRECISIONS = ("q8_0", "q4_0")
+YUE2_PRECISIONS = ("q8_0", "q4_0", "bf16")
 
 
 def _yue2_server() -> Path:

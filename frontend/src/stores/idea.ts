@@ -41,7 +41,7 @@ export const useIdeaStore = defineStore('idea', () => {
   const engine = ref<IdeaEngine>('ace')
   const draft = ref<IdeaDraft | null>(null)
   const variants = ref<1 | 2 | 4>(1)
-  const precision = ref<'q8_0' | 'q4_0'>('q8_0')
+  const precision = ref<'q8_0' | 'q4_0' | 'bf16'>('q8_0')
   const sa3Model = ref<Sa3ModelId>('medium')
 
   // the writing, not saved: it lives as long as the page's tab
@@ -74,7 +74,7 @@ export const useIdeaStore = defineStore('idea', () => {
     if (saved.writer === 'assistant' || saved.writer === 'ace') writerPref.value = saved.writer
     if (saved.engine === 'ace' || saved.engine === 'yue2' || saved.engine === 'sa3') engine.value = saved.engine
     if (saved.variants === 1 || saved.variants === 2 || saved.variants === 4) variants.value = saved.variants
-    if (saved.precision === 'q8_0' || saved.precision === 'q4_0') precision.value = saved.precision
+    if (saved.precision === 'q8_0' || saved.precision === 'q4_0' || saved.precision === 'bf16') precision.value = saved.precision
     if (typeof saved.sa3Model === 'string') sa3Model.value = saved.sa3Model
     const d = saved.draft
     if (d && typeof d === 'object' && typeof d.caption === 'string' && d.engine === engine.value) draft.value = d

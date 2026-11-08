@@ -17,7 +17,7 @@ interface DesktopBridge {
 export const useFeaturesStore = defineStore('features', {
   state: () => ({
     features: {
-      ace_step: true, yue2: true, yue2_precisions: ['q8_0', 'q4_0'], demucs: true, ace_base: true, ace_xl: true,
+      ace_step: true, yue2: true, yue2_precisions: ['q8_0', 'q4_0', 'bf16'], demucs: true, ace_base: true, ace_xl: true,
       stable_audio: true, stable_audio_env: true, stable_audio_models: ['medium', 'small-music', 'small-sfx', 'medium-base', 'small-music-base', 'small-sfx-base'],
     } as Features,
     loaded: false,

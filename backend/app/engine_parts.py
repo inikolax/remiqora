@@ -11,9 +11,14 @@ Optional parts can be deleted again (an ACE-Step checkpoint folder; a YuE2 preci
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
+import re
 import shutil
+import struct
 import sys
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal, Optional
@@ -36,22 +41,27 @@ class Part:
     # where it lands: the download's progress is the growth of the first one; all of them count on disk
     folders: tuple[Path, ...]
     installed: Callable[[], bool]
-    commands: Callable[[], list[tuple[list[str], Path]]]
+    # called with overwrite=True for a re-download: files that are there are fetched again
+    commands: Callable[..., list[tuple[list[str], Path]]]
     required: bool = False
+    # (package id, folder with its .audiocpp-package-<id>.json) for the YuE2 parts: what "check" compares the files with
+    packages: tuple[tuple[str, Path], ...] = ()
     # how it is removed: a folder to delete, or a YuE2 package to uninstall
     remove: Optional[Callable[[], list[str]]] = None
 
 
-def _ace(model: Optional[str]) -> Callable[[], list[tuple[list[str], Path]]]:
+def _ace(model: Optional[str]) -> Callable[..., list[tuple[list[str], Path]]]:
     # --force only skips acestep-download's "the folder exists" check (a stopped download leaves the folder),
     # its Hugging Face download still keeps the files that are complete; --skip-main leaves the core bundle alone.
     args = [UV_BIN, "run", "acestep-download", *(["--model", model, "--force", "--skip-main"] if model else [])]
-    return lambda: [(args, ACE_STEP_DIR)]
+    return lambda overwrite=False: [(args, ACE_STEP_DIR)]
 
 
-def _yue2(*packages: str) -> Callable[[], list[tuple[list[str], Path]]]:
+def _yue2(*packages: str) -> Callable[..., list[tuple[list[str], Path]]]:
     # The backend's own Python: the model manager needs only the standard library (the desktop app does the same).
-    return lambda: [([sys.executable, str(Path("tools") / "model_manager_v2.py"), "install", p], YUE2_DIR) for p in packages]
+    return lambda overwrite=False: [
+        ([sys.executable, str(Path("tools") / "model_manager_v2.py"), "install", p, *(["--overwrite"] if overwrite else [])], YUE2_DIR)
+        for p in packages]
 
 
 def _ace_main_installed() -> bool:
@@ -93,11 +103,13 @@ for _name, _size in _ACE_SIZES.items():
 # YuE2: the shared weights (VAE, SheetSage2, MuScriptor) and one main model per precision.
 _add(Part("yue2-common", "yue2", "common", 3_390_000_000,
           (YUE2_MODEL_PATH / "yue2-vae-f16.gguf", SHEETSAGE_MODEL_PATH, MUSCRIPTOR_MODEL_PATH), _yue2_common_installed,
-          _yue2("yue2_vae_f16", "sheetsage2_orig", "muscriptor_small_f32"), required=True))
-for _p, _size in (("q8_0", 4_260_000_000), ("q4_0", 2_670_000_000)):
+          _yue2("yue2_vae_f16", "sheetsage2_orig", "muscriptor_small_f32"), required=True,
+          packages=(("yue2_vae_f16", YUE2_MODEL_PATH), ("sheetsage2_orig", SHEETSAGE_MODEL_PATH.parent),
+                    ("muscriptor_small_f32", MUSCRIPTOR_MODEL_PATH.parent))))
+for _p, _size in (("q8_0", 4_260_000_000), ("q4_0", 2_670_000_000), ("bf16", 7_260_000_000)):
     _add(Part(f"yue2-{_p}", "yue2", "precision", _size, (YUE2_MODEL_PATH / f"yue2-3b-{_p}.gguf",),
               (lambda p=_p: p in features.yue2_precisions()), _yue2(f"yue2_main_{_p}"),
-              remove=(lambda p=_p: [f"yue2_main_{p}"])))
+              remove=(lambda p=_p: [f"yue2_main_{p}"]), packages=((f"yue2_main_{_p}", YUE2_MODEL_PATH),)))
 
 
 def _rm_folder(path: Path) -> list[str]:
@@ -155,6 +167,146 @@ async def delete(part_id: str, engine_running: bool) -> None:
     _downloads.pop(part_id, None)
 
 
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(8 * 1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _safetensors_problem(path: Path) -> Optional[str]:
+    """None when the file's own header agrees with its size (a cut-off download does not), else why not."""
+    size = path.stat().st_size
+    with open(path, "rb") as f:
+        head = f.read(8)
+        if len(head) < 8:
+            return "the file is shorter than a safetensors header"
+        (n,) = struct.unpack("<Q", head)
+        if n <= 0 or n > min(size - 8, 100 * 1024 * 1024):
+            return "the safetensors header is damaged"
+        try:
+            meta = json.loads(f.read(n))
+        except (ValueError, UnicodeDecodeError):
+            return "the safetensors header is damaged"
+    end = max((v["data_offsets"][1] for k, v in meta.items() if k != "__metadata__" and isinstance(v, dict)), default=0)
+    if 8 + n + end != size:
+        return f"the file is {size} bytes, its header expects {8 + n + end}"
+    return None
+
+
+def _remote_files(repo: str, revision: str = "main") -> Optional[dict[str, dict]]:
+    """Hugging Face's own list of a repository's files with their SHA-256 (`lfs.oid`) and sizes; None offline."""
+    url = f"https://huggingface.co/api/models/{repo}/tree/{revision}?recursive=1"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "remiqora"}), timeout=15) as r:
+            return {e["path"]: e for e in json.load(r) if e.get("type") == "file"}
+    except Exception:  # noqa: BLE001 - no network, a rate limit, a changed API: the check then goes by size alone
+        return None
+
+
+def _check_manifest(manifest: Path, folder: Path, problems: list[dict], tally: dict) -> bool:
+    """Compares the files a model-manager package recorded with what is on disk: the size, and the SHA-256 against
+    Hugging Face's list for the large files. (The manager's own `etag` is not a SHA-256, so it is not used.)
+    A file the repository has since replaced is reported as outdated, not damaged. False: no record."""
+    try:
+        record = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    remote = _remote_files(record["repo"]) if record.get("repo") else None
+    tally["online"] = tally.get("online", False) or remote is not None
+    for rel, info in (record.get("files") or {}).items():
+        path = folder / rel
+        if not path.is_file() and (folder.parent / rel).is_file():
+            path = folder.parent / rel  # a package of a shared repository records its path from the models root
+        tally["files"] += 1
+        if not path.is_file():
+            problems.append({"file": rel, "reason": "missing"})
+            continue
+        size = path.stat().st_size
+        if info.get("size") is not None and size != info["size"]:
+            problems.append({"file": rel, "reason": f"{size} bytes instead of {info['size']}"})
+            continue
+        tally["bytes"] += size
+        lfs = ((remote or {}).get(rel) or {}).get("lfs")
+        if not lfs:
+            continue
+        if lfs.get("size") != size:
+            tally["outdated"].append(rel)  # the repository holds another version of it now; ours is whole by the record
+            continue
+        tally["hashed"] += 1
+        if _sha256_file(path) != lfs["oid"]:
+            problems.append({"file": rel, "reason": "the SHA-256 differs from Hugging Face's"})
+    return True
+
+
+def verify(part_id: str) -> dict:
+    """Checks a part's files on disk (blocking: the route runs it in a thread). YuE2 parts: size and SHA-256 against
+    what the model manager recorded and Hugging Face lists. ACE-Step checkpoints: Hugging Face's downloader keeps no checksums, so the
+    safetensors files are checked against their own headers, which catches a download that stopped half-way."""
+    part = PARTS.get(part_id)
+    if part is None:
+        raise KeyError(part_id)
+    problems: list[dict] = []
+    tally: dict = {"files": 0, "bytes": 0, "hashed": 0, "outdated": [], "online": False}
+    if part.packages:
+        for pkg, folder in part.packages:
+            if not _check_manifest(folder / f".audiocpp-package-{pkg}.json", folder, problems, tally):
+                for p in part.folders:  # installed by an older version: no record, so only that the files are there
+                    tally["files"] += 1
+                    if _is_file(p) and p.stat().st_size > 0:
+                        tally["bytes"] += p.stat().st_size
+                    else:
+                        problems.append({"file": p.name, "reason": "missing or empty"})
+                break
+    else:
+        for folder in part.folders:
+            if not folder.is_dir():
+                problems.append({"file": folder.name, "reason": "missing"})
+                continue
+            for root, _dirs, files in os.walk(folder):
+                for name in files:
+                    path = Path(root) / name
+                    rel = str(path.relative_to(folder.parent)).replace("\\", "/")
+                    if name.endswith((".incomplete", ".part", ".tmp")):
+                        problems.append({"file": rel, "reason": "an unfinished download"})
+                    elif name.endswith(".safetensors"):
+                        tally["files"] += 1
+                        try:
+                            why = _safetensors_problem(path)
+                        except OSError as exc:
+                            why = f"cannot be read: {exc.strerror or exc}"
+                        if why:
+                            problems.append({"file": rel, "reason": why})
+                        else:
+                            tally["bytes"] += path.stat().st_size
+    return {"part": part_id, "ok": not problems and tally["files"] > 0, "problems": problems,
+            "files": tally["files"], "bytes": tally["bytes"], "hashed": tally["hashed"], "outdated": tally["outdated"],
+            "method": "sha256" if tally["hashed"] else "structure", "offline": bool(part.packages) and not tally["online"]}
+
+
+async def reinstall(part_id: str, engine_running: bool) -> None:
+    """Downloads a part again over what is there, required parts included: the files are replaced, not kept."""
+    part = PARTS.get(part_id)
+    if part is None:
+        raise KeyError(part_id)
+    if engine_running:
+        raise RuntimeError("stop the engine first: it holds the files open")
+    if active() is not None:
+        raise RuntimeError(f"'{active()}' is downloading; one at a time")
+    if not engine_ready(part.engine):
+        raise FileNotFoundError(f"{part.engine} is not installed")
+    if part.engine == "ace_step":
+        # acestep-download keeps the files it finds complete, so a damaged one would stay: the folders go first
+        for folder in part.folders:
+            if folder.is_dir():
+                await asyncio.to_thread(shutil.rmtree, folder, False)
+    await start(part_id, overwrite=True)
+
+
 def engine_ready(engine: str) -> bool:
     """The engine's own environment is there, so its tool can run."""
     if engine == "ace_step":
@@ -201,7 +353,7 @@ def snapshot(engine: str) -> list[dict]:
         d = _downloads.get(p.id)
         running = d is not None and d.status == "running"
         out.append({
-            "id": p.id, "kind": p.kind, "bytes": p.bytes, "required": p.required, "deletable": p.remove is not None,
+            "id": p.id, "kind": p.kind, "bytes": p.bytes, "required": p.required, "deletable": p.remove is not None, "verifiable": True,
             "installed": not running and p.installed(),
             "on_disk": part_bytes(p),
             "download": None if d is None else {"status": d.status, "done": d.done, "total": d.total, "error": d.error},
@@ -209,7 +361,7 @@ def snapshot(engine: str) -> list[dict]:
     return out
 
 
-async def start(part_id: str) -> None:
+async def start(part_id: str, overwrite: bool = False) -> None:
     part = PARTS.get(part_id)
     if part is None:
         raise KeyError(part_id)
@@ -222,7 +374,7 @@ async def start(part_id: str) -> None:
         raise FileNotFoundError(f"{part.engine} is not installed")
     d = Download(part=part_id, total=part.bytes)
     _downloads[part_id] = d
-    asyncio.create_task(_run(part, d))
+    asyncio.create_task(_run(part, d, overwrite))
 
 
 async def cancel(part_id: str) -> None:
@@ -246,7 +398,7 @@ async def _kill_tree(proc: asyncio.subprocess.Process) -> None:
             pass
 
 
-async def _run(part: Part, d: Download) -> None:
+async def _run(part: Part, d: Download, overwrite: bool = False) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / "engine_downloads.log"
     # Not created here: acestep-download takes an existing folder for a finished download and skips it.
@@ -268,7 +420,7 @@ async def _run(part: Part, d: Download) -> None:
     code = 0
     try:
         with open(log_path, "a", encoding="utf-8") as log:
-            for cmd, cwd in part.commands():
+            for cmd, cwd in part.commands(overwrite):
                 if d.cancel_requested:
                     break
                 log.write(f"\n--- {part.id}: {' '.join(cmd)}\n")

@@ -20,7 +20,7 @@ export function getResources(): Promise<Resources> {
 export interface Features {
   ace_step: boolean
   yue2: boolean
-  yue2_precisions: ('q8_0' | 'q4_0')[]
+  yue2_precisions: ('q8_0' | 'q4_0' | 'bf16')[]
   demucs: boolean
   ace_base: boolean
   ace_xl: boolean

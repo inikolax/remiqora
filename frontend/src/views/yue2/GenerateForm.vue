@@ -24,7 +24,7 @@ interface Yue2Preset {
   lyrics: string
   style: string
   cot: CotMode
-  precision: 'q8_0' | 'q4_0'
+  precision: 'q8_0' | 'q4_0' | 'bf16'
   abc: string
   cfgScale: number | null
   numInferenceSteps: number | null
@@ -112,10 +112,10 @@ onMounted(() => applyInsert(store.pendingParamsInsert))
 const lyrics = ref('')
 const style = ref('')
 const cot = ref<CotMode>('off')
-const precision = ref<'q8_0' | 'q4_0'>('q8_0')
+const precision = ref<'q8_0' | 'q4_0' | 'bf16'>('q8_0')
 // Only the precisions installed (the installer may have fetched one); a remembered one that is gone falls back.
 const features = useFeaturesStore()
-const precisions = computed(() => (features.features.yue2_precisions.length ? features.features.yue2_precisions : (['q8_0', 'q4_0'] as const)))
+const precisions = computed(() => (features.features.yue2_precisions.length ? features.features.yue2_precisions : (['q8_0', 'q4_0', 'bf16'] as const)))
 watch([precision, precisions], () => {
   if (!precisions.value.includes(precision.value)) precision.value = precisions.value[0]
 }, { immediate: true })

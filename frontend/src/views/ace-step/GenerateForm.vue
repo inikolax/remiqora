@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { cutAtPhrase } from '../../utils/trackTitle'
 import { useI18n } from 'vue-i18n'
 import { useAceStepStore } from '../../stores/aceStep'
+import { useSystemStore } from '../../stores/system'
 import * as api from '../../api/aceStep'
 import type { GenerateMusicRequest } from '../../api/aceStep'
 import { useLoraRegistry } from '../../composables/useLoraRegistry'
@@ -299,6 +300,15 @@ const durationLabel = computed(() => {
   return `${m}:${String(s).padStart(2, '0')} (${duration.value}s)`
 })
 
+const system = useSystemStore()
+const LM_MIN_VRAM = 8.5 * 1024 ** 3
+
+/** ACE-Step skips its language model on cards up to ~8 GB, so "describe the music" (sample_mode) cannot run there. */
+function lmAvailable(): boolean {
+  const total = system.resources?.vram?.total
+  return total == null || total > LM_MIN_VRAM
+}
+
 async function submit() {
   formError.value = ''
 
@@ -315,8 +325,10 @@ async function submit() {
       return
     }
     title = cutAtPhrase(simpleQuery.value, 60)
-    if (useRefAudio.value) {
+    if (useRefAudio.value || !lmAvailable()) {
+      // sample_mode needs ACE-Step's language model, which it does not load on cards up to ~8 GB
       req.prompt = simpleQuery.value.trim()
+      if (!useRefAudio.value) req.lyrics = ''
     } else {
       req.sample_query = simpleQuery.value.trim()
       req.sample_mode = true
@@ -456,6 +468,10 @@ async function submit() {
       <div v-if="mode === 'simple'" class="space-y-1.5">
         <label class="text-[13px] font-medium text-text">{{ t('aceGen.simpleLabel') }}</label>
         <textarea v-model="simpleQuery" rows="3" class="w-full rounded-lg border border-border bg-panel-2 p-2.5 text-sm text-text" :placeholder="t('aceGen.simplePlaceholder')"></textarea>
+        <p v-if="!lmAvailable()" class="text-xs leading-relaxed text-text-dim">
+          {{ t('aceGen.noLmNote') }}
+          <template v-if="selectedModel && !isTurbo">{{ t('aceGen.noLmBaseNote') }}</template>
+        </p>
       </div>
 
       <div v-else class="space-y-3">

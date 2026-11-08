@@ -91,8 +91,8 @@ export interface HealthResponse {
   backend?: string
 }
 
-function modelSessionOptions(precision: 'q8_0' | 'q4_0'): Record<string, string> {
-  if (precision === 'q4_0') return { 'yue2.model_gguf': 'yue2-3b-q4_0.gguf' }
+function modelSessionOptions(precision: 'q8_0' | 'q4_0' | 'bf16'): Record<string, string> {
+  if (precision !== 'q8_0') return { 'yue2.model_gguf': `yue2-3b-${precision}.gguf` }
   return {}
 }
 
@@ -153,7 +153,7 @@ export async function ensureLoaded(
   await loadModelSpec(spec)
 }
 
-export function precisionSessionOptions(precision: 'q8_0' | 'q4_0'): Record<string, string> {
+export function precisionSessionOptions(precision: 'q8_0' | 'q4_0' | 'bf16'): Record<string, string> {
   return modelSessionOptions(precision)
 }
 
@@ -183,7 +183,7 @@ export async function runTask(model: string, request: unknown, signal?: AbortSig
   })
 }
 
-export async function generateTrack(lyrics: string, seed: number, options: GenerateOptions, precision: 'q8_0' | 'q4_0', signal?: AbortSignal): Promise<TaskRunResult> {
+export async function generateTrack(lyrics: string, seed: number, options: GenerateOptions, precision: 'q8_0' | 'q4_0' | 'bf16', signal?: AbortSignal): Promise<TaskRunResult> {
   const spec = await getYue2ModelSpec()
   await ensureLoaded(spec, precisionSessionOptions(precision))
   return runTask(spec.id, { lyrics, seed, options }, signal)

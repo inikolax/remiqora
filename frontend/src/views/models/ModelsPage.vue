@@ -140,6 +140,17 @@ const parts = computed(() => engine.value?.parts ?? [])
 const isSecondary = (p: EnginePart) => SECONDARY.has(p.id) && !p.installed && !p.download
 const visibleParts = computed(() => showAll.value ? parts.value : parts.value.filter((p) => !isSecondary(p)))
 const hiddenCount = computed(() => parts.value.filter(isSecondary).length)
+/** What the last check of a part says, in words. */
+function checkText(id: string): { text: string; bad: boolean } | null {
+  const c = store.checks[id]
+  if (!c) return null
+  if ('error' in c) return { text: t('models.checkFailed', { error: c.error }), bad: true }
+  if (c.problems.length) return { text: t('models.checkBad', { files: c.problems.map((p) => `${p.file} (${p.reason})`).join('; ') }), bad: true }
+  const parts = [c.method === 'sha256' ? t('models.checkOkHash', { n: c.files, h: c.hashed }) : t('models.checkOkSize', { n: c.files })]
+  if (c.outdated.length) parts.push(t('models.checkOutdated', { files: c.outdated.join(', ') }))
+  if (c.offline) parts.push(t('models.checkOffline'))
+  return { text: parts.join(' '), bad: false }
+}
 const blockedTitle = computed(() => store.state?.downloading ? t('models.oneAtATime') : undefined)
 
 // Stable Audio 3: its own store (the gated weights and the token)
@@ -274,8 +285,14 @@ onBeforeUnmount(() => store.unwatch())
                 :download="p.download"
                 :required="p.required"
                 :deletable="p.deletable"
+                :verifiable="p.verifiable"
+                :checking="store.checking === p.id"
+                :check-note="checkText(p.id)?.text"
+                :check-bad="checkText(p.id)?.bad"
                 :blocked="!!store.state?.downloading"
                 :blocked-title="blockedTitle"
+                @verify="run(() => store.verify(p.id))"
+                @reinstall="run(() => store.reinstall(p.id))"
                 @download="run(() => store.download(p.id))"
                 @cancel="run(() => store.cancel(p.id))"
                 @delete="run(() => store.remove(p.id))"

@@ -1,6 +1,6 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import * as api from '../api/engines'
-import type { CpuSampler, CpuSamplerSettings, EngineId, EnginesState } from '../api/engines'
+import type { CpuSampler, CpuSamplerSettings, EngineId, EnginesState, PartCheck } from '../api/engines'
 import * as assistantApi from '../api/assistant'
 import type { AssistantSettings, AssistantState } from '../api/assistant'
 import { useFeaturesStore } from './features'
@@ -20,6 +20,9 @@ export const useEnginesStore = defineStore('engines', {
     /** The prompt assistant. */
     assistant: null as AssistantState | null,
     loadError: null as string | null,
+    /** The last check of each part (cleared when it is downloaded again) and the part being checked now. */
+    checks: {} as Record<string, PartCheck | { error: string }>,
+    checking: null as string | null,
     _timer: null as ReturnType<typeof setTimeout> | null,
     /** Pages that want the slow refresh (the Models page while it is open). */
     _watchers: 0,
@@ -38,6 +41,22 @@ export const useEnginesStore = defineStore('engines', {
     },
     async download(part: string) {
       this._apply(await api.downloadPart(part))
+      this._follow()
+    },
+    async verify(part: string) {
+      this.checking = part
+      delete this.checks[part]
+      try {
+        this.checks[part] = await api.verifyPart(part)
+      } catch (e) {
+        this.checks[part] = { error: e instanceof Error ? e.message : String(e) }
+      } finally {
+        this.checking = null
+      }
+    },
+    async reinstall(part: string) {
+      delete this.checks[part]
+      this._apply(await api.reinstallPart(part))
       this._follow()
     },
     async cancel(part: string) {

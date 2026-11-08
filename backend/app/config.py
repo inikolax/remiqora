@@ -146,6 +146,23 @@ ACE_STEP_LM_MODEL = os.getenv("ACE_STEP_LM_MODEL", "acestep-5Hz-lm-1.7B").strip(
 # model for lego while the generation page stays on turbo); acestep-api swaps
 # the primary model in place, so only one DiT is in VRAM at a time.
 ACE_STEP_ON_DEMAND_MODEL_LOAD = os.getenv("ACE_STEP_ON_DEMAND_MODEL_LOAD", "true").strip().lower() in {"1", "true", "yes"}
+
+
+def _ace_offload_dit() -> bool:
+    """acestep-api reads ACESTEP_OFFLOAD_DIT_TO_CPU (default off) and ignores its own small-card profile, so on a 6-8 GB
+    card the DiT stays in VRAM, the VAE finds ~0.2 GB free and decodes on the CPU for many minutes. "auto" turns the
+    offload on up to 8 GB; ACE_STEP_OFFLOAD_DIT=true/false overrides."""
+    mode = os.getenv("ACE_STEP_OFFLOAD_DIT", "auto").strip().lower()
+    if mode in {"1", "true", "yes"}:
+        return True
+    if mode in {"0", "false", "no"}:
+        return False
+    from .sysinfo import gpu
+    card = gpu()
+    return bool(card) and card["total"] <= 8 * 1024 ** 3 + 512 * 1024 ** 2
+
+
+ACE_STEP_OFFLOAD_DIT = _ace_offload_dit()
 YUE2_SERVER_PORT = int(os.getenv("YUE2_SERVER_PORT", "8080"))
 YUE2_SERVER_HOST = os.getenv("YUE2_SERVER_HOST", "127.0.0.1")
 YUE2_DEVICE = os.getenv("YUE2_DEVICE", "").strip()
@@ -210,6 +227,7 @@ MODELS: dict[str, ModelDefinition] = {
                     "ACESTEP_CONFIG_PATH": ACE_STEP_DIT_MODEL,
                     **({"ACESTEP_ON_DEMAND_MODEL_LOAD": "true"} if ACE_STEP_ON_DEMAND_MODEL_LOAD else {}),
                     **({"CUDA_VISIBLE_DEVICES": ACE_STEP_DEVICE} if ACE_STEP_DEVICE else {}),
+                    **({"ACESTEP_OFFLOAD_DIT_TO_CPU": "true"} if ACE_STEP_OFFLOAD_DIT else {}),
                 },
                 health_url=f"http://127.0.0.1:{ACE_STEP_API_PORT}/health",
                 # Model + LM weights loading onto the GPU can genuinely take

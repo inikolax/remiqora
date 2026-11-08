@@ -28,14 +28,22 @@ const props = defineProps<{
   /** The engine cannot run without it: no delete button. */
   required?: boolean
   deletable?: boolean
+  /** Shows "Check" and "Re-download" next to an installed part (also for required ones). */
+  verifiable?: boolean
+  /** It is being checked now. */
+  checking?: boolean
+  /** The outcome of the last check, in words; `checkBad` colours it as a problem. */
+  checkNote?: string
+  checkBad?: boolean
   /** Another part is downloading: the button waits. */
   blocked?: boolean
   blockedTitle?: string
 }>()
-const emit = defineEmits<{ download: []; cancel: []; delete: [] }>()
+const emit = defineEmits<{ download: []; cancel: []; delete: []; verify: []; reinstall: [] }>()
 const { t, locale } = useI18n()
 
 const confirming = ref(false)
+const reconfirming = ref(false)
 const percent = computed(() => {
   const d = props.download
   return d && d.total > 0 ? Math.min(100, Math.round((d.done / d.total) * 100)) : 0
@@ -58,10 +66,23 @@ const retry = computed(() => props.download?.status === 'failed' || props.downlo
         <button type="button" class="rounded-lg bg-status-failed/15 px-2.5 py-1 text-xs font-medium text-status-failed hover:bg-status-failed/25" @click="confirming = false; emit('delete')">{{ t('models.deleteYes') }}</button>
         <button type="button" class="rounded-lg border border-border px-2.5 py-1 text-xs text-text-dim hover:text-text" @click="confirming = false">{{ t('models.deleteNo') }}</button>
       </template>
+      <template v-else-if="reconfirming">
+        <span class="text-xs text-text-dim">{{ t('models.reinstallAsk', { gb: gb(bytes, locale) }) }}</span>
+        <button type="button" class="rounded-lg bg-accent1/15 px-2.5 py-1 text-xs font-medium text-accent1 hover:bg-accent1/25" @click="reconfirming = false; emit('reinstall')">{{ t('models.reinstallYes') }}</button>
+        <button type="button" class="rounded-lg border border-border px-2.5 py-1 text-xs text-text-dim hover:text-text" @click="reconfirming = false">{{ t('models.reinstallNo') }}</button>
+      </template>
       <template v-else>
         <span class="inline-flex items-center gap-1.5 rounded-full bg-status-done/15 px-2.5 py-1 text-xs text-status-done">
           <CheckIcon class="h-3.5 w-3.5" />{{ t('models.installed') }}
         </span>
+        <template v-if="verifiable">
+          <button type="button" class="rounded-lg border border-border px-2 py-1 text-xs text-text-dim hover:text-text disabled:opacity-50" :disabled="checking" :title="t('models.checkTitle')" @click="emit('verify')">
+            {{ t(checking ? 'models.checking' : 'models.check') }}
+          </button>
+          <button type="button" class="rounded-lg border border-border px-2 py-1 text-xs text-text-dim hover:text-text disabled:opacity-50" :disabled="blocked" :title="blocked ? blockedTitle : t('models.reinstallTitle')" :aria-label="t('models.reinstallNamed', { name })" @click="reconfirming = true">
+            {{ t('models.reinstall') }}
+          </button>
+        </template>
         <button
           v-if="deletable && !required"
           type="button"
@@ -103,5 +124,7 @@ const retry = computed(() => props.download?.status === 'failed' || props.downlo
       <p v-else-if="download?.status === 'cancelled'" class="text-[11px] text-text-dim">{{ t('models.stopped') }}</p>
       <p v-else-if="$slots.note" class="max-w-xs text-end text-[11px] leading-relaxed text-text-dim"><slot name="note" /></p>
     </div>
+
+    <p v-if="checkNote && installed" class="col-span-full text-end text-[11px] leading-relaxed" :class="checkBad ? 'text-status-failed' : 'text-text-dim'" :role="checkBad ? 'alert' : 'status'">{{ checkNote }}</p>
   </li>
 </template>

@@ -13,6 +13,8 @@ export interface EnginePart {
   required: boolean
   /** Can be removed again from the Models page (not while its engine runs). */
   deletable: boolean
+  /** Can be checked and downloaded again (all of them, required ones too). */
+  verifiable?: boolean
   installed: boolean
   /** What it takes on disk now; a partial download counts too. */
   on_disk: number
@@ -45,6 +47,20 @@ export const saveEngineSettings = (engine: EngineId, values: Record<string, stri
   apiJson<EnginesState>(`/api/engines/${engine}/settings`, values, 'PUT')
 export const downloadPart = (id: string) => apiFetch<EnginesState>(`/api/engines/parts/${encodeURIComponent(id)}/download`, { method: 'POST' })
 export const deletePart = (id: string) => apiFetch<EnginesState>(`/api/engines/parts/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export interface PartCheck {
+  part: string
+  ok: boolean
+  problems: { file: string; reason: string }[]
+  files: number
+  hashed: number
+  /** Whole by the record, but the source now holds another version of it. */
+  outdated: string[]
+  method: 'sha256' | 'structure'
+  /** The source's checksum list could not be fetched: only sizes were compared. */
+  offline: boolean
+}
+export const verifyPart = (id: string) => apiFetch<PartCheck>(`/api/engines/parts/${encodeURIComponent(id)}/verify`, { method: 'POST' })
+export const reinstallPart = (id: string) => apiFetch<EnginesState>(`/api/engines/parts/${encodeURIComponent(id)}/reinstall`, { method: 'POST' })
 export const cancelPart = (id: string) => apiFetch<EnginesState>(`/api/engines/parts/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
 
 export interface CpuSamplerSettings {

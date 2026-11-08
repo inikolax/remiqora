@@ -19,7 +19,7 @@ export interface Yue2Job {
   style: string
   lyrics: string
   cot: CotMode
-  precision: 'q8_0' | 'q4_0'
+  precision: 'q8_0' | 'q4_0' | 'bf16'
   seed: number
   error?: string
   audioUrl?: string
@@ -65,7 +65,7 @@ export const useYue2Store = defineStore('yue2', {
           style: (t.params.style as string) || t.title,
           lyrics: t.lyrics,
           cot: (t.params.cot as CotMode) || 'off',
-          precision: (t.params.precision as 'q8_0' | 'q4_0') || 'q8_0',
+          precision: (t.params.precision as 'q8_0' | 'q4_0' | 'bf16') || 'q8_0',
           seed: t.seed ?? 0,
           audioUrl: t.audio_url,
           abcPlan: t.abc_url ? '' : null,
@@ -104,7 +104,7 @@ export const useYue2Store = defineStore('yue2', {
       this._healthTimer = null
     },
     /** `title` names the cards and tracks (the style when not given; "From an idea" passes the idea). */
-    async generateBatch(params: { lyrics: string; style: string; cot: CotMode; precision: 'q8_0' | 'q4_0'; baseSeed: number; randomSeed: boolean; batchSize: number; options: GenerateOptions; title?: string }) {
+    async generateBatch(params: { lyrics: string; style: string; cot: CotMode; precision: 'q8_0' | 'q4_0' | 'bf16'; baseSeed: number; randomSeed: boolean; batchSize: number; options: GenerateOptions; title?: string }) {
       const newJobs: Yue2Job[] = []
       for (let i = 0; i < params.batchSize; i++) {
         const seed = params.randomSeed ? Math.floor(Math.random() * 2147483647) : params.baseSeed + i

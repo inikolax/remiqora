@@ -95,6 +95,32 @@ async def download_part(part: str) -> dict:
     return await asyncio.to_thread(_snapshot)
 
 
+@router.post("/engines/parts/{part}/verify")
+async def verify_part(part: str) -> dict:
+    """Reads the part's files and says whether they are whole (it can take a minute for the large ones)."""
+    try:
+        return await asyncio.to_thread(engine_parts.verify, part)
+    except KeyError as exc:
+        raise HTTPException(404, f"unknown part {part}") from exc
+    except OSError as exc:
+        raise HTTPException(500, f"could not read the files: {exc}") from exc
+
+
+@router.post("/engines/parts/{part}/reinstall")
+async def reinstall_part(part: str) -> dict:
+    p = engine_parts.PARTS.get(part)
+    if p is None:
+        raise HTTPException(404, f"unknown part {part}")
+    running = manager.state.models[p.engine].status != ModelStatus.STOPPED
+    try:
+        await engine_parts.reinstall(part, running)
+    except (RuntimeError, FileNotFoundError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, f"could not remove the old files: {exc}") from exc
+    return await asyncio.to_thread(_snapshot)
+
+
 @router.delete("/engines/parts/{part}")
 async def delete_part(part: str) -> dict:
     p = engine_parts.PARTS.get(part)
