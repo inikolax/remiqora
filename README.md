@@ -333,6 +333,9 @@ For anyone who would rather not use a terminal, Remiqora also comes as a **deskt
 
 **Download (v0.5.1, pre-release):** [Windows installer (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.5.1/Remiqora-Setup-0.5.1.exe) · [macOS installer (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.5.1/Remiqora-0.5.1-arm64.dmg) · [all files and SHA-256 sums](https://github.com/inikolax/remiqora/releases/tag/v0.5.1)
 
+> [!WARNING]
+> Official builds are published only on this repository's [Releases](https://github.com/inikolax/remiqora/releases) page and on [remiqora.com](https://remiqora.com). Copies of Remiqora under other GitHub accounts that offer a `.zip` "installer" are not ours and may carry malware: do not download or run them.
+
 <p align="center">
   <img src="docs/screenshots/en/12-desktop-check.png" alt="First launch: the app checks the GPU, driver, free space and connection, asks where to keep models and projects, and what to install" width="48%">
   <img src="docs/screenshots/en/13-desktop-download.png" alt="First launch: components downloading and installing, with overall and per-component progress" width="48%">
