@@ -15,17 +15,39 @@ const sum = (list) => list.reduce((a, b) => a + b, 0);
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex').slice(0, 12);
 
 /**
+ * A line of a tool's output as the note under the progress bar, without advice that is not for the user:
+ * huggingface_hub says on every file that the optional hf_xet package would download faster. The download
+ * works without it, and on the setup screen the sentence reads like a failure.
+ */
+function quietNote(line) {
+  const at = String(line).indexOf('Xet Storage is enabled');
+  return (at < 0 ? String(line) : String(line).slice(0, at)).trim();
+}
+/**
+ * True when a model folder downloaded by huggingface_hub is whole: it exists and no file is half-way.
+ * An interrupted download leaves `<folder>/.cache/huggingface/download/*.incomplete`; the folder itself is
+ * there from the first second, and ACE-Step's downloader takes any existing folder for a finished model.
+ */
+async function downloadComplete(folder) {
+  if (!(await exists(folder))) return false;
+  const partial = path.join(folder, '.cache', 'huggingface', 'download');
+  const names = await fsp.readdir(partial).catch(() => []);
+  return !names.some((name) => name.endsWith('.incomplete'));
+}
+const noteOf = (report) => (line) => { const note = quietNote(line); if (note) report({ note }); };
+
+/**
  * Moves into `fresh` everything of `old` that `fresh` does not have, folder by folder: the Python
  * environment, the downloaded models, caches, trained LoRAs. Files both have stay as `fresh` has them.
  * Used when ACE-Step's source is unpacked again for a changed patch, so that nothing is downloaded twice.
  */
-async function carryOver(old, fresh, depth = 3) {
+async function carryOver(old, fresh) {
   if (!(await exists(old))) return;
   for (const entry of await fsp.readdir(old, { withFileTypes: true })) {
     const from = path.join(old, entry.name);
     const to = path.join(fresh, entry.name);
     if (!(await exists(to))) await fsp.rename(from, to);
-    else if (entry.isDirectory() && depth > 1) await carryOver(from, to, depth - 1);
+    else if (entry.isDirectory()) await carryOver(from, to);
   }
 }
 
@@ -228,7 +250,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
     verify: () => exists(L.backendPython),
     async install(ctx, report) {
       const env = uvEnv(L);
-      const note = (line) => report({ note: line });
+      const note = noteOf(report);
       await runCommand(L.uvBin, ['venv', '--python', '3.12', '--allow-existing', L.backendVenv], { env, onLine: note, signal: ctx.signal, logFile });
       await runCommand(L.uvBin, ['pip', 'install', '--python', L.backendPython, '-r', path.join(resources.backend, 'requirements.txt')], { env, onLine: note, signal: ctx.signal, logFile });
     },
@@ -249,6 +271,12 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
         // The source archive is a sliver of this component's weight; `uv sync` below is the bulk.
         const archive = await fetchTo(ctx, { url: manifest.aceStep.url }, 0, manifest.aceStep.approxBytes, report);
         const tmp = `${L.aceStep}.tmp`;
+        // A re-patch that was cut short (closed app, a locked file) left the environment and the models
+        // in the temporary folder: they go back before that folder is cleared.
+        if (await exists(tmp)) {
+          await fsp.mkdir(L.aceStep, { recursive: true });
+          await carryOver(tmp, L.aceStep);
+        }
         await fsp.rm(tmp, { recursive: true, force: true });
         await extract(archive, tmp, { stripComponents: 1 });
         await applyGitPatch(await fsp.readFile(resources.acePatch, 'utf8'), tmp);
@@ -261,23 +289,27 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
         await fsp.rm(archive, { force: true });
       }
       await withCacheGrowth(L.uvCache, manifest.aceStep.approxBytes, report, () =>
-        runCommand(L.uvBin, ['sync'], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+        runCommand(L.uvBin, ['sync'], { cwd: L.aceStep, env: uvEnv(L), onLine: noteOf(report), signal: ctx.signal, logFile }));
     },
   };
 
   // ACE-Step downloads its models on the first generation; doing it here keeps the first "Generate" instant.
+  // `--with hf_xet`: the model repositories are on Xet storage, and without that package huggingface_hub falls back to
+  // plain HTTP, which was measured at 0.5 MB/s against 39 MB/s with it for the same file.
+  // `--force`: these installs run only when a model is not whole, and the downloader skips any folder that
+  // exists, also one an interrupted download left half-filled; with it the files already there are kept.
   const aceModels = {
     id: 'ace-models',
     weight: manifest.aceModels.approxBytes,
     version: 'ace-main-model-v1',
     verify: async () => {
-      for (const folder of manifest.aceModels.requiredFolders) if (!(await exists(path.join(L.aceStep, 'checkpoints', folder)))) return false;
+      for (const folder of manifest.aceModels.requiredFolders) if (!(await downloadComplete(path.join(L.aceStep, 'checkpoints', folder)))) return false;
       return true;
     },
     async install(ctx, report) {
       const checkpoints = path.join(L.aceStep, 'checkpoints');
       await withCacheGrowth(checkpoints, manifest.aceModels.approxBytes, report, () =>
-        retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'acestep-download'], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile })));
+        retrying(ctx, report, () => runCommand(L.uvBin, ['run', '--with', 'hf_xet', 'acestep-download', '--force'], { cwd: L.aceStep, env: uvEnv(L), onLine: noteOf(report), signal: ctx.signal, logFile })));
     },
   };
 
@@ -287,11 +319,12 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
     id: 'ace-base-model',
     weight: manifest.aceBaseModel.approxBytes,
     version: 'ace-base-model-v1',
-    verify: () => exists(path.join(L.aceStep, 'checkpoints', manifest.aceBaseModel.folder, 'model.safetensors')),
+    verify: async () => (await exists(path.join(L.aceStep, 'checkpoints', manifest.aceBaseModel.folder, 'model.safetensors')))
+      && (await downloadComplete(path.join(L.aceStep, 'checkpoints', manifest.aceBaseModel.folder))),
     async install(ctx, report) {
       const checkpoints = path.join(L.aceStep, 'checkpoints');
       await withCacheGrowth(checkpoints, manifest.aceBaseModel.approxBytes, report, () =>
-        retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'acestep-download', '--model', manifest.aceBaseModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile })));
+        retrying(ctx, report, () => runCommand(L.uvBin, ['run', '--with', 'hf_xet', 'acestep-download', '--force', '--model', manifest.aceBaseModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: noteOf(report), signal: ctx.signal, logFile })));
     },
   };
 
@@ -300,11 +333,12 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
     id: 'ace-xl-model',
     weight: manifest.aceXlModel.approxBytes,
     version: 'ace-xl-model-v1',
-    verify: () => exists(path.join(L.aceStep, 'checkpoints', manifest.aceXlModel.folder, manifest.aceXlModel.lastFile)),
+    verify: async () => (await exists(path.join(L.aceStep, 'checkpoints', manifest.aceXlModel.folder, manifest.aceXlModel.lastFile)))
+      && (await downloadComplete(path.join(L.aceStep, 'checkpoints', manifest.aceXlModel.folder))),
     async install(ctx, report) {
       const checkpoints = path.join(L.aceStep, 'checkpoints');
       await withCacheGrowth(checkpoints, manifest.aceXlModel.approxBytes, report, () =>
-        retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'acestep-download', '--model', manifest.aceXlModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile })));
+        retrying(ctx, report, () => runCommand(L.uvBin, ['run', '--with', 'hf_xet', 'acestep-download', '--force', '--model', manifest.aceXlModel.folder], { cwd: L.aceStep, env: uvEnv(L), onLine: noteOf(report), signal: ctx.signal, logFile })));
     },
   };
 
@@ -317,10 +351,10 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
       await fsp.mkdir(L.demucs, { recursive: true });
       await fsp.writeFile(path.join(L.demucs, 'pyproject.toml'), demucsProject(platform));
       await withCacheGrowth(L.uvCache, manifest.demucs.approxBytes, report, () =>
-        runCommand(L.uvBin, ['sync'], { cwd: L.demucs, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+        runCommand(L.uvBin, ['sync'], { cwd: L.demucs, env: uvEnv(L), onLine: noteOf(report), signal: ctx.signal, logFile }));
       // Fetch the separation model now (about 80 MB), so the first "split into stems" does not stall on a download.
       const fetchModel = `from demucs.pretrained import get_model; get_model('${manifest.demucs.model}')`;
-      await retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'python', '-c', fetchModel], { cwd: L.demucs, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+      await retrying(ctx, report, () => runCommand(L.uvBin, ['run', 'python', '-c', fetchModel], { cwd: L.demucs, env: uvEnv(L), onLine: noteOf(report), signal: ctx.signal, logFile }));
     },
   };
 
@@ -343,7 +377,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
       await fsp.rm(path.join(dest, pkg), { recursive: true, force: true });
       await fsp.cp(src, dest, { recursive: true, force: true });
       await withCacheGrowth(L.uvCache, weight, report, () =>
-        retrying(ctx, report, () => runCommand(L.uvBin, ['sync'], { cwd: dest, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile })));
+        retrying(ctx, report, () => runCommand(L.uvBin, ['sync'], { cwd: dest, env: uvEnv(L), onLine: noteOf(report), signal: ctx.signal, logFile })));
     },
   });
   // Stable Audio 3: its server here, the checkpoints in the next step.
@@ -428,7 +462,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
       try {
         for (const pkg of packages) {
           report({ note: pkg });
-          await retrying(ctx, report, () => runCommand(L.backendPython, [path.join('tools', 'model_manager_v2.py'), 'install', pkg], { cwd: L.yue2, env: uvEnv(L), onLine: (line) => report({ note: line }), signal: ctx.signal, logFile }));
+          await retrying(ctx, report, () => runCommand(L.backendPython, [path.join('tools', 'model_manager_v2.py'), 'install', pkg], { cwd: L.yue2, env: uvEnv(L), onLine: noteOf(report), signal: ctx.signal, logFile }));
         }
       } finally {
         clearInterval(timer);
@@ -453,4 +487,4 @@ function ffmpegExecutable(L, manifest, platform) {
   return path.join('/usr/local/bin', 'ffmpeg');
 }
 
-module.exports = { buildComponents, ffmpegExecutable, demucsProject, dirSize, treeHash, carryOver };
+module.exports = { buildComponents, ffmpegExecutable, demucsProject, dirSize, treeHash, carryOver, quietNote, downloadComplete };

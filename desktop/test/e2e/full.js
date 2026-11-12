@@ -5,6 +5,7 @@
 //   set PHASE=setup      then: node test/e2e/full.js    first run with every component, no skips (deletes E2E_ROOT first)
 //   set PHASE=generate   then: node test/e2e/full.js    YuE2 + MIDI + ACE-Step + Demucs, quit, restart
 //   set PHASE=add        then: node test/e2e/full.js    from the app: open "add components", go back, then add the base model
+//   set PHASE=repatch    then: node test/e2e/full.js    an update that brings a changed ACE-Step patch (after setup)
 //
 // Everything runs against E2E_ROOT/home (data) and E2E_ROOT/user (Electron settings), never real profile data.
 // Report: results-<phase>.json and screenshots in E2E_REPORT (default: system temp).
@@ -14,6 +15,8 @@
 //   add      : the parts left out at setup (the defaults leave out the base models) are reported as not installed; the
 //              app's Install path opens the setup screen while the backend keeps running, "Back" returns without a
 //              restart and without keeping the pick, then the ACE-Step base model is added and reported installed
+//   repatch  : the install is made to look like one with an older patch (marker, a reverted source file); the next
+//              start must apply the patch again and keep the environment, the models and user files, then generate
 const { _electron: electron } = require('playwright');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -400,10 +403,92 @@ async function addPhase() {
   log('leftovers after quit:', results.addLeftovers.join(', ') || 'none');
 }
 
+// ---------------------------------------------------------------- phase 4
+async function repatchPhase() {
+  const ace = path.join(HOME, 'engines', 'ACE-Step-1.5');
+  const marker = path.join(ace, '.remiqora-patched');
+  const patched = path.join(ace, 'acestep', 'core', 'generation', 'handler', 'init_service_offload_context.py');
+  const canaries = { 'checkpoints/e2e-canary.txt': 'kept model folder', 'lora_output/e2e/adapter.txt': 'my lora', '.cache/e2e/x.txt': 'cache' };
+  let before;
+
+  await step('repatch-make-old', async () => {
+    if (!fs.existsSync(marker)) throw new Error('no patched ACE-Step: run the setup phase first');
+    before = { marker: fs.readFileSync(marker, 'utf8').trim(), checkpoints: dirSize(path.join(ace, 'checkpoints')), venv: dirSize(path.join(ace, '.venv')) };
+    for (const [rel, text] of Object.entries(canaries)) { fs.mkdirSync(path.dirname(path.join(ace, rel)), { recursive: true }); fs.writeFileSync(path.join(ace, rel), text); }
+    fs.writeFileSync(marker, 'oldpatch0000');
+    // the source as an older patch left it: without what the current patch adds to this file
+    const text = fs.readFileSync(patched, 'utf8');
+    if (!text.includes('_keep_cpu_weights')) throw new Error('the current patch is not in the source');
+    fs.writeFileSync(patched, text.replace(/_keep_cpu_weights/g, '_gone_with_the_old_patch'));
+    return `marker ${before.marker} -> oldpatch0000, checkpoints ${gb(before.checkpoints)}, venv ${gb(before.venv)}`;
+  });
+
+  const { app, win } = await launch();
+  let base = '';
+  await step('repatch-update-runs', async () => {
+    // the component is due, so the app opens on the setup screen instead of the main window
+    await win.waitForSelector('#start', { timeout: 120000 });
+    await win.screenshot({ path: path.join(OUT, 'shots', 'repatch-1-screen.png') });
+    await win.click('#start');
+    await win.waitForSelector('#comps', { timeout: 15000 });
+    for (let i = 0; i < 360; i++) { // up to 30 minutes
+      if (await win.locator('#open').count()) break;
+      if (await win.locator('#retry').count()) throw new Error('update failed: ' + (await win.locator('pre').innerText().catch(() => '')).slice(0, 800));
+      await sleep(5000);
+    }
+    const rows = await win.locator('#comps li').evaluateAll((els) => els.map((e) => `${e.querySelector('.name').textContent.slice(0, 22)}=${e.querySelector('.state').textContent}`).join(' | ')).catch(() => '');
+    await win.screenshot({ path: path.join(OUT, 'shots', 'repatch-2-done.png') });
+    await win.click('#open');
+    await win.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\//, { timeout: 180000 });
+    base = new URL(win.url()).origin;
+    return rows;
+  });
+
+  await step('repatch-kept-everything', async () => {
+    const now = { marker: fs.readFileSync(marker, 'utf8').trim(), checkpoints: dirSize(path.join(ace, 'checkpoints')), venv: dirSize(path.join(ace, '.venv')) };
+    if (now.marker !== before.marker) throw new Error(`marker is ${now.marker}, expected ${before.marker}`);
+    if (!fs.readFileSync(patched, 'utf8').includes('_keep_cpu_weights')) throw new Error('the patch was not applied to the source again');
+    for (const [rel, text] of Object.entries(canaries)) {
+      if (!fs.existsSync(path.join(ace, rel)) || fs.readFileSync(path.join(ace, rel), 'utf8') !== text) throw new Error(`${rel} was not kept`);
+    }
+    if (now.checkpoints < before.checkpoints) throw new Error(`checkpoints shrank: ${gb(before.checkpoints)} -> ${gb(now.checkpoints)}`);
+    if (now.venv < before.venv * 0.9) throw new Error(`the environment shrank: ${gb(before.venv)} -> ${gb(now.venv)}`);
+    if (fs.existsSync(ace + '.tmp')) throw new Error('the temporary folder was left behind');
+    const torch = execFileSync(path.join(ace, '.venv', 'Scripts', 'python.exe'), ['-c', 'import torch;print(torch.__version__, torch.cuda.is_available())'], { encoding: 'utf8', timeout: 180000 }).trim();
+    return `marker ${now.marker}, checkpoints ${gb(now.checkpoints)}, venv ${gb(now.venv)}, torch ${torch}`;
+  });
+
+  await step('repatch-ace-generates', async () => {
+    let r = await call('POST', base + '/api/orchestrator/switch', { json: { model: 'ace_step' }, timeoutMs: 25 * 60 * 1000 });
+    if (r.status !== 200 || r.json().models.ace_step.status !== 'running') throw new Error(`switch -> ${r.status} ${(r.text || '').slice(0, 400)}`);
+    r = await call('POST', base + '/api/ace/release_task', { json: { prompt: 'calm ambient piano, soft pads', lyrics: '[Instrumental]', audio_duration: 12, batch_size: 1, audio_format: 'mp3', use_random_seed: true } });
+    const id = (r.json().data ?? r.json()).task_id;
+    let entry;
+    for (let i = 0; i < 240; i++) {
+      const q = (await call('POST', base + '/api/ace/query_result', { json: { task_id_list: [id] } })).json();
+      entry = (q.data ?? q)[0];
+      if (entry && entry.status !== 0) break;
+      await sleep(5000);
+    }
+    if (!entry || entry.status !== 1) throw new Error(`task ended with status ${entry && entry.status}: ${String(entry && entry.result).slice(0, 300)}`);
+    const stop = await call('POST', base + '/api/orchestrator/stop', { json: {} });
+    return `audio generated; stop -> ${stop.json().models.ace_step.status}`;
+  });
+
+  await step('repatch-quit-clean', async () => {
+    await app.close();
+    await sleep(4000);
+    const left = procsUnder(NEEDLE);
+    if (left.length) throw new Error(`processes left: ${left.join(', ')}`);
+    return 'no processes left';
+  });
+}
+
 (async () => {
-  if (!EXE || !ROOT || !['setup', 'generate', 'add'].includes(PHASE)) { console.log('usage: set E2E_EXE, E2E_ROOT and PHASE=setup|generate|add, then: node test/e2e/full.js'); process.exit(2); }
+  const PHASES = { setup: setupPhase, generate: generatePhase, add: addPhase, repatch: repatchPhase };
+  if (!EXE || !ROOT || !PHASES[PHASE]) { console.log('usage: set E2E_EXE, E2E_ROOT and PHASE=setup|generate|add|repatch, then: node test/e2e/full.js'); process.exit(2); }
   log(`phase ${PHASE} with ${EXE}`);
-  if (PHASE === 'setup') await setupPhase(); else if (PHASE === 'add') await addPhase(); else await generatePhase();
+  await PHASES[PHASE]();
   save();
   log('PHASE COMPLETE');
 })().catch((e) => { log('PHASE CRASHED:', e && e.stack ? e.stack.slice(0, 900) : e); process.exit(1); });

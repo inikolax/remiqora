@@ -243,3 +243,42 @@ test('ACE-Step is installed again when the patch changed', async () => {
   fs.writeFileSync(patch, 'patch two');
   assert.equal(await ace.verify({}), false, 'a changed patch makes the component due');
 });
+
+test('what an interrupted re-patch left in the temporary folder goes back, however deep', async () => {
+  const { carryOver } = require('../src/bootstrap/components');
+  const install = tmp();
+  const stranded = tmp();
+  const put = (root, rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
+  put(install, 'acestep/handler.py', 'old source');                    // the run stopped before the folders were swapped
+  put(stranded, 'acestep/handler.py', 'patched source');
+  put(stranded, '.venv/pyvenv.cfg', 'env');
+  put(stranded, 'checkpoints/acestep-v15-turbo/model.safetensors', 'weights');
+  put(stranded, 'acestep/a/b/c/d/user.txt', 'deep user file');
+  await carryOver(stranded, install);
+  const read = (rel) => fs.readFileSync(path.join(install, rel), 'utf8');
+  assert.equal(read('.venv/pyvenv.cfg'), 'env');
+  assert.equal(read('checkpoints/acestep-v15-turbo/model.safetensors'), 'weights');
+  assert.equal(read('acestep/a/b/c/d/user.txt'), 'deep user file', 'no depth limit');
+  assert.equal(read('acestep/handler.py'), 'old source', 'files both have are left alone');
+});
+
+test('the note under the progress bar leaves out the hf_xet advice', () => {
+  const { quietNote } = require('../src/bootstrap/components');
+  const advice = "Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download.";
+  assert.equal(quietNote(advice), '', 'a line that is only the advice is dropped');
+  assert.equal(quietNote(`Fetching 28 files:  18%|#8        | 5/28 [00:00<00:03,  6.34it/s]${advice}`), 'Fetching 28 files:  18%|#8        | 5/28 [00:00<00:03,  6.34it/s]');
+  assert.equal(quietNote('Resolved 212 packages in 1.2s'), 'Resolved 212 packages in 1.2s');
+});
+
+test('a model folder with a half-downloaded file is not a finished model', async () => {
+  const { downloadComplete } = require('../src/bootstrap/components');
+  const folder = path.join(tmp(), 'acestep-v15-base');
+  assert.equal(await downloadComplete(folder), false, 'no folder yet');
+  fs.mkdirSync(path.join(folder, '.cache', 'huggingface', 'download'), { recursive: true });
+  fs.writeFileSync(path.join(folder, 'config.json'), '{}');
+  fs.writeFileSync(path.join(folder, '.cache', 'huggingface', 'download', 'abc.incomplete'), 'half');
+  assert.equal(await downloadComplete(folder), false, 'interrupted');
+  fs.rmSync(path.join(folder, '.cache', 'huggingface', 'download', 'abc.incomplete'));
+  fs.writeFileSync(path.join(folder, '.cache', 'huggingface', 'download', 'model.safetensors.lock'), '');
+  assert.equal(await downloadComplete(folder), true, 'finished: lock files do not count');
+});
