@@ -2,7 +2,7 @@
 # Remiqora from source on Linux with an NVIDIA GPU: clones ACE-Step 1.5 and audio.cpp (YuE2), applies our patch,
 # builds YuE2 with CUDA, downloads its weights, sets up Demucs, Stable Audio 3 and the prompt assistant, and writes
 # backend/.env. Run it again any time: what is done is skipped, a newer ACE-Step patch is applied again.
-#   SKIP_WEIGHTS=1               leave out YuE2's weights (the Docker image fetches them on its first start)
+#   SKIP_WEIGHTS=1               leave out YuE2's weights (to download them later)
 #   STABLE_AUDIO_MODELS="medium small-sfx"   Stable Audio 3 checkpoints to download now (or later in the app)
 #   PROMPT_ASSISTANT_MODEL=Qwen/Qwen3.5-2B   the assistant's model to download now (or later on the Models page)
 #   ACE_BASE=1                   download the ACE-Step base model for the AI arranger without asking

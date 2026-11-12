@@ -54,7 +54,7 @@ RQ_LOGO=(
 '╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚═╝ ╚══▀▀═╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝'
 )
 # The app's version (desktop/package.json). Never a failure: under set -e -o pipefail a missing file would end the
-# calling script silently, and the Docker build context leaves desktop/ out (the image passes IMAGE_VERSION).
+# calling script silently. IMAGE_VERSION, when set, is used instead of the file.
 app_version() {
   if [[ -n "${IMAGE_VERSION:-}" && "$IMAGE_VERSION" != dev ]]; then printf '%s' "$IMAGE_VERSION"; return 0; fi
   sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$ROOT/desktop/package.json" 2>/dev/null | head -1 || true

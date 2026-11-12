@@ -1,7 +1,5 @@
 # keep the ACE-Step patch byte-exact: the desktop installer applies it without Git
 external/patches/*.patch text eol=lf
 
-# shell scripts and the container files run on Linux: LF even in a Windows checkout (a Docker build copies them as they are)
+# shell scripts run on Linux and macOS: LF even in a Windows checkout
 *.sh text eol=lf
-Dockerfile text eol=lf
-docker/* text eol=lf
