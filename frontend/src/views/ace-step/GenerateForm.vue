@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import KeyScalePicker from '../../components/shared/KeyScalePicker.vue'
-import { aceKeyScale, withScaleHint } from '../../utils/keyScale'
+import { aceKeyScale, normalizeKeyScale, withScaleHint } from '../../utils/keyScale'
 import { computed, onMounted, ref, watch } from 'vue'
 import { cutAtPhrase } from '../../utils/trackTitle'
 import { useI18n } from 'vue-i18n'
@@ -98,7 +98,7 @@ function applyPreset(name: string) {
   if (p.duration) duration.value = p.duration
   if (p.audioFormat) audioFormat.value = p.audioFormat
   bpm.value = p.bpm ?? null
-  keyScale.value = p.keyScale || ''
+  keyScale.value = normalizeKeyScale(p.keyScale)
   timeSignature.value = p.timeSignature || ''
   vocalLanguage.value = p.vocalLanguage || ''
   inferenceSteps.value = p.inferenceSteps ?? null
@@ -132,7 +132,7 @@ function applyInsert(params: typeof store.pendingParamsInsert) {
   if (params.duration != null) duration.value = params.duration
   if (params.audio_format != null) audioFormat.value = params.audio_format
   if (params.bpm != null) bpm.value = params.bpm
-  if (params.key_scale != null) keyScale.value = params.key_scale
+  if (params.key_scale != null) keyScale.value = normalizeKeyScale(params.key_scale)
   if (params.time_signature != null) timeSignature.value = params.time_signature
   if (params.vocal_language != null) vocalLanguage.value = params.vocal_language
   if (params.inference_steps != null) inferenceSteps.value = params.inference_steps

@@ -20,6 +20,8 @@ const props = defineProps<{
   snapEnabled: boolean
   selected: boolean
   tool: EditorTool
+  /** Track height in px: the waveform is redrawn when it changes. */
+  heightPx: number
   laneName: string
   theme: {
     baseHex: string
@@ -413,18 +415,28 @@ function drawPeaks(): void {
 }
 
 let drawFrame = 0
+let drawTimer = 0
+/** One redraw per frame. The timer is for a window that is not painting (minimised, covered): there
+ * requestAnimationFrame does not fire at all, and the clip would keep the picture of its first size. */
 function scheduleDraw(): void {
   if (drawFrame) return
-  drawFrame = requestAnimationFrame(() => {
+  const run = () => {
+    cancelAnimationFrame(drawFrame)
+    clearTimeout(drawTimer)
     drawFrame = 0
     drawPeaks()
-  })
+  }
+  drawFrame = requestAnimationFrame(run)
+  drawTimer = window.setTimeout(run, 150)
 }
 
 let resizeObserver: ResizeObserver | null = null
 
 watch(() => [props.buffer, props.bufferStretch, props.clip.trimStart, props.clip.trimEnd, props.clip.notes], scheduleDraw)
 watch(() => props.theme, scheduleDraw, { deep: true })
+// The size is watched as data too, not only through the ResizeObserver: a page that is not being
+// painted delivers no resize observations, and the clip would keep the bitmap of its first size.
+watch(() => [width.value, props.heightPx], scheduleDraw)
 onMounted(() => {
   drawPeaks()
   if (canvasEl.value && typeof ResizeObserver !== 'undefined') {
@@ -436,7 +448,8 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   window.removeEventListener('pointermove', onEraseMove)
   window.removeEventListener('pointerup', onEraseUp)
-  if (drawFrame) cancelAnimationFrame(drawFrame)
+  cancelAnimationFrame(drawFrame)
+  clearTimeout(drawTimer)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
 })

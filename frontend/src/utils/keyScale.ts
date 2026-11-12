@@ -58,6 +58,22 @@ export function parseKeyScale(value: string | null | undefined): ParsedKey | nul
   return tonic && mode ? { tonic, mode } : null
 }
 
+/**
+ * A key as the form keeps it, from whatever was typed or saved before the picker existed: "Am", "F#m",
+ * "C Maj", "a MINOR". What cannot be read becomes '' rather than a value the picker cannot show.
+ */
+export function normalizeKeyScale(value: string | null | undefined): string {
+  const text = (value ?? '').trim()
+  const parsed = parseKeyScale(text)
+  if (parsed) return formatKeyScale(parsed.tonic, parsed.mode.id)
+  const short = /^([A-Ga-g])\s*([#b♯♭]?)\s*(m|min|minor|maj|major)?$/i.exec(text)
+  if (!short) return ''
+  // "Am" is minor, "AM" and a bare "A" are major.
+  const minor = /^(m|min|minor)$/.test(short[3] ?? '') || /^(min|minor)$/i.test(short[3] ?? '')
+  const again = parseKeyScale(`${short[1]}${short[2]} ${minor ? 'minor' : 'major'}`)
+  return again ? formatKeyScale(again.tonic, again.mode.id) : ''
+}
+
 export function formatKeyScale(tonic: string, modeId: string): string {
   return tonic ? `${tonic} ${modeId}` : ''
 }

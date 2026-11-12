@@ -459,7 +459,8 @@ async function insertVariants(job: AiPartJob) {
     job.variants.forEach((v, i) => {
       const buf = decoded[i]
       v.copyScore = buf && ctx ? correlationWithContext(buf, ctx) : null
-      v.noiseScore = buf && !NOISE_EXEMPT_TRACKS.has(r.track) ? noiseScore(buf) : null
+      // The store scored it before saving; only a variant that came another way is scored here.
+      if (v.noiseScore === undefined) v.noiseScore = buf && !NOISE_EXEMPT_TRACKS.has(r.track) ? noiseScore(buf) : null
     })
   }
   if (job.session !== store.session) return

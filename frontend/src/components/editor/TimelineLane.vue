@@ -216,6 +216,7 @@ function bufferFor(clip: Clip): { buffer: AudioBuffer; sf: number } | null {
         :snap-enabled="snapEnabled"
         :selected="selectedClipId === clip.id"
         :tool="tool"
+        :height-px="heightPx"
         :lane-name="lane.name"
         :theme="theme"
         @move="(timelineStart) => emit('moveClip', { clipId: clip.id, timelineStart })"

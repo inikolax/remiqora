@@ -296,4 +296,10 @@ export function noiseScore(part: AudioBuffer): number {
 }
 
 export const NOISE_THRESHOLD = 0.06
+/**
+ * From here a variant is dropped unseen and asked for again; between the two thresholds it is only
+ * marked. Hiss measured 0.06-0.39, mostly above 0.1, and a played part can reach the low end of that
+ * (a distorted guitar read 0.06), so only the clear cases are thrown away without the user hearing them.
+ */
+export const NOISE_DROP_THRESHOLD = 0.1
 export const NOISE_EXEMPT_TRACKS: ReadonlySet<AiTrack> = new Set(['drums', 'percussion', 'fx'])

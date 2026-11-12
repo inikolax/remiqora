@@ -447,9 +447,9 @@ type RulerMode = 'time' | 'bars'
 const RULER_KEY = 'remiqora_editor_ruler'
 function readRulerMode(): RulerMode {
   try {
-    return localStorage.getItem(RULER_KEY) === 'bars' ? 'bars' : 'time'
+    return localStorage.getItem(RULER_KEY) === 'time' ? 'time' : 'bars'
   } catch {
-    return 'time'
+    return 'bars'
   }
 }
 const rulerMode = ref<RulerMode>(readRulerMode())

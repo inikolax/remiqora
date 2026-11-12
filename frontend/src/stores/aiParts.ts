@@ -6,7 +6,7 @@ import * as sa3Api from '../api/stableAudio'
 import type { Sa3JobRequest, Sa3ModelId } from '../api/stableAudio'
 import * as tracksApi from '../api/tracks'
 import { i18n } from '../i18n'
-import { NOISE_EXEMPT_TRACKS, NOISE_THRESHOLD, noiseScore } from '../utils/aiParts'
+import { NOISE_DROP_THRESHOLD, NOISE_EXEMPT_TRACKS, noiseScore } from '../utils/aiParts'
 import type { AiEngine, AiMode, AiTrack } from '../utils/aiParts'
 import { getSharedAudioCtx } from '../composables/audioPlayback'
 import { aceKeyScale, keyScaleText, withScaleHint } from '../utils/keyScale'
@@ -207,6 +207,7 @@ export const useAiPartsStore = defineStore('aiParts', {
       } catch (e) {
         job.status = 'failed'
         job.error = e instanceof Error ? e.message : String(e)
+        job.context = undefined
       }
       return job
     },
@@ -246,6 +247,7 @@ export const useAiPartsStore = defineStore('aiParts', {
         } else if (st.status === 'failed' || st.status === 'cancelled') {
           job.status = st.status
           job.error = st.error || (st.status === 'failed' ? t('storeErrors.unknownError') : null)
+          job.context = undefined
         } else {
           job.status = st.status
           job.progress = st.progress
@@ -281,7 +283,9 @@ export const useAiPartsStore = defineStore('aiParts', {
           } else {
             job.status = first.error === 'Cancelled by user' ? 'cancelled' : 'failed'
             job.error = first.error || t('storeErrors.unknownError')
+            this._abandon(job)
           }
+          job.context = undefined
         } else {
           job.status = first.stage === 'queued' ? 'queued' : 'running'
           job.progress = Math.round((first.progress || 0) * 100)
@@ -304,14 +308,15 @@ export const useAiPartsStore = defineStore('aiParts', {
           const resp = await fetch(url)
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
           const blob = await resp.blob()
-          if (screen) {
-            let noisy = false
+          // The score travels with the variant, so the panel does not decode it again for this.
+          let score: number | null | undefined
+          if (r.mode === 'lego' && r.engine !== 'sa3') {
             try {
-              noisy = noiseScore(await getSharedAudioCtx().decodeAudioData(await blob.arrayBuffer())) >= NOISE_THRESHOLD
+              score = NOISE_EXEMPT_TRACKS.has(r.track) ? null : noiseScore(await getSharedAudioCtx().decodeAudioData(await blob.arrayBuffer()))
             } catch {
               // Undecodable here: leave the verdict to the panel.
             }
-            if (noisy) {
+            if (screen && score != null && score >= NOISE_DROP_THRESHOLD) {
               dropped++
               continue
             }
@@ -330,7 +335,7 @@ export const useAiPartsStore = defineStore('aiParts', {
             blob,
             'wav',
           )
-          job.variants.push({ url: saved.audio_url, trackId: saved.id, laneId: null, copyScore: null })
+          job.variants.push({ url: saved.audio_url, trackId: saved.id, laneId: null, copyScore: null, noiseScore: score })
         } catch {
           // Library save failed: still offer the (temporary) model URL.
           job.variants.push({ url, trackId: null, laneId: null, copyScore: null })
@@ -365,7 +370,20 @@ export const useAiPartsStore = defineStore('aiParts', {
           // already finished or the model is gone; the local state below still applies
         }
       }
-      if (job.status === 'queued' || job.status === 'running') job.status = 'cancelled'
+      if (job.status === 'queued' || job.status === 'running') {
+        job.status = 'cancelled'
+        job.context = undefined
+        this._abandon(job)
+      }
+    },
+    /**
+     * A job that ends while it was asking for replacements has good variants of its first request in
+     * the library that were never put on lanes: they are queued for removal with the discarded ones.
+     */
+    _abandon(job: AiPartJob) {
+      if (job.inserted || !job.variants.length) return
+      this.discardVariants(job.variants)
+      job.variants = []
     },
     discardVariants(variants: AiPartVariant[]) {
       this.discarded.push(...variants.filter((v) => v.trackId != null))
