@@ -505,6 +505,13 @@ Stem separation's `demucs` uv project is set up by `setup_models.bat` above; the
 
 **On Linux:** `./prod_run_linux.sh` builds the frontend and serves the SPA and API on `127.0.0.1:9000` by default. Override with `REMIQORA_HOST` / `REMIQORA_PORT`. To opt in to LAN access, run `REMIQORA_HOST=0.0.0.0 ./prod_run_linux.sh`; Remiqora has no built-in authentication, so only expose it on a trusted network or behind an authenticated reverse proxy.
 
+**With Docker (Linux + NVIDIA GPU):** the repository has a `Dockerfile` and `compose.yaml` with the web app and every engine. You need the NVIDIA driver, Docker with Compose and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+```sh
+docker compose up -d --build     # the first build takes about 25 minutes and makes a ~13 GB image
+docker compose logs -f           # on the first start YuE2's weights download (~7 GB with the default q8_0)
+```
+Then open [http://127.0.0.1:9000](http://127.0.0.1:9000). Everything that changes (the library, settings, every engine's weights, the caches) lives in the `remiqora-data` volume, so `docker compose down` and a rebuild keep it. ACE-Step downloads its models on the first generation (about 9 GB, a few minutes); Stable Audio 3 and the prompt assistant get theirs from the Models page. `YUE2_PRECISIONS` in `compose.yaml` picks the YuE2 precisions (`q8_0`, `q4_0`, `bf16`). The port is published on 127.0.0.1 only: Remiqora has no login, so open it to the network only on a trusted one or behind an authenticating reverse proxy. Verified on Ubuntu 24.04 in WSL2 with an RTX 4080.
+
 **On macOS:** `./dev.sh` and `./prod_run.sh` are the equivalents — same
 behavior, except the backend/frontend run as background jobs of the script
 itself (stop both with Ctrl+C) rather than in separate terminal windows.

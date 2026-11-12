@@ -41,25 +41,45 @@ fi
 
 mkdir -p "$EXTERNAL_DIR"
 
+# Clones (once) and checks out a pinned commit, applies our patch, prints the folder on stdout (everything else goes
+# to stderr: the caller captures stdout as the path). The marker holds the hash of the applied patch, so a newer patch
+# is applied again on the next run: the files the old one added are removed, tracked files go back to the pinned
+# commit, untracked folders (checkpoints, .venv, LoRAs) stay.
 init_repo() {
   local name="$1" url="$2" ref="$3" patch="${4:-}"
   local dir="$EXTERNAL_DIR/$name"
+  local marker="$dir/.remiqora-setup-done"
+  local wanted="nopatch" applied=""
+  [[ -n "$patch" ]] && wanted="$(sha1sum "$patch" | cut -c1-12)"
   if [[ ! -d "$dir/.git" ]]; then
-    git clone "$url" "$dir"
+    git clone -q "$url" "$dir" >&2
   fi
-  git -C "$dir" fetch origin
-  git -C "$dir" checkout --detach "$ref"
+  [[ -f "$marker" ]] && applied="$(tr -d '
+ ' < "$marker")"
+  if [[ "$applied" == "$wanted" ]]; then
+    echo "Already checked out and patched: $name" >&2
+    printf "%s
+" "$dir"
+    return
+  fi
   if [[ -n "$patch" ]]; then
-    if git -C "$dir" apply --check "$patch" >/dev/null 2>&1; then
-      git -C "$dir" apply --whitespace=nowarn "$patch"
-    elif git -C "$dir" apply --reverse --check "$patch" >/dev/null 2>&1; then
-      echo "Patch already applied: $(basename "$patch")"
-    else
+    awk '/^diff --git /{f=substr($4,3); n=NR; next} NR==n+1 && /^new file mode/{print f}' "$patch" |
+      while IFS= read -r rel; do rm -f "$dir/$rel"; done
+  fi
+  if ! git -C "$dir" -c advice.detachedHead=false checkout -q --force --detach "$ref" >&2 2>/dev/null; then
+    git -C "$dir" fetch -q origin >&2
+    git -C "$dir" -c advice.detachedHead=false checkout -q --force --detach "$ref" >&2
+  fi
+  if [[ -n "$patch" ]]; then
+    if ! git -C "$dir" apply --whitespace=nowarn "$patch" >&2; then
       echo "Patch cannot be applied cleanly: $patch" >&2
       exit 3
     fi
+    echo "Applied $(basename "$patch")" >&2
   fi
-  printf "%s\n" "$dir"
+  printf "%s" "$wanted" > "$marker"
+  printf "%s
+" "$dir"
 }
 
 step "ACE-Step 1.5"
@@ -97,12 +117,17 @@ done
 )
 
 step "YuE2 / SheetSage2 / MuScriptor weights"
-(
-  cd "$AUDIOCPP_DIR"
-  for pkg in yue2_main_q8_0 yue2_main_q4_0 yue2_vae_f16 sheetsage2_orig muscriptor_small_f32; do
-    "$PYTHON_BIN" tools/model_manager_v2.py install "$pkg"
-  done
-)
+# SKIP_WEIGHTS=1 leaves them out (the Docker image fetches them on its first start, into its volume)
+if [[ "${SKIP_WEIGHTS:-0}" == "1" ]]; then
+  echo "Skipped (SKIP_WEIGHTS=1)."
+else
+  (
+    cd "$AUDIOCPP_DIR"
+    for pkg in yue2_main_q8_0 yue2_main_q4_0 yue2_vae_f16 sheetsage2_orig muscriptor_small_f32; do
+      "$PYTHON_BIN" tools/model_manager_v2.py install "$pkg"
+    done
+  )
+fi
 
 step "Demucs"
 DEMUCS_DIR="$EXTERNAL_DIR/Demucs"
@@ -173,7 +198,11 @@ fi
 step "Backend environment"
 FFMPEG_BIN_DIR="$(dirname "$(command -v ffmpeg)")"
 CUDA_BIN_DIR="$(dirname "$(command -v "$NVCC_BIN")")"
-CUDA_LIB_DIR="${CUDA_LIB_DIR:-$(cd "$CUDA_BIN_DIR/.." && pwd)/lib}"
+# NVIDIA's packages put the libraries in lib64 (lib is missing or a stub there)
+CUDA_PREFIX="$(cd "$CUDA_BIN_DIR/.." && pwd)"
+if [[ -z "${CUDA_LIB_DIR:-}" ]]; then
+  if [[ -d "$CUDA_PREFIX/lib64" ]]; then CUDA_LIB_DIR="$CUDA_PREFIX/lib64"; else CUDA_LIB_DIR="$CUDA_PREFIX/lib"; fi
+fi
 YUE2_DEVICE="${YUE2_DEVICE:-}"
 ACE_STEP_DEVICE="${ACE_STEP_DEVICE:-}"
 STABLE_AUDIO_DEVICE="${STABLE_AUDIO_DEVICE:-}"
