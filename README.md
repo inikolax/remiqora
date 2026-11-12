@@ -216,7 +216,7 @@ Transcribes the full mix, or any already-separated stem, into MIDI. Technically 
 
 ## Built-in DAW
 
-![Editor: a four-stem project on the timeline](docs/screenshots/en/08-editor-with-clip.png)
+![Editor: a seven-track project laid out by the AI arranger, bars on the ruler, the drums channel in the mixer](docs/screenshots/en/08-editor-with-clip.png)
 
 Any number of tracks, onto which you can add anything from the shared library (a full mix, a single stem, a file uploaded from disk) — via a picker dialog or by dragging a file straight onto a track. The picker has search, a "with stems" filter, a preview player with seeking and an **"As stems"** button that brings a track in as four lanes (splitting it first if it has no stems yet). A lane that plays one whole library track can be split into stems right on the timeline. The quickest way in is still the **"Open in editor"** button on the stems panel, which creates a ready-made four-track project (vocals, drums, bass, other).
 
@@ -253,7 +253,7 @@ The **"?"** button in the toolbar opens a detailed guide: a quick start, a map o
 
 ## AI arranger
 
-![The AI arranger docked next to a four-stem project](docs/screenshots/en/14-ai-arranger.png)
+![The AI arranger next to the project: a guitar part described, D Dorian picked as the key](docs/screenshots/en/14-ai-arranger.png)
 
 The arranger builds a track up step by step instead of generating it in one go. Open it with **AI arranger** in the editor toolbar:
 
