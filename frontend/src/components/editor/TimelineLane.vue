@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ChannelSettings } from '../../audio/mixerEngine'
 import { clipBuffer } from '../../audio/timelineTypes'
-import type { Clip, TimelineLane } from '../../audio/timelineTypes'
+import type { Clip, EditorTool, TimelineLane } from '../../audio/timelineTypes'
 import TimelineClip from './TimelineClip.vue'
 import SplitStemsIcon from '../shared/icons/SplitStemsIcon.vue'
 import UploadIcon from '../shared/icons/UploadIcon.vue'
@@ -16,7 +16,12 @@ const props = defineProps<{
   buffers: Map<string, AudioBuffer>
   snapCandidates: number[]
   gridStepSec: number
+  /** Step of the labelled ruler marks: those grid lines are drawn stronger. */
+  majorStepSec: number
   snapEnabled: boolean
+  tool: EditorTool
+  /** Track height in px (the editor's vertical zoom). */
+  heightPx: number
   selectedClipId: string | null
   widthPx: number
   level: { peak: number; clipping: boolean; peakL: number; peakR: number }
@@ -41,6 +46,8 @@ const emit = defineEmits<{
   dragEnd: []
   selectClip: [clipId: string]
   removeClip: [clipId: string]
+  cutClip: [payload: { clipId: string; time: number }]
+  eraseClip: [payload: { clipId: string; from: number; to: number }]
   removeLane: []
   dropAudio: [payload: { file: File; timelineStart: number }]
   selectLane: []
@@ -80,7 +87,7 @@ function bufferFor(clip: Clip): { buffer: AudioBuffer; sf: number } | null {
 </script>
 
 <template>
-  <div class="flex shrink-0 min-h-[80px] border-b border-border/40 group hover:bg-white/[0.02] transition-colors">
+  <div class="flex shrink-0 border-b border-border/40 group hover:bg-white/[0.02] transition-colors" :style="{ minHeight: heightPx + 'px' }">
     <div 
       class="w-56 min-w-0 shrink-0 flex flex-col justify-center gap-1.5 overflow-hidden border-r p-1.5 transition-colors cursor-pointer track-header sticky left-0 z-10 bg-panel-2"
       :class="selected ? '' : 'border-border/40'"
@@ -184,8 +191,8 @@ function bufferFor(clip: Clip): { buffer: AudioBuffer; sf: number } | null {
       <div 
         class="pointer-events-none absolute inset-0 w-full"
         :style="{
-          backgroundSize: (gridStepSec * pxPerSecond) + 'px 100%',
-          backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px)'
+          backgroundSize: `${majorStepSec * pxPerSecond}px 100%, ${gridStepSec * pxPerSecond}px 100%`,
+          backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.16) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px)'
         }"
       ></div>
 
@@ -208,6 +215,7 @@ function bufferFor(clip: Clip): { buffer: AudioBuffer; sf: number } | null {
         :grid-step-sec="gridStepSec"
         :snap-enabled="snapEnabled"
         :selected="selectedClipId === clip.id"
+        :tool="tool"
         :lane-name="lane.name"
         :theme="theme"
         @move="(timelineStart) => emit('moveClip', { clipId: clip.id, timelineStart })"
@@ -219,6 +227,8 @@ function bufferFor(clip: Clip): { buffer: AudioBuffer; sf: number } | null {
         @drag-end="emit('dragEnd')"
         @select="emit('selectClip', clip.id)"
         @remove="emit('removeClip', clip.id)"
+        @cut="(time) => emit('cutClip', { clipId: clip.id, time })"
+        @erase="(range) => emit('eraseClip', { clipId: clip.id, ...range })"
       />
     </div>
   </div>

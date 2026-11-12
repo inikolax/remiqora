@@ -232,6 +232,8 @@ export default {
     variantShort: '변형 {n}',
     copyWarning: '컨텍스트 복사',
     copyWarningTitle: '모델이 새 파트 대신 들은 믹스를 거의 그대로 돌려주었습니다. 다시 생성하면 보통 해결됩니다.',
+    noiseWarning: '노이즈',
+    noiseWarningTitle: '모델이 파트 대신 노이즈를 반환했습니다. 이 변형을 버리거나 다시 생성하세요.',
     keptNote: '변형 {n} 유지됨',
     noResults: '모델이 변형을 반환하지 않았습니다.',
     tracks: {

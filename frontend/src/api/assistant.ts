@@ -2,7 +2,7 @@
 // engine's prompt. It runs next to the GPU engines and starts on the first request.
 import { apiFetch, apiJson } from './http'
 
-export type AssistantTask = 'sa3' | 'yue2-song' | 'ace-song' | 'ace-instrumental'
+export type AssistantTask = 'sa3' | 'yue2-song' | 'ace-song' | 'ace-instrumental' | 'ace-part'
 
 export interface AssistantSettings {
   model: string

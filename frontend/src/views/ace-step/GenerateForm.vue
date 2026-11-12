@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import KeyScalePicker from '../../components/shared/KeyScalePicker.vue'
+import { aceKeyScale, withScaleHint } from '../../utils/keyScale'
 import { computed, onMounted, ref, watch } from 'vue'
 import { cutAtPhrase } from '../../utils/trackTitle'
 import { useI18n } from 'vue-i18n'
@@ -344,7 +346,11 @@ async function submit() {
   }
 
   if (bpm.value) req.bpm = bpm.value
-  if (keyScale.value) req.key_scale = keyScale.value
+  if (keyScale.value) {
+    req.key_scale = aceKeyScale(keyScale.value)
+    // The key field is major / minor only: another scale is named in the style text too.
+    if (req.prompt) req.prompt = withScaleHint(req.prompt, keyScale.value)
+  }
   if (timeSignature.value) req.time_signature = timeSignature.value
   const language = vocalLanguage.value || autoVocalLanguage.value
   if (language) req.vocal_language = language
@@ -566,7 +572,7 @@ async function submit() {
           </div>
           <div>
             <label class="text-[13px] font-medium text-text">{{ t('aceGen.keyScale') }}</label>
-            <input v-model="keyScale" type="text" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="t('aceGen.keyScalePlaceholder')" />
+            <KeyScalePicker v-model="keyScale" :empty-label="t('keyScale.notSet')" />
           </div>
           <div>
             <label class="text-[13px] font-medium text-text">{{ t('aceGen.timeSignature') }}</label>

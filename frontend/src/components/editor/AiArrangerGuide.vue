@@ -40,6 +40,21 @@ interface Term { term: string; text: string }
         </ol>
       </section>
 
+      <!-- Building a track from an empty project: the order of the parts is the point, so it is numbered too -->
+      <section class="rounded-lg border border-accent1/25 bg-accent1/[0.06] p-3">
+        <h4 class="mb-1 text-sm font-semibold text-text">{{ t('aiPart.guide.scratchTitle') }}</h4>
+        <p class="mb-2.5">{{ t('aiPart.guide.scratchIntro') }}</p>
+        <ol class="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+          <li v-for="(s, i) in (tm('aiPart.guide.scratch') as Step[])" :key="i" class="flex gap-2.5">
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-accent1/50 text-[11px] font-semibold text-accent1" aria-hidden="true">{{ i + 1 }}</span>
+            <div class="min-w-0">
+              <p class="font-medium text-text">{{ s.title }}</p>
+              <p class="mt-0.5 text-xs leading-relaxed">{{ s.text }}</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
       <!-- The four modes, with the icons of the panel's mode switch -->
       <section>
         <h4 class="mb-2.5 text-sm font-semibold text-text">{{ t('aiPart.guide.modesTitle') }}</h4>

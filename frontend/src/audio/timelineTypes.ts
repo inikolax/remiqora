@@ -24,6 +24,9 @@ export interface Clip {
   solo?: boolean
 }
 
+/** What a click on a clip does: move and trim it, cut it in two, or erase a piece of it. */
+export type EditorTool = 'select' | 'knife' | 'eraser'
+
 export interface TimelineLane {
   id: string
   name: string

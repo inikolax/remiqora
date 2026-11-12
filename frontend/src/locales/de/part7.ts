@@ -232,6 +232,8 @@ export default {
     variantShort: 'Var. {n}',
     copyWarning: 'Kopie des Kontexts',
     copyWarningTitle: 'Das Modell hat nahezu den gehörten Mix statt einer neuen Stimme zurückgegeben. Neu erzeugen hilft meist.',
+    noiseWarning: 'Rauschen',
+    noiseWarningTitle: 'Das Modell hat Rauschen statt einer Stimme geliefert. Verwirf diese Variante oder generiere neu.',
     keptNote: 'Variante {n} behalten',
     noResults: 'Das Modell hat keine Varianten geliefert.',
     tracks: {

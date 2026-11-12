@@ -232,6 +232,8 @@ export default {
     variantShort: 'var. {n}',
     copyWarning: 'copia del contexto',
     copyWarningTitle: 'El modelo devolvió casi la mezcla que oyó en lugar de una parte nueva. Generar de nuevo suele ayudar.',
+    noiseWarning: 'ruido',
+    noiseWarningTitle: 'El modelo devolvió ruido en lugar de una parte. Descarta esta variante o genera de nuevo.',
     keptNote: 'Variante {n} conservada',
     noResults: 'El modelo no devolvió variantes.',
     tracks: {

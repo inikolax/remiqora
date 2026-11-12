@@ -378,6 +378,60 @@ export const useEditorStore = defineStore('editor', {
         }
       }
     },
+    /**
+     * Cuts a clip in two at a timeline time; returns the right half's id, or null when the time
+     * is not inside the clip. The right half inherits everything (fades, mute/solo, MIDI data);
+     * only the fades that sat at the cut are reset, so the two new edges get the automatic
+     * micro-fade. No undo step of its own: the caller commits.
+     */
+    splitClip(clipId: string, time: number): string | null {
+      for (const lane of this.project.lanes) {
+        const clip = lane.clips.find((c) => c.id === clipId)
+        if (!clip) continue
+        const sf = stretchFactor(clip, this.project.bpm)
+        // 0.001 margin to prevent splitting exactly at boundaries
+        if (time <= clip.timelineStart + 0.001 || time >= clipEnd(clip, this.project.bpm) - 0.001) return null
+        const cut = clip.trimStart + (time - clip.timelineStart) / sf
+        const right: Clip = {
+          ...clip,
+          notes: clip.notes?.map((n) => ({ ...n })),
+          id: crypto.randomUUID(),
+          timelineStart: time,
+          trimStart: cut,
+          fadeInDuration: undefined,
+        }
+        clip.trimEnd = cut
+        clip.fadeOutDuration = undefined
+        lane.clips.push(right)
+        if (this.selectedClipId === clipId) this.selectedClipId = right.id
+        return right.id
+      }
+      return null
+    },
+    /** Removes [from, to) (timeline seconds) from a clip: what is left before and after stays in place. One undo step. */
+    eraseClipRange(clipId: string, from: number, to: number) {
+      const lane = this.project.lanes.find((l) => l.clips.some((c) => c.id === clipId))
+      const clip = lane?.clips.find((c) => c.id === clipId)
+      if (!lane || !clip || to <= from) return
+      const start = clip.timelineStart
+      const end = clipEnd(clip, this.project.bpm)
+      const keepsLeft = from > start + 0.001
+      const keepsRight = to < end - 0.001
+      if (!keepsLeft && !keepsRight) {
+        this.removeClip(clipId)
+        return
+      }
+      // Cut at the far edge first: the piece after it is a new clip, and `clip` stays the left one.
+      if (keepsRight) this.splitClip(clipId, to)
+      if (keepsLeft) {
+        const innerId = this.splitClip(clipId, from)
+        if (innerId) lane.clips = lane.clips.filter((c) => c.id !== innerId)
+      } else {
+        lane.clips = lane.clips.filter((c) => c.id !== clipId)
+      }
+      if (this.selectedClipId && !lane.clips.some((c) => c.id === this.selectedClipId)) this.selectedClipId = null
+      this.snapshot()
+    },
     updateClip(clipId: string, patch: Partial<Clip>, commit = false) {
       for (const lane of this.project.lanes) {
         const clip = lane.clips.find((c) => c.id === clipId)

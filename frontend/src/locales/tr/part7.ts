@@ -232,6 +232,8 @@ export default {
     variantShort: 'var. {n}',
     copyWarning: 'bağlamın kopyası',
     copyWarningTitle: 'Model yeni bir partisyon yerine duyduğu miksi neredeyse olduğu gibi döndürdü. Yeniden üretmek genellikle yardımcı olur.',
+    noiseWarning: 'gürültü',
+    noiseWarningTitle: 'Model bir parti yerine gürültü döndürdü. Bu varyantı at veya yeniden üret.',
     keptNote: '{n}. varyant tutuldu',
     noResults: 'Model hiç varyant döndürmedi.',
     tracks: {

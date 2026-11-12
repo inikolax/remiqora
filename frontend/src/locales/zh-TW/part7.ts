@@ -232,6 +232,8 @@ export default {
     variantShort: '版本 {n}',
     copyWarning: '上下文副本',
     copyWarningTitle: '模型返回的幾乎是它所聽到的混音，而不是新聲部。通常重新生成即可解決。',
+    noiseWarning: '雜訊',
+    noiseWarningTitle: '模型傳回的是雜訊而不是聲部。請捨棄這個版本或重新生成。',
     keptNote: '已保留版本 {n}',
     noResults: '模型沒有返回任何版本。',
     tracks: {

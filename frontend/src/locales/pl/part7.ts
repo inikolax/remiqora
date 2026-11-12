@@ -232,6 +232,8 @@ export default {
     variantShort: 'war. {n}',
     copyWarning: 'kopia kontekstu',
     copyWarningTitle: 'Model zwrócił niemal ten sam miks, który usłyszał, zamiast nowej partii. Zwykle pomaga ponowne generowanie.',
+    noiseWarning: 'szum',
+    noiseWarningTitle: 'Model zwrócił szum zamiast partii. Odrzuć ten wariant lub wygeneruj ponownie.',
     keptNote: 'Zachowano wariant {n}',
     noResults: 'Model nie zwrócił wariantów.',
     tracks: {

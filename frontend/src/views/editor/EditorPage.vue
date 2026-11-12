@@ -9,7 +9,7 @@ import { getSharedAudioCtx } from '../../composables/audioPlayback'
 import { decodeStem, defaultMasterSettings, defaultChannelSettings } from '../../audio/mixerEngine'
 import type { ChannelSettings } from '../../audio/mixerEngine'
 import { clipDuration, stretchFactor, warpKey } from '../../audio/timelineTypes'
-import type { Clip } from '../../audio/timelineTypes'
+import type { Clip, EditorTool } from '../../audio/timelineTypes'
 import { encodeWav } from '../../audio/wavEncoder'
 import { encodeMp3 } from '../../audio/mp3Encoder'
 import { exportForDaw } from '../../utils/dawExport'
@@ -36,6 +36,10 @@ import ExportIcon from '../../components/shared/icons/ExportIcon.vue'
 import FitIcon from '../../components/shared/icons/FitIcon.vue'
 import LoopIcon from '../../components/shared/icons/LoopIcon.vue'
 import MagnetIcon from '../../components/shared/icons/MagnetIcon.vue'
+import CursorIcon from '../../components/shared/icons/CursorIcon.vue'
+import KnifeIcon from '../../components/shared/icons/KnifeIcon.vue'
+import EraserIcon from '../../components/shared/icons/EraserIcon.vue'
+import TrackHeightIcon from '../../components/shared/icons/TrackHeightIcon.vue'
 import MixerIcon from '../../components/shared/icons/MixerIcon.vue'
 import PlusIcon from '../../components/shared/icons/PlusIcon.vue'
 import RedoIcon from '../../components/shared/icons/RedoIcon.vue'
@@ -438,11 +442,85 @@ function onLoopPointerUp() {
 
 const timelineWidthPx = computed(() => Math.max(400, (store.totalDuration + 10) * store.project.pxPerSecond))
 
-const rulerMarks = computed<number[]>(() => {
-  const step = store.project.pxPerSecond < 20 ? 10 : store.project.pxPerSecond < 60 ? 5 : 1
+/** What the ruler and the grid count: seconds or bars and beats of the project tempo (4/4). Remembered in this browser. */
+type RulerMode = 'time' | 'bars'
+const RULER_KEY = 'remiqora_editor_ruler'
+function readRulerMode(): RulerMode {
+  try {
+    return localStorage.getItem(RULER_KEY) === 'bars' ? 'bars' : 'time'
+  } catch {
+    return 'time'
+  }
+}
+const rulerMode = ref<RulerMode>(readRulerMode())
+function toggleRulerMode(): void {
+  rulerMode.value = rulerMode.value === 'bars' ? 'time' : 'bars'
+  try {
+    localStorage.setItem(RULER_KEY, rulerMode.value)
+  } catch {
+    // Private mode: the choice lasts until the page is closed.
+  }
+}
+
+/** The pointer tool on clips: V moves and trims, C cuts at the click, E erases the dragged range. */
+const tool = ref<EditorTool>('select')
+const TOOLS = [
+  { id: 'select', icon: CursorIcon, key: 'V' },
+  { id: 'knife', icon: KnifeIcon, key: 'C' },
+  { id: 'eraser', icon: EraserIcon, key: 'E' },
+] as const
+
+function onCutClip(p: { clipId: string; time: number }): void {
+  if (store.splitClip(p.clipId, p.time)) store.commitSnapshot()
+}
+
+/** Track height (vertical zoom), the same for every track. Remembered in this browser. */
+const LANE_HEIGHT_KEY = 'remiqora_editor_lane_height'
+const LANE_HEIGHT_MIN = 64
+const LANE_HEIGHT_MAX = 280
+function clampLaneHeight(px: number): number {
+  return Math.max(LANE_HEIGHT_MIN, Math.min(LANE_HEIGHT_MAX, Math.round(px)))
+}
+function readLaneHeight(): number {
+  try {
+    const stored = Number(localStorage.getItem(LANE_HEIGHT_KEY))
+    return stored ? clampLaneHeight(stored) : 80
+  } catch {
+    return 80
+  }
+}
+const laneHeight = ref(readLaneHeight())
+function setLaneHeight(px: number): void {
+  laneHeight.value = clampLaneHeight(px)
+  try {
+    localStorage.setItem(LANE_HEIGHT_KEY, String(laneHeight.value))
+  } catch {
+    // Private mode: the height lasts until the page is closed.
+  }
+}
+
+const barSec = computed(() => (60 / (store.project.bpm || 120)) * 4)
+
+/** Distance between labelled ruler marks, in seconds; the lanes draw a stronger grid line there. */
+const rulerStepSec = computed(() => {
+  const pps = store.project.pxPerSecond
+  if (rulerMode.value === 'bars') {
+    // The smallest power-of-two count of bars whose labels do not crowd.
+    let bars = 1
+    while (bars * barSec.value * pps < 56 && bars < 1024) bars *= 2
+    return bars * barSec.value
+  }
+  return pps < 20 ? 10 : pps < 60 ? 5 : 1
+})
+
+const rulerMarks = computed<{ t: number; label: string }[]>(() => {
+  const step = rulerStepSec.value
   const maxT = timelineWidthPx.value / store.project.pxPerSecond
-  const marks: number[] = []
-  for (let t = 0; t <= maxT; t += step) marks.push(t)
+  const marks: { t: number; label: string }[] = []
+  for (let i = 0; i * step <= maxT; i++) {
+    const t = i * step
+    marks.push({ t, label: rulerMode.value === 'bars' ? String(Math.round(t / barSec.value) + 1) : formatTime(t) })
+  }
   return marks
 })
 
@@ -463,9 +541,16 @@ const selectedLaneLevel = computed(() => {
 })
 
 const gridStepSec = computed(() => {
-  const bpm = store.project.bpm || 120
-  const beatSec = 60 / bpm
-  const beatPx = beatSec * store.project.pxPerSecond
+  const pps = store.project.pxPerSecond
+  if (rulerMode.value === 'time') {
+    // The finest of these steps that still leaves 16 px between lines.
+    for (const step of [0.1, 0.25, 0.5, 1, 5, 10]) {
+      if (step * pps >= 16) return step
+    }
+    return 10
+  }
+  const beatSec = barSec.value / 4
+  const beatPx = beatSec * pps
   if (beatPx >= 80) return beatSec / 4 // 1/16 note
   if (beatPx >= 40) return beatSec / 2 // 1/8 note
   if (beatPx >= 20) return beatSec     // 1/4 note
@@ -883,8 +968,18 @@ function onKeydown(e: KeyboardEvent) {
 
   // ────── DAW Hotkeys ──────
   if (e.key === 'Escape') {
+    tool.value = 'select'
     store.clearSelection()
     return
+  }
+  // By physical key, so the tools work on any keyboard layout.
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    const picked = TOOLS.find((x) => e.code === 'Key' + x.key)
+    if (picked) {
+      e.preventDefault()
+      tool.value = picked.id
+      return
+    }
   }
   if (e.key === ' ') {
     e.preventDefault()
@@ -922,49 +1017,13 @@ function onKeydown(e: KeyboardEvent) {
   }
   if (!e.ctrlKey && !e.metaKey && (e.code === 'KeyS' || e.key.toLowerCase() === 's' || e.key.toLowerCase() === 'ы')) {
     e.preventDefault()
+    // The selected clip, or with nothing selected every clip under the playhead.
+    const ids = store.project.lanes.flatMap((l) => l.clips).filter((c) => !store.selectedClipId || c.id === store.selectedClipId).map((c) => c.id)
     let splitOccurred = false
-    const currentPlayhead = store.playheadSec
-
-    for (const lane of store.project.lanes) {
-      const newClips: Clip[] = []
-      for (const clip of lane.clips) {
-        if (store.selectedClipId && clip.id !== store.selectedClipId) continue
-        
-        const sf = stretchFactor(clip, store.project.bpm)
-        const clipEnd = clip.timelineStart + (clip.trimEnd - clip.trimStart) * sf
-        
-        // 0.001 margin to prevent splitting exactly at boundaries
-        if (currentPlayhead > clip.timelineStart + 0.001 && currentPlayhead < clipEnd - 0.001) {
-          const splitOffset = (currentPlayhead - clip.timelineStart) / sf
-          const newLeftTrimEnd = clip.trimStart + splitOffset
-          
-          // The right half inherits everything (fades, mute/solo, MIDI data);
-          // only the fades that sat at the cut are reset so the two new edges
-          // get the automatic micro-fade instead of the original clip's fade.
-          const rightClip: Clip = {
-            ...clip,
-            notes: clip.notes?.map((n) => ({ ...n })),
-            id: crypto.randomUUID(),
-            timelineStart: currentPlayhead,
-            trimStart: newLeftTrimEnd,
-            fadeInDuration: undefined,
-          }
-
-          clip.trimEnd = newLeftTrimEnd
-          clip.fadeOutDuration = undefined
-          newClips.push(rightClip)
-          splitOccurred = true
-          
-          if (store.selectedClipId === clip.id) {
-            store.selectedClipId = rightClip.id
-          }
-        }
-      }
-      if (newClips.length > 0) {
-        lane.clips.push(...newClips)
-      }
+    for (const id of ids) {
+      if (store.splitClip(id, store.playheadSec)) splitOccurred = true
     }
-    
+
     if (splitOccurred) {
       store.commitSnapshot()
     }
@@ -989,6 +1048,9 @@ function onTimelineWheel(e: WheelEvent) {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -5 : 5
     store.setZoom(store.project.pxPerSecond + delta)
+  } else if (e.altKey) {
+    e.preventDefault()
+    setLaneHeight(laneHeight.value + (e.deltaY > 0 ? -16 : 16))
   }
 }
 
@@ -1222,6 +1284,46 @@ onBeforeRouteLeave((_to, _from, next) => {
           />
         </label>
         
+        <label class="flex items-center gap-1.5 text-xs text-text-dim" :title="t('editor.trackHeight')">
+          <TrackHeightIcon class="h-3.5 w-3.5 shrink-0" />
+          <input
+            type="range"
+            class="w-16"
+            :min="LANE_HEIGHT_MIN"
+            :max="LANE_HEIGHT_MAX"
+            step="8"
+            :aria-label="t('editor.trackHeight')"
+            :value="laneHeight"
+            @input="setLaneHeight(Number(($event.target as HTMLInputElement).value))"
+          />
+        </label>
+
+        <div class="flex items-center overflow-hidden rounded border border-border" role="group" :aria-label="t('editor.tools.label')">
+          <button
+            v-for="(x, i) in TOOLS"
+            :key="x.id"
+            type="button"
+            class="flex items-center px-2 py-1.5"
+            :class="[tool === x.id ? 'bg-accent1/10 text-accent1' : 'text-text-dim hover:bg-panel', i ? 'border-l border-border' : '']"
+            :aria-pressed="tool === x.id"
+            :aria-label="t(`editor.tools.${x.id}`)"
+            :title="`${t(`editor.tools.${x.id}`)} (${x.key})`"
+            @click="tool = x.id"
+          >
+            <component :is="x.icon" class="h-3.5 w-3.5 shrink-0" />
+          </button>
+        </div>
+        <button
+          type="button"
+          class="flex items-center overflow-hidden rounded border border-border text-xs font-medium tabular-nums"
+          :title="t('editor.rulerTitle')"
+          :aria-label="t('editor.rulerTitle')"
+          :aria-pressed="rulerMode === 'bars'"
+          @click="toggleRulerMode"
+        >
+          <span class="px-2 py-1" :class="rulerMode === 'time' ? 'bg-accent1/10 text-accent1' : 'text-text-dim'">0:00</span>
+          <span class="border-l border-border px-2 py-1" :class="rulerMode === 'bars' ? 'bg-accent1/10 text-accent1' : 'text-text-dim'">1 | 2</span>
+        </button>
         <button
           type="button"
           class="flex items-center gap-1.5 rounded border px-2 py-1 text-xs font-medium"
@@ -1365,11 +1467,11 @@ onBeforeRouteLeave((_to, _from, next) => {
                 >
                   <div
                     v-for="mark in rulerMarks"
-                    :key="mark"
-                    class="absolute top-0 bottom-0 border-l border-border/40 pl-1 text-[11px] text-text-dim"
-                    :style="{ left: mark * store.project.pxPerSecond + 'px' }"
+                    :key="mark.t"
+                    class="absolute top-0 bottom-0 border-l border-border/40 pl-1 text-[11px] tabular-nums text-text-dim"
+                    :style="{ left: mark.t * store.project.pxPerSecond + 'px' }"
                   >
-                    {{ formatTime(mark) }}
+                    {{ mark.label }}
                   </div>
                   <div
                     v-if="store.project.loopRegion?.enabled"
@@ -1422,7 +1524,10 @@ onBeforeRouteLeave((_to, _from, next) => {
                 :buffers="buffers"
                 :snap-candidates="snapCandidates"
                 :grid-step-sec="gridStepSec"
+                :major-step-sec="Math.max(rulerStepSec, gridStepSec)"
                 :snap-enabled="store.project.snapEnabled"
+                :tool="tool"
+                :height-px="laneHeight"
                 :selected-clip-id="store.selectedClipId"
                 :width-px="timelineWidthPx"
                 :level="laneLevels[idx] ?? SILENT_LEVEL"
@@ -1440,6 +1545,8 @@ onBeforeRouteLeave((_to, _from, next) => {
                 @select-lane="store.selectedLaneId = lane.id"
                 @select-clip="(id) => { store.selectedClipId = id; store.selectedLaneId = lane.id; }"
                 @remove-clip="(id) => store.removeClip(id)"
+                @cut-clip="onCutClip"
+                @erase-clip="(p) => store.eraseClipRange(p.clipId, p.from, p.to)"
                 @remove-lane="store.removeLane(lane.id)"
                 @toggle-warp="(payload) => onToggleWarp(lane.id, payload)"
                 @toggle-mute="(payload) => onToggleMute(lane.id, payload)"

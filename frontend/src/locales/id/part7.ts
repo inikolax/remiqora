@@ -232,6 +232,8 @@ export default {
     variantShort: 'var. {n}',
     copyWarning: 'salinan konteks',
     copyWarningTitle: 'Model mengembalikan hampir mix yang didengarnya, bukan bagian baru. Membuat lagi biasanya membantu.',
+    noiseWarning: 'derau',
+    noiseWarningTitle: 'Model mengembalikan derau, bukan sebuah part. Buang varian ini atau buat ulang.',
     keptNote: 'Varian {n} disimpan',
     noResults: 'Model tidak mengembalikan varian.',
     tracks: {

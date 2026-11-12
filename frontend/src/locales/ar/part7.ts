@@ -232,6 +232,8 @@ export default {
     variantShort: 'نسخة {n}',
     copyWarning: 'نسخة من السياق',
     copyWarningTitle: 'أعاد النموذج المزج الذي سمعه تقريبًا بدل جزء جديد. عادةً ما تفيد إعادة التوليد.',
+    noiseWarning: 'ضجيج',
+    noiseWarningTitle: 'أعاد النموذج ضجيجًا بدلًا من جزء موسيقي. احذف هذا الخيار أو أعد التوليد.',
     keptNote: 'تم إبقاء النسخة {n}',
     noResults: 'لم يُرجع النموذج أي نسخ.',
     tracks: {

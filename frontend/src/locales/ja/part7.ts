@@ -232,6 +232,8 @@ export default {
     variantShort: 'バリエーション {n}',
     copyWarning: 'コンテキストのコピー',
     copyWarningTitle: '新しいパートではなく、モデルが聴いたミックスをほぼそのまま返しました。もう一度生成すると、たいてい直ります。',
+    noiseWarning: 'ノイズ',
+    noiseWarningTitle: 'モデルがパートではなくノイズを返しました。このバリエーションを破棄するか、もう一度生成してください。',
     keptNote: 'バリエーション {n} を残しました',
     noResults: 'モデルがバリエーションを返しませんでした。',
     tracks: {

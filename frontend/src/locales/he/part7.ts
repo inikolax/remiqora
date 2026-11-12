@@ -232,6 +232,8 @@ export default {
     variantShort: 'וריא׳ {n}',
     copyWarning: 'עותק של ההקשר',
     copyWarningTitle: 'המודל החזיר כמעט את המיקס ששמע במקום חלק חדש. יצירה חוזרת בדרך כלל עוזרת.',
+    noiseWarning: 'רעש',
+    noiseWarningTitle: 'המודל החזיר רעש במקום תפקיד. הסירו את הגרסה הזו או צרו שוב.',
     keptNote: 'וריאנט {n} נשמר',
     noResults: 'המודל לא החזיר וריאנטים.',
     tracks: {

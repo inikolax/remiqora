@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
+import { getAssistant, writePrompt } from '../../api/assistant'
+import KeyScalePicker from '../shared/KeyScalePicker.vue'
 import { useI18n } from 'vue-i18n'
 import { decodeStem } from '../../audio/mixerEngine'
 import type { Clip } from '../../audio/timelineTypes'
@@ -14,8 +16,8 @@ import { useStableAudioStore } from '../../stores/stableAudio'
 import { shortLaneNames } from '../../utils/laneNames'
 import { TRACK_COLORS } from '../../utils/trackColors'
 import {
-  AI_MODE_TASK, AI_MODES, AI_TRACK_COLOR, AI_TRACKS, COPY_THRESHOLD, ENGINE_MAX_CONTEXT_SEC, ENGINE_MODEL_ID, ENGINE_MODES,
-  KEY_SCALES, SA3_ARRANGER_MODELS, VOCAL_TRACKS, audioBufferToWavFile, correlationWithContext, modelKey, parseModelKey, renderContext, variantVolume,
+  AI_MODE_TASK, AI_MODES, AI_TRACK_COLOR, AI_TRACKS, COPY_THRESHOLD, ENGINE_MAX_CONTEXT_SEC, NOISE_EXEMPT_TRACKS, NOISE_THRESHOLD, ENGINE_MODEL_ID, ENGINE_MODES,
+  SA3_ARRANGER_MODELS, VOCAL_TRACKS, audioBufferToWavFile, correlationWithContext, modelKey, noiseScore, parseModelKey, renderContext, variantVolume,
 } from '../../utils/aiParts'
 import type { AiEngine, AiMode, AiTrack } from '../../utils/aiParts'
 import { MODEL_LABELS } from '../../composables/useModelSwitch'
@@ -308,6 +310,47 @@ function fmt(sec: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+// ---- Description in any language -> English (the prompt assistant's "ace-part" task) ----
+const translating = ref(false)
+const translateError = ref<string | null>(null)
+/** What the user typed before the assistant rewrote it, per mode, for "undo". */
+const translatedFrom = reactive<Record<AiMode, string>>({ lego: '', repaint: '', continue: '', cover: '' })
+
+async function toEnglish() {
+  const m = mode.value
+  const idea = captions[m].trim()
+  if (!idea || translating.value) return
+  translating.value = true
+  translateError.value = null
+  try {
+    // Set to "GPU" the assistant would unload the engine the arranger is about to use: say so instead.
+    const state = await getAssistant()
+    if (state.settings.device === 'cuda' && state.status !== 'running' && engineRunning.value) {
+      translateError.value = t('aiPart.toEnglishGpu')
+      return
+    }
+    // A part is described by its instrument; a range (repaint, continue, cover) as music.
+    const res = await writePrompt('ace-part', idea, m === 'lego' ? { kind: track.value } : {})
+    const text = String(res.fields.caption ?? '').trim()
+    if (!text) throw new Error(t('aiPart.toEnglishFailed'))
+    // Only if the field still holds what was sent: the user may have typed on meanwhile.
+    if (captions[m].trim() === idea) {
+      translatedFrom[m] = idea
+      captions[m] = text
+    }
+  } catch (e) {
+    translateError.value = e instanceof Error && e.message ? e.message : t('aiPart.toEnglishFailed')
+  } finally {
+    translating.value = false
+  }
+}
+
+function undoEnglish() {
+  const m = mode.value
+  if (translatedFrom[m]) captions[m] = translatedFrom[m]
+  translatedFrom[m] = ''
+}
+
 // ---- Generate ----
 /** Context audio per job, kept for the lego copy check and the repaint / continue level match. */
 const contexts = new Map<string, AudioBuffer>()
@@ -416,6 +459,7 @@ async function insertVariants(job: AiPartJob) {
     job.variants.forEach((v, i) => {
       const buf = decoded[i]
       v.copyScore = buf && ctx ? correlationWithContext(buf, ctx) : null
+      v.noiseScore = buf && !NOISE_EXEMPT_TRACKS.has(r.track) ? noiseScore(buf) : null
     })
   }
   if (job.session !== store.session) return
@@ -425,7 +469,8 @@ async function insertVariants(job: AiPartJob) {
   else if (r.mode === 'continue') held = store.holdRange(r.laneIds, r.regionStart, r.regionEnd, SEAM, COVER_SEAM)
   else if (r.mode === 'cover') held = store.holdRange(r.laneIds, r.regionStart, r.regionEnd, COVER_SEAM, COVER_SEAM)
   job.held = held
-  const firstGood = job.variants.findIndex((v) => (v.copyScore ?? 0) < COPY_THRESHOLD)
+  // Play a real part first: not a copy of the context and not hiss.
+  const firstGood = job.variants.findIndex((v) => (v.copyScore ?? 0) < COPY_THRESHOLD && (v.noiseScore ?? 0) < NOISE_THRESHOLD)
   const audible = firstGood >= 0 ? firstGood : 0
   const label = jobLabel(r)
   const color = r.mode === 'lego' ? AI_TRACK_COLOR[r.track] : 'pink'
@@ -597,9 +642,26 @@ function statusText(job: AiPartJob): string {
           <div class="flex items-center gap-1.5">
             <label for="ai-part-description" class="text-[13px] font-medium text-text">{{ t(`aiPart.descriptionLabel.${mode}`) }}</label>
             <HelpIconButton @click="helpOpen = 'description'" />
+            <!-- Any language in, the English the model reads best out (the prompt assistant) -->
+            <button
+              type="button"
+              class="ml-auto flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] text-text-dim hover:bg-panel hover:text-text disabled:opacity-50"
+              :disabled="translating || !captions[mode].trim()"
+              :title="t('aiPart.toEnglishTitle')"
+              @click="toEnglish"
+            >
+              <span v-if="translating" class="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent1 border-t-transparent" aria-hidden="true"></span>
+              <SparklesIcon v-else class="h-3 w-3 shrink-0" />
+              {{ translating ? t('aiPart.toEnglishBusy') : t('aiPart.toEnglish') }}
+            </button>
           </div>
           <textarea id="ai-part-description" v-model="captions[mode]" rows="2" class="w-full rounded-lg border border-border bg-panel-2 p-2 text-sm text-text" :placeholder="placeholder"></textarea>
-          <span class="text-[11px] text-text-dim">{{ t('aiPart.descriptionHint') }}</span>
+          <span v-if="translateError" class="text-[11px] text-status-failed" role="alert">{{ translateError }}</span>
+          <span v-else-if="translatedFrom[mode]" class="text-[11px] text-text-dim">
+            {{ t('aiPart.toEnglishDone') }}
+            <button type="button" class="text-accent1 hover:underline" @click="undoEnglish">{{ t('aiPart.toEnglishUndo') }}</button>
+          </span>
+          <span v-else class="text-[11px] text-text-dim">{{ t('aiPart.descriptionHint') }}</span>
         </div>
         <button v-if="showLyrics && !lyricsVisible" type="button" class="self-start text-xs text-accent1 hover:underline" @click="lyricsOpen = true">
           + {{ t('aiPart.addLyrics') }}
@@ -693,13 +755,10 @@ function statusText(job: AiPartJob): string {
 
         <!-- Key and model in one row, the tempo after them -->
         <div class="flex flex-wrap items-end gap-x-3 gap-y-2">
-          <label class="flex flex-col gap-1">
+          <div class="flex flex-col gap-1">
             <span class="text-[13px] font-medium text-text">{{ t('aiPart.key') }}</span>
-            <select v-model="keyScale" class="rounded-lg border border-border bg-panel-2 px-2 py-1.5 text-sm text-text">
-              <option value="">{{ t('aiPart.keyAuto') }}</option>
-              <option v-for="k in KEY_SCALES" :key="k" :value="k">{{ k }}</option>
-            </select>
-          </label>
+            <KeyScalePicker v-model="keyScale" :empty-label="t('aiPart.keyAuto')" />
+          </div>
           <label class="flex flex-col gap-1">
             <span class="text-[13px] font-medium text-text">{{ modelChoices.length > 1 ? t('aiPart.engineModel') : t('aiPart.model') }}</span>
             <!-- one decision, "who renders it": the engine's checkpoints grouped under the engine's name -->
@@ -744,6 +803,11 @@ function statusText(job: AiPartJob): string {
               class="rounded bg-status-failed/15 px-1.5 py-0.5 text-[11px] text-status-failed"
               :title="t('aiPart.copyWarningTitle')"
             >{{ t('aiPart.copyWarning') }}</span>
+            <span
+              v-else-if="(v.noiseScore ?? 0) >= NOISE_THRESHOLD"
+              class="rounded bg-status-failed/15 px-1.5 py-0.5 text-[11px] text-status-failed"
+              :title="t('aiPart.noiseWarningTitle')"
+            >{{ t('aiPart.noiseWarning') }}</span>
             <div class="ml-auto flex gap-1.5">
               <button
                 type="button"

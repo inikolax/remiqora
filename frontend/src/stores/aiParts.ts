@@ -1,16 +1,22 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
+import { markRaw } from 'vue'
 import * as aceApi from '../api/aceStep'
 import type { GenerateMusicRequest } from '../api/aceStep'
 import * as sa3Api from '../api/stableAudio'
 import type { Sa3JobRequest, Sa3ModelId } from '../api/stableAudio'
 import * as tracksApi from '../api/tracks'
 import { i18n } from '../i18n'
+import { NOISE_EXEMPT_TRACKS, NOISE_THRESHOLD, noiseScore } from '../utils/aiParts'
 import type { AiEngine, AiMode, AiTrack } from '../utils/aiParts'
+import { getSharedAudioCtx } from '../composables/audioPlayback'
+import { aceKeyScale, keyScaleText, withScaleHint } from '../utils/keyScale'
 import type { HeldClip } from './editor'
 
 const t = i18n.global.t
 
 const POLL_MS = 2000
+/** Extra requests for variants that came back as hiss (the XL base model returns it for about one in five). */
+const MAX_NOISE_RETRIES = 2
 
 export interface AiPartRequest {
   mode: AiMode
@@ -47,6 +53,8 @@ export interface AiPartVariant {
   laneId: string | null
   /** lego only: correlation with the context; above COPY_THRESHOLD it is a copy, not a new part. */
   copyScore: number | null
+  /** lego only: spectral flatness of the part; above NOISE_THRESHOLD it is hiss, not an instrument. Unset for drum-like parts. */
+  noiseScore?: number | null
 }
 
 export type AiPartStatus = 'queued' | 'running' | 'saving' | 'done' | 'failed' | 'cancelled'
@@ -68,6 +76,10 @@ export interface AiPartJob {
   held: HeldClip[]
   /** Index of the variant the user kept. */
   kept: number | null
+  /** The audio sent to the model, kept to ask once more for variants that came back as hiss. */
+  context?: File
+  /** How many times replacements were asked for; after MAX_NOISE_RETRIES the variants are taken as they are. */
+  retries?: number
 }
 
 interface RawResultEntry {
@@ -81,9 +93,10 @@ interface RawResultEntry {
 function buildRequest(r: AiPartRequest): GenerateMusicRequest {
   const common: GenerateMusicRequest = {
     model: r.model,
-    prompt: r.caption,
+    // ACE-Step's key field is major / minor only: any other scale is also named in the text.
+    prompt: withScaleHint(r.caption, r.keyScale),
     bpm: r.bpm || undefined,
-    key_scale: r.keyScale || undefined,
+    key_scale: (r.keyScale && aceKeyScale(r.keyScale)) || undefined,
     time_signature: '4',
     // Without it release_task assumes English and sings Russian words as English.
     vocal_language: r.vocalLanguage || undefined,
@@ -120,7 +133,7 @@ function buildRequest(r: AiPartRequest): GenerateMusicRequest {
  */
 function buildSa3Request(r: AiPartRequest): Sa3JobRequest {
   const text = r.caption.trim()
-  const prompt = ['TrackType: Music, VocalType: Instrumental.', text, r.keyScale ? `in ${r.keyScale}` : '', r.bpm ? `${Math.round(r.bpm)} BPM` : '']
+  const prompt = ['TrackType: Music, VocalType: Instrumental.', text, r.keyScale ? `in ${keyScaleText(r.keyScale)}` : '', r.bpm ? `${Math.round(r.bpm)} BPM` : '']
     .filter(Boolean)
     .join(text && !/[.,;!?]$/.test(text) ? ', ' : ' ')
     .replace('. , ', '. ')
@@ -179,6 +192,7 @@ export const useAiPartsStore = defineStore('aiParts', {
         inserted: false,
         held: [],
         kept: null,
+        context: markRaw(context),
       })
       const job = this.jobs[0] // the reactive proxy, so later writes re-render
       try {
@@ -261,8 +275,13 @@ export const useAiPartsStore = defineStore('aiParts', {
           job.progress = 100
           void this._persist(job, parsed.filter((p) => p.file).map((p) => `/api/ace${p.file}`))
         } else if (entry.status === 2) {
-          job.status = first.error === 'Cancelled by user' ? 'cancelled' : 'failed'
-          job.error = first.error || t('storeErrors.unknownError')
+          if (job.retries && job.variants.length && first.error !== 'Cancelled by user') {
+            // Only the request for replacements failed: the good variants of the first one stand.
+            job.status = 'done'
+          } else {
+            job.status = first.error === 'Cancelled by user' ? 'cancelled' : 'failed'
+            job.error = first.error || t('storeErrors.unknownError')
+          }
         } else {
           job.status = first.stage === 'queued' ? 'queued' : 'running'
           job.progress = Math.round((first.progress || 0) * 100)
@@ -275,14 +294,32 @@ export const useAiPartsStore = defineStore('aiParts', {
      */
     async _persist(job: AiPartJob, urls: string[]) {
       const r = job.request
-      for (const [i, url] of urls.entries()) {
+      // ACE-Step's lego sometimes returns steady hiss instead of a part: 7 variants of 162 on the base
+      // model and 15 of 72 on XL base, whatever the part, context length, tempo or guidance. Those are
+      // not saved; the same request is sent again for as many variants as were dropped.
+      const screen = r.mode === 'lego' && r.engine !== 'sa3' && !NOISE_EXEMPT_TRACKS.has(r.track) && (job.retries ?? 0) < MAX_NOISE_RETRIES && !!job.context
+      let dropped = 0
+      for (const url of urls) {
         try {
           const resp = await fetch(url)
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+          const blob = await resp.blob()
+          if (screen) {
+            let noisy = false
+            try {
+              noisy = noiseScore(await getSharedAudioCtx().decodeAudioData(await blob.arrayBuffer())) >= NOISE_THRESHOLD
+            } catch {
+              // Undecodable here: leave the verdict to the panel.
+            }
+            if (noisy) {
+              dropped++
+              continue
+            }
+          }
           const saved = await tracksApi.saveTrack(
             {
               model: 'editor',
-              title: `${jobLabel(r)} · ${t('aiPart.variantShort', { n: i + 1 })}`,
+              title: `${jobLabel(r)} · ${t('aiPart.variantShort', { n: job.variants.length + 1 })}`,
               lyrics: r.lyrics,
               params: {
                 ai_part: true, mode: r.mode, engine: r.engine, track_name: r.mode === 'lego' ? r.track : undefined, caption: r.caption,
@@ -290,7 +327,7 @@ export const useAiPartsStore = defineStore('aiParts', {
                 region: [r.regionStart, r.regionEnd],
               },
             },
-            await resp.blob(),
+            blob,
             'wav',
           )
           job.variants.push({ url: saved.audio_url, trackId: saved.id, laneId: null, copyScore: null })
@@ -299,6 +336,21 @@ export const useAiPartsStore = defineStore('aiParts', {
           job.variants.push({ url, trackId: null, laneId: null, copyScore: null })
         }
       }
+      if (dropped && job.context && job.status !== 'cancelled') {
+        job.retries = (job.retries ?? 0) + 1
+        try {
+          const res = await aceApi.releaseTask(buildRequest({ ...r, count: dropped }), job.context)
+          job.taskId = res.task_id
+          job.status = 'running'
+          job.progress = 0
+          this._ensurePolling()
+          return
+        } catch {
+          // The model is gone or busy: settle for the variants that are fine.
+        }
+      }
+      job.context = undefined
+      if (job.status === 'cancelled') return
       job.status = job.variants.length ? 'done' : 'failed'
       if (!job.variants.length) job.error = t('aiPart.noResults')
     },

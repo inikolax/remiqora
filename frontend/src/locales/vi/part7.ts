@@ -232,6 +232,8 @@ export default {
     variantShort: 'bt. {n}',
     copyWarning: 'bản sao của ngữ cảnh',
     copyWarningTitle: 'Mô hình trả về gần như đúng bản mix nó đã nghe thay vì một phần mới. Tạo lại thường có tác dụng.',
+    noiseWarning: 'nhiễu',
+    noiseWarningTitle: 'Mô hình trả về tiếng nhiễu thay vì một phần nhạc. Bỏ biến thể này hoặc tạo lại.',
     keptNote: 'Đã giữ biến thể {n}',
     noResults: 'Mô hình không trả về biến thể nào.',
     tracks: {
