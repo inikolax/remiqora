@@ -5,7 +5,7 @@ import logging
 
 from .. import engine_settings
 from ..config import ALLOW_CONCURRENT_MODELS, MODELS
-from .process import ManagedProcess, StartCancelled
+from .process import ManagedProcess, StartCancelled, StopFailed
 from .state import ModelRuntimeState, ModelStatus, OrchestratorState
 
 logger = logging.getLogger("orchestrator")
@@ -186,7 +186,16 @@ class OrchestratorManager:
     async def _stop_model(self, model_id: str) -> None:
         rs = self.state.models[model_id]
         rs.status = ModelStatus.STOPPING
-        await self._stop_processes(model_id)
+        try:
+            await self._stop_processes(model_id)
+        except StopFailed as exc:
+            # Say so instead of "stopped": the survivor still holds the GPU memory and the port.
+            logger.error("model %s: %s", model_id, exc)
+            rs.status = ModelStatus.ERROR
+            rs.error_message = str(exc)
+            if self.state.active_model == model_id:
+                self.state.active_model = None
+            return
         self.started_settings.pop(model_id, None)
         rs.status = ModelStatus.STOPPED
         rs.error_message = None

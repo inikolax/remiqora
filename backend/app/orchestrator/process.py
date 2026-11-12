@@ -12,6 +12,7 @@ snapshotted before the stop and any survivor is killed afterwards.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import signal
 import subprocess
@@ -24,9 +25,15 @@ from ..config import LOG_DIR, LOG_TAIL_LINES, ProcessSpec
 
 IS_WINDOWS = sys.platform == "win32"
 
+logger = logging.getLogger("orchestrator")
+
 
 class StartCancelled(Exception):
     """A model start was abandoned because Stop or shutdown was requested."""
+
+
+class StopFailed(RuntimeError):
+    """Processes of a model survived every attempt to end them (they may still hold the GPU and the port)."""
 
 
 def _build_env(spec: ProcessSpec) -> dict[str, str]:
@@ -95,6 +102,19 @@ def _windows_alive(pid: int) -> bool:
     try:
         code = ctypes.c_ulong()
         return bool(k32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+    finally:
+        k32.CloseHandle(handle)
+
+
+def _windows_terminate(pid: int) -> bool:
+    """TerminateProcess on one PID: the last resort when taskkill did not end it."""
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    handle = k32.OpenProcess(0x0001, False, pid)  # PROCESS_TERMINATE
+    if not handle:
+        return False
+    try:
+        return bool(k32.TerminateProcess(handle, 1))
     finally:
         k32.CloseHandle(handle)
 
@@ -195,6 +215,8 @@ class ManagedProcess:
         if tree:
             await self._reap(tree)
         self._close_log()
+        if IS_WINDOWS:
+            await self._verify_gone([pid, *tree])
 
     async def _reap(self, pids: list[int]) -> None:
         """Gives the children the same grace period, then kills whatever of the tree still runs."""
@@ -206,13 +228,35 @@ class ManagedProcess:
             if _windows_alive(p):
                 await self._force_kill(p)
 
+    async def _verify_gone(self, pids: list[int]) -> None:
+        """A stop that leaves a process behind must not pass for a stop: the survivor keeps the GPU
+        memory and the port, and the next start of the model fails on it. Whatever taskkill left is
+        ended with TerminateProcess; if even that fails, StopFailed names the PIDs."""
+        survivors = [p for p in pids if _windows_alive(p)]
+        if not survivors:
+            return
+        logger.warning("process '%s': still alive after taskkill: %s", self.spec.name, survivors)
+        for p in survivors:
+            _windows_terminate(p)
+        await asyncio.sleep(1.0)
+        survivors = [p for p in survivors if _windows_alive(p)]
+        if survivors:
+            raise StopFailed(f"process '{self.spec.name}' could not be stopped, still running: PID {', '.join(map(str, survivors))}")
+
     async def _force_kill(self, pid: int) -> None:
         if IS_WINDOWS:
-            proc = await asyncio.create_subprocess_exec(
-                "taskkill", "/PID", str(pid), "/T", "/F",
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-            )
-            await proc.wait()
+            # In a thread, not asyncio's subprocess: that one is not implemented on the selector
+            # event loop (uvicorn --reload on Windows), where it raised and nothing was killed.
+            def run() -> subprocess.CompletedProcess:
+                return subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, errors="replace")
+
+            try:
+                done = await asyncio.to_thread(run)
+            except OSError as exc:
+                logger.warning("taskkill for PID %s could not be run: %s", pid, exc)
+                return
+            if done.returncode != 0:
+                logger.warning("taskkill /PID %s exited with %s: %s", pid, done.returncode, (done.stderr or done.stdout).strip())
         else:
             try:
                 self._proc.kill()
