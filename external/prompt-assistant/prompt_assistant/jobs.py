@@ -27,7 +27,7 @@ Status = Literal["queued", "loading", "running", "done", "failed", "cancelled"]
 Stage = Literal["queued", "loading", "classifying", "writing", "retrying", "done"]
 
 # The usual length of a reply, in tokens (measured).
-EXPECTED_TOKENS = {"sa3": 75, "yue2-song": 460, "ace-song": 430, "ace-instrumental": 55}
+EXPECTED_TOKENS = {"sa3": 75, "yue2-song": 460, "ace-song": 430, "ace-instrumental": 55, "ace-part": 25}
 KEEP_JOBS = 50
 _JSON_VALUE = re.compile(r'"(\w+)"\s*:\s*"((?:[^"\\]|\\.)*)')
 

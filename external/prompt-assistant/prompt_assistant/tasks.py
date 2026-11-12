@@ -6,6 +6,7 @@
 - yue2-song: YuE2's style tags and lyrics with section labels.
 - ace-song / ace-instrumental: ACE-Step's caption, lyrics, BPM, key and length, for when its own language model
   (/v1/create_sample) is not running.
+- ace-part: the description of one part (or of a section) for the editor's AI arranger, from words in any language.
 Replies in JSON are parsed leniently (a small model sometimes leaves a string or a brace open) and asked again once.
 """
 from __future__ import annotations
@@ -195,6 +196,59 @@ def ace(generate: Generate, idea: str, instrumental: bool, language: str | None 
     raise TaskError(str(last))
 
 
+# ---------------------------------------------------------------- ACE-Step: one part for the AI arranger
+
+# The part classes of ACE-Step's lego task (acestep/constants.py TRACK_NAMES), as the model is told about them.
+ACE_PART_TRACKS = {
+    "drums": "drums", "bass": "bass", "guitar": "guitar", "keyboard": "keyboard (piano, electric piano, organ)",
+    "synth": "synthesizer", "strings": "strings", "brass": "brass", "woodwinds": "woodwinds",
+    "percussion": "percussion", "fx": "sound effects and textures", "vocals": "lead vocals",
+    "backing_vocals": "backing vocals",
+}
+ACE_PART = """You write the description of ONE instrument part for ACE-Step, a music model that adds a part to a track.
+The user describes the part in any language. Answer with one line in English and nothing else: 3 to 5 short comma
+separated phrases, at most 20 words, that say how this part plays and sounds: pattern and playing style, tone,
+genre feel.
+The part is: {track}. Start with the instrument and what it plays. Describe only this part: no other instruments,
+no tempo or key, no artist or song names, no sentences, no quotes. Keep to what the user asked for: add detail
+about playing and tone, but no genre or mood the user did not name.
+Input: тёплый катящийся бас как в дип-хаусе
+Output: warm rolling deep house bassline, round sub bass, groovy syncopated pattern
+Input: cuerdas suaves que crecen lentamente
+Output: soft legato string section, slow swells, cinematic and warm
+Input: прямая бочка с хэтами
+Output: four-on-the-floor drums, punchy kick, crisp offbeat hi-hats, clap on two and four"""
+ACE_SECTION = """You write the description of a piece of music for ACE-Step, a music generation model.
+The user describes it in any language. Answer with one line in English and nothing else: 4 to 7 short comma
+separated phrases, at most 28 words: genre, mood, main instruments, production. No tempo or key, no artist or
+song names, no sentences, no quotes.
+Input: мелодичный дип-хаус с родесом и тёплым басом
+Output: melodic deep house, warm Rhodes chords, rolling bassline, soft four-on-the-floor drums, late-night mood
+Input: rock épico con guitarras pesadas
+Output: epic rock, heavy distorted guitars, driving drums, powerful bass, anthemic and intense"""
+
+
+def ace_part(generate: Generate, idea: str, kind: str | None = None, seed: int | None = None) -> dict[str, Any]:
+    """`kind` is a part class of ACE_PART_TRACKS; anything else asks for a description of the whole section."""
+    part = kind in ACE_PART_TRACKS
+    system = ACE_PART.replace("{track}", ACE_PART_TRACKS[kind]) if part else ACE_SECTION
+    limit = 24 if part else 32
+    last = "the reply is empty"
+    for attempt in range(3):
+        reply, _ = generate(system, f"Input: {idea}\nOutput: ", 64, 0.6, None if seed is None else seed + attempt)
+        text = reply.strip().splitlines()[0].strip() if reply.strip() else ""
+        text = re.sub(r"^(output|answer)\s*:\s*", "", text, flags=re.I).strip(" \"'`.-")
+        if not text:
+            continue
+        if not _latin(text):
+            last = "the description is not in English"
+        elif len(text.split()) > limit:
+            last = "the description is too long"
+        else:
+            return {"caption": text}
+    raise TaskError(last)
+
+
 def _latin(text: str) -> bool:
     """No letters beyond plain a-z: a caption the model wrote in the lyrics' language has some (gitár, гитара)."""
     return not re.search(r"[^\W\d_a-zA-Z]", text)
@@ -207,7 +261,7 @@ def _int(v: Any) -> int | None:
         return None
 
 
-TASKS = ("sa3", "yue2-song", "ace-song", "ace-instrumental")
+TASKS = ("sa3", "yue2-song", "ace-song", "ace-instrumental", "ace-part")
 
 
 def run(task: str, generate: Generate, idea: str, *, language: str | None = None, kind: str | None = None,
@@ -221,4 +275,6 @@ def run(task: str, generate: Generate, idea: str, *, language: str | None = None
         return yue2_song(generate, idea, language, seed)
     if task in ("ace-song", "ace-instrumental"):
         return ace(generate, idea, task == "ace-instrumental", language, seed)
+    if task == "ace-part":
+        return ace_part(generate, idea, kind, seed)
     raise TaskError(f"unknown task '{task}', one of {TASKS}")
