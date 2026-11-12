@@ -177,7 +177,7 @@ class OrchestratorManager:
         procs = self._processes.get(model_id, [])
         while procs:
             proc = procs[-1]
-            await proc.stop()
+            await proc.stop(check=True)
             if procs and procs[-1] is proc:
                 procs.pop()
         if self._processes.get(model_id) is procs:
