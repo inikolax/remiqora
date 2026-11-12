@@ -31,6 +31,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $externalDir = Join-Path $root 'external'
 $patchesDir = Join-Path $externalDir 'patches'
 . (Join-Path $root 'scripts\install_console.ps1')
+Select-Language
 try { $Host.UI.RawUI.WindowTitle = T 'Remiqora — установка' 'Remiqora — install' } catch { }
 Show-Banner (T 'Установка движков и моделей' 'Installing the engines and models')
 Update-SessionPath

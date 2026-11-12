@@ -16,6 +16,7 @@ param([switch]$SkipHeavy)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'scripts\install_console.ps1')
+Select-Language
 try { $Host.UI.RawUI.WindowTitle = T 'Remiqora — подготовка компьютера' 'Remiqora — preparing the computer' } catch { }
 Show-Banner (T 'Подготовка компьютера' 'Preparing the computer')
 

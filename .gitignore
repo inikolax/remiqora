@@ -30,3 +30,6 @@ external/sa3-server/output-cpu/
 external/sa3-server/uv.lock
 external/prompt-assistant/.venv/
 external/prompt-assistant/uv.lock
+
+# The language the install scripts were asked to speak (scripts/install_console.ps1)
+.remiqora-lang

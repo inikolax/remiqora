@@ -4,8 +4,12 @@
 # True colour (VT) where the console takes it; the old conhost without it gets the banner in 16 colours;
 # redirected output and NO_COLOR get plain text.
 
-# Message language: REMIQORA_LANG if set, else the Windows display language; Russian or English
-$script:lang = if ($env:REMIQORA_LANG) { $env:REMIQORA_LANG } else { (Get-UICulture).TwoLetterISOLanguageName }
+# Message language, Russian or English: REMIQORA_LANG if set, else the one picked at install (.remiqora-lang next to
+# install.bat, see Select-Language), else the Windows display language
+$script:langFile = Join-Path $root '.remiqora-lang'
+$script:lang = if ($env:REMIQORA_LANG) { $env:REMIQORA_LANG }
+    elseif (Test-Path -LiteralPath $script:langFile) { ([IO.File]::ReadAllText($script:langFile)).Trim() }
+    else { (Get-UICulture).TwoLetterISOLanguageName }
 $script:ru = $script:lang.ToLowerInvariant().StartsWith('ru')
 function T([string]$Ru, [string]$En) { if ($script:ru) { $Ru } else { $En } }
 
@@ -141,4 +145,20 @@ function Update-SessionPath {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = (@($env:Path, $machine, $user) -join ';')
+}
+
+# The install asks once which language to speak (the default is the Windows one) and remembers it for the launcher.
+# Not asked when REMIQORA_LANG is set, when a choice is saved, or without a console to answer in.
+function Select-Language {
+    if ($env:REMIQORA_LANG -or (Test-Path -LiteralPath $script:langFile) -or [Console]::IsInputRedirected -or -not $script:tty) { return }
+    $default = if ($script:ru) { '1' } else { '2' }
+    Write-Host ''
+    Write-Host ('  ' + (C $cViolet '?' -Bold) + ' Язык / Language:  ' + (C $cPink '1' -Bold) + ' Русский   ' + (C $cPink '2' -Bold) + ' English  ' + (Dim "[$default]") + ' : ') -NoNewline
+    $a = Read-Host
+    if ($null -eq $a) { return }
+    $pick = if ($a.Trim()) { $a.Trim() } else { $default }
+    $script:ru = $pick -ne '2'
+    $script:lang = if ($script:ru) { 'ru' } else { 'en' }
+    try { [IO.File]::WriteAllText($script:langFile, $script:lang) } catch { }
+    try { [Console]::Clear() } catch { }
 }
