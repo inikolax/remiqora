@@ -207,3 +207,39 @@ test('extracts a tar.gz archive', async () => {
   await extract(archive, out, { stripComponents: 1 });
   assert.equal(fs.readFileSync(path.join(out, 'sub', 'f.txt'), 'utf8'), 'hello');
 });
+
+test('re-patching ACE-Step keeps the environment and the models, and takes the new source', async () => {
+  const { carryOver } = require('../src/bootstrap/components');
+  const old = tmp();
+  const fresh = tmp();
+  const put = (root, rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
+  put(old, 'acestep/handler.py', 'old source');
+  put(old, '.venv/pyvenv.cfg', 'env');
+  put(old, 'checkpoints/acestep-v15-turbo/model.safetensors', 'weights');
+  put(old, 'checkpoints/README.md', 'old readme');
+  put(old, 'lora_output/mine/adapter.safetensors', 'my lora');
+  put(fresh, 'acestep/handler.py', 'patched source');
+  put(fresh, 'checkpoints/README.md', 'new readme');
+  await carryOver(old, fresh);
+  const read = (rel) => fs.readFileSync(path.join(fresh, rel), 'utf8');
+  assert.equal(read('acestep/handler.py'), 'patched source', 'the new source wins');
+  assert.equal(read('checkpoints/README.md'), 'new readme');
+  assert.equal(read('.venv/pyvenv.cfg'), 'env', 'the environment is kept');
+  assert.equal(read('checkpoints/acestep-v15-turbo/model.safetensors'), 'weights', 'the models are kept');
+  assert.equal(read('lora_output/mine/adapter.safetensors'), 'my lora', 'user files are kept');
+});
+
+test('ACE-Step is installed again when the patch changed', async () => {
+  const L = layout(tmp(), 'win32-x64', manifest);
+  const patch = path.join(tmp(), 'ace-step.patch');
+  fs.writeFileSync(patch, 'patch one');
+  const resources = { backend: path.join(__dirname, '..', '..', 'backend'), acePatch: patch };
+  const ace = buildComponents({ L, manifest, platform: 'win32-x64', resources }).find((c) => c.id === 'ace-step');
+  fs.mkdirSync(path.join(L.aceStep, '.venv'), { recursive: true });
+  const crypto = require('node:crypto');
+  const hash = (text) => crypto.createHash('sha1').update(text).digest('hex').slice(0, 12);
+  fs.writeFileSync(path.join(L.aceStep, '.remiqora-patched'), hash('patch one'));
+  assert.equal(await ace.verify({}), true);
+  fs.writeFileSync(patch, 'patch two');
+  assert.equal(await ace.verify({}), false, 'a changed patch makes the component due');
+});

@@ -499,6 +499,84 @@ index 574a94c..3506b00 100644
          finally:
              if stop_event is not None:
                  stop_event.set()
+diff --git a/acestep/core/generation/handler/init_service_offload_context.py b/acestep/core/generation/handler/init_service_offload_context.py
+index 92af32f..0aafbd0 100644
+--- a/acestep/core/generation/handler/init_service_offload_context.py
++++ b/acestep/core/generation/handler/init_service_offload_context.py
+@@ -9,6 +9,55 @@ from loguru import logger
+ class InitServiceOffloadContextMixin:
+     """Context-managed model load/offload behavior for CPU offload mode."""
+ 
++    def _keep_cpu_weights(self, model) -> dict:
++        """Return references to a module's CPU tensors, taken before it moves to the accelerator.
++
++        Moving the DiT back with ``.to("cpu")`` allocates a fresh copy of the weights on
++        every generation.  On Windows the process then grows by the size of the model per
++        job (measured: +5.7 GB each on the turbo DiT, 26 GB after four jobs) although no
++        tensor is leaked.  The weights do not change while the model is on the accelerator,
++        so the CPU tensors are kept and put back instead (``_put_back_cpu_weights``).
++
++        Args:
++            model: The module about to be moved off the CPU.
++
++        Returns:
++            ``{(module_name, tensor_name, kind): tensor}`` for parameters ("p") and
++            buffers ("b") that are on the CPU; quantized parameters are left out.
++        """
++        kept = {}
++        for module_name, module in model.named_modules():
++            for name, param in module._parameters.items():
++                if param is None or param.device.type != "cpu" or self._is_quantized_tensor(param):
++                    continue
++                kept[(module_name, name, "p")] = param.data
++            for name, buf in module._buffers.items():
++                if buf is not None and buf.device.type == "cpu":
++                    kept[(module_name, name, "b")] = buf
++        return kept
++
++    def _put_back_cpu_weights(self, model, kept: dict) -> None:
++        """Point a module's parameters and buffers back at the CPU tensors kept on load.
++
++        Tensors that were not kept (adapters added meanwhile, quantized parameters) stay
++        where they are; the regular ``_recursive_to_device(model, "cpu")`` moves them.
++
++        Args:
++            model: The module being offloaded.
++            kept: The mapping returned by ``_keep_cpu_weights``.
++        """
++        if not kept:
++            return
++        for module_name, module in model.named_modules():
++            for name, param in module._parameters.items():
++                old = kept.get((module_name, name, "p"))
++                if param is not None and old is not None and old.shape == param.shape:
++                    param.data = old
++            for name, buf in module._buffers.items():
++                old = kept.get((module_name, name, "b"))
++                if buf is not None and old is not None and old.shape == buf.shape:
++                    module._buffers[name] = old
++
+     @contextmanager
+     def _load_model_context(self, model_name: str):
+         """Load a model to device for the context and offload back to CPU on exit."""
+@@ -40,6 +89,8 @@ class InitServiceOffloadContextMixin:
+         rss_before = self._get_rss_mb()
+         logger.info(f"[_load_model_context] Loading {model_name} to {self.device} (RSS: {rss_before:.0f} MB)")
+         start_time = time.time()
++        # Only the DiT: it is the large one, and the VAE changes dtype between devices.
++        cpu_weights = self._keep_cpu_weights(model) if model_name == "model" else {}
+         if model_name == "vae":
+             vae_dtype = self._get_vae_dtype()
+             self._recursive_to_device(model, self.device, vae_dtype)
+@@ -71,6 +122,8 @@ class InitServiceOffloadContextMixin:
+             if model_name == "vae":
+                 self._recursive_to_device(model, "cpu", self._get_vae_dtype("cpu"))
+             else:
++                self._put_back_cpu_weights(model, cpu_weights)
++                cpu_weights = {}
+                 self._recursive_to_device(model, "cpu")
+ 
+             offload_time = time.time() - start_time
 diff --git a/acestep/generation_cancellation.py b/acestep/generation_cancellation.py
 new file mode 100644
 index 0000000..12f126e

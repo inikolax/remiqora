@@ -14,6 +14,21 @@ const exists = (p) => fsp.access(p).then(() => true, () => false);
 const sum = (list) => list.reduce((a, b) => a + b, 0);
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex').slice(0, 12);
 
+/**
+ * Moves into `fresh` everything of `old` that `fresh` does not have, folder by folder: the Python
+ * environment, the downloaded models, caches, trained LoRAs. Files both have stay as `fresh` has them.
+ * Used when ACE-Step's source is unpacked again for a changed patch, so that nothing is downloaded twice.
+ */
+async function carryOver(old, fresh, depth = 3) {
+  if (!(await exists(old))) return;
+  for (const entry of await fsp.readdir(old, { withFileTypes: true })) {
+    const from = path.join(old, entry.name);
+    const to = path.join(fresh, entry.name);
+    if (!(await exists(to))) await fsp.rename(from, to);
+    else if (entry.isDirectory() && depth > 1) await carryOver(from, to, depth - 1);
+  }
+}
+
 /** Environment for uv: everything (Python, wheel cache) stays under the data root the user chose. */
 function uvEnv(L) {
   // only-managed: never bind the venvs to a system Python that the user may later remove or upgrade.
@@ -223,7 +238,9 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
     id: 'ace-step',
     weight: manifest.aceStep.approxBytes,
     version: manifest.aceStep.commit.slice(0, 7),
-    verify: async () => (await exists(path.join(L.aceStep, '.remiqora-patched'))) && (await exists(path.join(L.aceStep, '.venv'))),
+    // The marker holds the hash of the patch that was applied: a release with a changed patch applies it again.
+    verify: async () => (await exists(path.join(L.aceStep, '.venv')))
+      && (await fsp.readFile(path.join(L.aceStep, '.remiqora-patched'), 'utf8').then((t) => t.trim(), () => null)) === (await patchHash()),
     async install(ctx, report) {
       const marker = path.join(L.aceStep, '.remiqora-patched');
       const wanted = await patchHash();
@@ -235,6 +252,9 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
         await fsp.rm(tmp, { recursive: true, force: true });
         await extract(archive, tmp, { stripComponents: 1 });
         await applyGitPatch(await fsp.readFile(resources.acePatch, 'utf8'), tmp);
+        // An install being re-patched keeps its environment and models (several GB): only the source is replaced.
+        await fsp.rm(marker, { force: true });
+        await carryOver(L.aceStep, tmp);
         await fsp.writeFile(path.join(tmp, '.remiqora-patched'), wanted);
         await fsp.rm(L.aceStep, { recursive: true, force: true });
         await fsp.rename(tmp, L.aceStep);
@@ -433,4 +453,4 @@ function ffmpegExecutable(L, manifest, platform) {
   return path.join('/usr/local/bin', 'ffmpeg');
 }
 
-module.exports = { buildComponents, ffmpegExecutable, demucsProject, dirSize, treeHash };
+module.exports = { buildComponents, ffmpegExecutable, demucsProject, dirSize, treeHash, carryOver };
