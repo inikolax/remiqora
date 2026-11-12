@@ -1,12 +1,8 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-
-echo ===================================================
-echo   Remiqora - prerequisite toolchain installer
-echo ===================================================
-echo.
-
+rem Started by a double click (cmd /c "this.bat", no arguments): the script waits for Enter at the end, so the window stays readable
+set "REMIQORA_WAIT="
+if "%~1"=="" if not defined REMIQORA_NO_PAUSE echo %cmdcmdline% | find /i "%~nx0" >nul && set "REMIQORA_WAIT=1"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup_prereqs.ps1" %*
-
-endlocal
+exit /b %errorlevel%

@@ -1,229 +1,202 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
-Clones the original ACE-Step-1.5 and audio.cpp (YuE2) repositories into
-external/, applies Remiqora's small patches on top (see
-external/patches/README.md), builds/prepares each engine, sets up a
-Demucs (stem separation) uv project in external/Demucs, the Stable Audio 3
-server environment (external/sa3-server), and writes backend/.env with all of
-the above plus an auto-detected FFMPEG_BIN_DIR.
+Clones the original ACE-Step-1.5 and audio.cpp (YuE2) repositories into external/, applies Remiqora's small patches
+on top (see external/patches/README.md), builds/prepares each engine, sets up a Demucs (stem separation) uv project in
+external/Demucs, the Stable Audio 3 server environment (external/sa3-server), the prompt assistant, and writes
+backend/.env with all of the above plus an auto-detected FFMPEG_BIN_DIR.
 
-Stable Audio 3 weights are downloaded from the app (the Stable Audio 3 page),
-or here with -StableAudioModels, e.g. -StableAudioModels small-sfx,medium.
+Stable Audio 3 weights are downloaded from the app (the Stable Audio 3 page), or here with -StableAudioModels,
+e.g. -StableAudioModels small-sfx,medium. The ACE-Step base model the AI arranger needs: -AceBase (asked when the
+script runs in a window).
 
-Re-run any time - every step is idempotent (skips work that is already done).
+Re-run any time: every step skips work that is already done. A newer ACE-Step patch is applied again on the next run,
+keeping the environment and the downloaded models.
 #>
-
 param(
     [switch]$SkipStableAudio,
-    # Stable Audio 3 checkpoints to download after the environment: medium, small-music, small-sfx
-    # and their -base twins. The first three are gated (licence + Hugging Face token, see below).
+    # Stable Audio 3 checkpoints to download after the environment: medium, small-music, small-sfx and their -base
+    # twins. The first three are gated (licence + Hugging Face token, see below).
     [string[]]$StableAudioModels = @(),
     [switch]$SkipPromptAssistant,
     # The prompt assistant's language model to download right away (default: none, the Models page does it),
     # e.g. -PromptAssistantModel Qwen/Qwen3.5-2B
-    [string]$PromptAssistantModel = "",
+    [string]$PromptAssistantModel = '',
+    # The ACE-Step base model (~4.8 GB) for the editor's AI arranger: download it now without asking
+    [switch]$AceBase,
     [switch]$SkipBuild,
     [switch]$SkipWeights
 )
-
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$externalDir = Join-Path $root "external"
-$patchesDir = Join-Path $externalDir "patches"
+$externalDir = Join-Path $root 'external'
+$patchesDir = Join-Path $externalDir 'patches'
+. (Join-Path $root 'scripts\install_console.ps1')
+try { $Host.UI.RawUI.WindowTitle = T 'Remiqora — установка' 'Remiqora — install' } catch { }
+Show-Banner (T 'Установка движков и моделей' 'Installing the engines and models')
+Update-SessionPath
 
-function Write-Step($msg) {
-    Write-Host ""
-    Write-Host "== $msg ==" -ForegroundColor Cyan
+# A failure ends in one clear red line; the window stays up when the .bat was double-clicked
+trap {
+    Write-Host ''
+    Fail ((T 'Установка остановилась: ' 'The install stopped: ') + $_.Exception.Message)
+    Note (T 'Запустите её ещё раз: готовое не делается заново, загрузки продолжатся с того же места.' 'Run it again: what is done stays done, downloads continue where they stopped.')
+    Wait-Close
+    exit 1
 }
 
-function Assert-Command($name, $installHint) {
-    if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
-        Write-Host "[MISSING] '$name' is not on PATH. $installHint" -ForegroundColor Yellow
-        return $false
-    }
-    return $true
+$warnings = New-Object System.Collections.Generic.List[string]
+function Need([string]$Name, [string]$Hint) {
+    if (Get-Command $Name -ErrorAction SilentlyContinue) { return $true }
+    Warn ((T "Не найдено: $Name. " "Not found: $Name. ") + $Hint)
+    $script:warnings.Add($Name)
+    return $false
 }
+$prereqHint = T 'Запустите setup_prereqs.bat, затем откройте новое окно.' 'Run setup_prereqs.bat, then open a new window.'
 
 function Find-FfmpegBinDir {
-    $cmd = Get-Command "ffmpeg.exe" -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return Split-Path -Parent $cmd.Source
-    }
-    # Not on PATH yet - most likely setup_prereqs.bat just installed it via
-    # winget in *this same terminal*; PATH only picks that up in a new one.
-    # Look directly in winget's package cache instead of waiting for that.
-    $searchRoots = @(
-        (Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"),
-        (Join-Path $env:ProgramFiles "WinGet\Packages")
-    ) | Where-Object { Test-Path $_ }
+    $cmd = Get-Command 'ffmpeg.exe' -ErrorAction SilentlyContinue
+    if ($cmd) { return Split-Path -Parent $cmd.Source }
+    # Not on PATH yet: setup_prereqs.bat may have just installed it with winget. Look in winget's package folders.
+    $searchRoots = @((Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'), (Join-Path $env:ProgramFiles 'WinGet\Packages')) | Where-Object { Test-Path $_ }
     foreach ($searchRoot in $searchRoots) {
-        $found = Get-ChildItem -Path $searchRoot -Filter "ffmpeg.exe" -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match "Gyan\.FFmpeg" } |
-            Select-Object -First 1
-        if ($found) {
-            return $found.DirectoryName
-        }
+        $found = Get-ChildItem -Path $searchRoot -Filter 'ffmpeg.exe' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'Gyan\.FFmpeg' } | Select-Object -First 1
+        if ($found) { return $found.DirectoryName }
     }
     return $null
 }
 
-function Initialize-Repo($dirName, $repoUrl, $refName, $patchFile) {
-    $dir = Join-Path $externalDir $dirName
+function Get-PatchHash([string]$PatchFile) {
+    if (-not $PatchFile) { return 'nopatch' }
+    (Get-FileHash -Algorithm SHA1 -LiteralPath $PatchFile).Hash.Substring(0, 12).ToLowerInvariant()
+}
+
+# Files a patch adds ("new file mode"): they are removed before the patch is applied again
+function Get-PatchNewFiles([string]$PatchFile) {
+    $lines = [IO.File]::ReadAllLines($PatchFile)
+    $files = @()
+    for ($i = 0; $i -lt $lines.Count - 1; $i++) {
+        if ($lines[$i] -match '^diff --git a/(.+) b/(.+)$' -and $lines[$i + 1] -like 'new file mode*') { $files += $Matches[2] }
+    }
+    return $files
+}
+
+function Initialize-Repo([string]$DirName, [string]$RepoUrl, [string]$RefName, [string]$PatchFile) {
+    $dir = Join-Path $externalDir $DirName
     if (-not (Test-Path $dir)) {
-        Write-Host "Cloning $repoUrl ..."
-        git clone $repoUrl $dir
+        Note ((T 'Клонирую ' 'Cloning ') + $RepoUrl)
+        Invoke-Native git @('clone', '-q', $RepoUrl, $dir)
+    }
+    # The marker holds the hash of the patch that was applied: a newer patch is applied again on the next run
+    $marker = Join-Path $dir '.remiqora-setup-done'
+    $wanted = Get-PatchHash $PatchFile
+    $applied = if (Test-Path $marker) { ([IO.File]::ReadAllText($marker)).Trim() } else { $null }
+    if ($applied -eq $wanted) {
+        if ($PatchFile) { Ok (T 'Исходники на месте, патч применён' 'The source is in place, the patch applied') } else { Ok (T 'Исходники на месте' 'The source is in place') }
+        return $dir
     }
 
     Push-Location $dir
     try {
-        $markerFile = Join-Path $dir ".remiqora-setup-done"
-        $alreadyDone = Test-Path $markerFile
-        if (-not $alreadyDone) {
-            Write-Host "Checking out $refName ..."
-            # A plain "git clone" (no --single-branch/--depth) already fetches
-            # every branch's full history, so the pinned commit is normally
-            # already present - just check it out directly. We deliberately
-            # avoid "git fetch origin <sha>": GitHub rejects fetching a raw
-            # commit SHA as if it were a ref name ("couldn't find remote ref"),
-            # and $ErrorActionPreference = "Stop" turns that expected stderr
-            # output into a script-ending exception before the $LASTEXITCODE
-            # fallback below ever gets a chance to run.
-            $prevPref = $ErrorActionPreference
-            $ErrorActionPreference = "Continue"
-            git checkout $refName 2>$null
-            $checkedOut = ($LASTEXITCODE -eq 0)
-            if (-not $checkedOut) {
-                # Commit isn't reachable yet (e.g. history was rewritten
-                # upstream since this ref was pinned, or this clone happened
-                # to be shallow) - fetch everything and retry once.
-                git fetch origin 2>$null
-                git checkout $refName 2>$null
-                $checkedOut = ($LASTEXITCODE -eq 0)
+        if ($null -ne $applied -and $PatchFile) {
+            Note (T 'Вышла новая версия патча: накладываю заново (окружение и модели остаются).' 'A newer patch: applying it again (the environment and the models stay).')
+            # Undo the old patch: files it added go away, tracked files return to the pinned commit. Untracked folders
+            # (checkpoints, .venv, LoRAs) are not touched.
+            foreach ($rel in Get-PatchNewFiles $PatchFile) {
+                $path = Join-Path $dir $rel
+                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
             }
-            $ErrorActionPreference = $prevPref
-            if (-not $checkedOut) {
-                throw "Could not check out '$refName' in $dir - it may no longer exist upstream. See external/patches/README.md for how to bump the pinned commit."
-            }
-
-            if ($patchFile) {
-                Write-Host "Applying $(Split-Path -Leaf $patchFile) ..."
-                git apply --whitespace=nowarn $patchFile
-                if ($LASTEXITCODE -ne 0) {
-                    # Unlike the git checkout retry above, a failed patch has no
-                    # fallback here - without this check, a native git failure
-                    # doesn't reliably raise a terminating error even under
-                    # $ErrorActionPreference = "Stop" (that only reliably applies
-                    # to cmdlets, not exit codes from external processes), so a
-                    # broken patch could otherwise fall straight through to the
-                    # marker-file write below and get marked "done" while never
-                    # having actually been applied.
-                    throw "Failed to apply patch '$patchFile' to $dir - see the git apply output above."
-                }
-            }
-            New-Item -ItemType File -Path $markerFile -Force | Out-Null
-        } else {
-            Write-Host "Already checked out and patched, skipping."
         }
+        # A plain clone already has every branch's history, so the pinned commit is normally there. No
+        # "git fetch origin <sha>": GitHub rejects a raw SHA as a ref name.
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        git -c advice.detachedHead=false checkout -q --force $RefName 2>$null
+        $ok = ($LASTEXITCODE -eq 0)
+        if (-not $ok) {
+            git fetch -q origin 2>$null
+            git -c advice.detachedHead=false checkout -q --force $RefName 2>$null
+            $ok = ($LASTEXITCODE -eq 0)
+        }
+        $ErrorActionPreference = $prev
+        if (-not $ok) { throw (T "Не удалось переключиться на $RefName в $dir. Как обновить закреплённую версию: external/patches/README.md." "Could not check out $RefName in $dir. How to bump the pinned commit: external/patches/README.md.") }
+        if ($PatchFile) {
+            Note ((T 'Накладываю ' 'Applying ') + (Split-Path -Leaf $PatchFile))
+            git apply --whitespace=nowarn $PatchFile
+            # a native git failure does not stop the script by itself: without this the marker would say "done"
+            if ($LASTEXITCODE -ne 0) { throw (T "Патч $PatchFile не наложился на $dir (вывод git выше)." "The patch $PatchFile did not apply to $dir (git output above).") }
+        }
+        [IO.File]::WriteAllText($marker, $wanted)
+        Ok (T "Версия $RefName готова" "Version $RefName is ready")
     } finally {
         Pop-Location
     }
     return $dir
 }
 
-Write-Step "ACE-Step-1.5"
-$aceDir = Initialize-Repo "ACE-Step-1.5" "https://github.com/ace-step/ACE-Step-1.5.git" "ca1e85f" (Join-Path $patchesDir "ace-step.patch")
-
-if (Assert-Command "uv" "Install it from https://docs.astral.sh/uv/getting-started/installation/") {
-    Push-Location $aceDir
-    try {
-        Write-Host "Running 'uv sync' (this also pulls the CUDA build of PyTorch, can take a while) ..."
-        uv sync
-    } finally {
-        Pop-Location
-    }
-} else {
-    Write-Host "Skipped 'uv sync' - install uv and re-run this script." -ForegroundColor Yellow
+function Sync-Project([string]$Dir, [string]$What) {
+    Note ((T 'Окружение Python для ' 'The Python environment for ') + $What + (T ': uv sync (вместе с PyTorch для CUDA, может занять время)' ': uv sync (with PyTorch for CUDA, this can take a while)'))
+    Push-Location $Dir
+    try { Invoke-Native uv @('sync') } finally { Pop-Location }
+    Ok (T 'Окружение готово' 'The environment is ready')
 }
 
-Write-Step "audio.cpp (YuE2)"
-# No patch needed here anymore - upstream's dev branch now natively exposes
-# the generated/used ABC plan as a response artifact (the one thing our own
-# patch used to add), so this is a plain checkout. dev is a moving,
-# occasionally force-pushed branch upstream; if this exact commit 404s, bump
-# it to a current dev commit (see external/patches/README.md).
-$audioCppDir = Initialize-Repo "audio.cpp" "https://github.com/0xShug0/audio.cpp.git" "39f9013" $null
+# ---------------------------------------------------------------- ACE-Step
+Step 'ACE-Step 1.5'
+Need 'git' $prereqHint | Out-Null
+$aceDir = Initialize-Repo 'ACE-Step-1.5' 'https://github.com/ace-step/ACE-Step-1.5.git' 'ca1e85f' (Join-Path $patchesDir 'ace-step.patch')
+$haveUv = Need 'uv' $prereqHint
+if ($haveUv) { Sync-Project $aceDir 'ACE-Step' }
 
+# ---------------------------------------------------------------- YuE2
+Step 'YuE2 (audio.cpp)'
+# No patch: upstream's dev branch exposes the ABC plan itself. dev is a moving, sometimes force-pushed branch; if this
+# commit disappears, bump it (external/patches/README.md).
+$audioCppDir = Initialize-Repo 'audio.cpp' 'https://github.com/0xShug0/audio.cpp.git' '39f9013' $null
 if ($SkipBuild) {
-    Write-Host "Skipping build (-SkipBuild passed)."
+    Note (T 'Сборка пропущена (-SkipBuild).' 'Build skipped (-SkipBuild).')
 } else {
-    $haveCmake = Assert-Command "cmake" "Install CMake from https://cmake.org/download/"
-    $haveNvcc = Assert-Command "nvcc" "Install the CUDA Toolkit from https://developer.nvidia.com/cuda-downloads"
-    if ($haveCmake -and $haveNvcc) {
+    $haveCmake = Need 'cmake' $prereqHint
+    $haveNvcc = Need 'nvcc' (T 'Установите CUDA Toolkit: https://developer.nvidia.com/cuda-downloads' 'Install the CUDA Toolkit: https://developer.nvidia.com/cuda-downloads')
+    $server = Join-Path $audioCppDir 'build\windows-cuda-release\bin\audiocpp_server.exe'
+    if (Test-Path $server) {
+        Ok (T 'audiocpp_server уже собран' 'audiocpp_server is already built')
+    } elseif ($haveCmake -and $haveNvcc) {
+        Note (T 'Собираю audiocpp_server (CUDA, yue2 + sheetsage2 + muscriptor). Нужны Visual Studio Build Tools (C++);' 'Building audiocpp_server (CUDA, yue2 + sheetsage2 + muscriptor). This needs Visual Studio Build Tools (C++);')
+        Note (T 'если сборка не пойдёт, откройте «Developer PowerShell for VS» и запустите скрипт оттуда.' 'if the build fails, open "Developer PowerShell for VS" and run this script from there.')
         Push-Location $audioCppDir
         try {
-            Write-Host "Building audiocpp_server (CUDA release, yue2+sheetsage2+muscriptor) ..."
-            Write-Host "This needs Visual Studio Build Tools (C++ workload) on PATH; if the build" -ForegroundColor DarkGray
-            Write-Host "fails here, open a 'Developer PowerShell for VS' and re-run this script." -ForegroundColor DarkGray
-            powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\build_windows.ps1" `
-                -Preset windows-cuda-release `
-                -ModelSet custom -Models "yue2,sheetsage2,muscriptor" `
-                -NativeModelManager `
-                -Target audiocpp_server
-        } finally {
-            Pop-Location
-        }
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\build_windows.ps1' -Preset windows-cuda-release -ModelSet custom -Models 'yue2,sheetsage2,muscriptor' -NativeModelManager -Target audiocpp_server
+            if ($LASTEXITCODE -ne 0) { throw (T 'Сборка audiocpp_server не удалась (вывод выше).' 'The audiocpp_server build failed (output above).') }
+        } finally { Pop-Location }
+        Ok (T 'audiocpp_server собран' 'audiocpp_server is built')
     } else {
-        Write-Host "Skipped native build - install the missing tools above, then re-run:" -ForegroundColor Yellow
-        Write-Host "  .\setup_models.ps1 " -NoNewline -ForegroundColor Yellow
-        Write-Host "(or run the build manually per external/audio.cpp/README.md)" -ForegroundColor Yellow
+        Warn (T 'Сборка пропущена: не хватает инструментов выше. Поставьте их и запустите скрипт ещё раз.' 'Build skipped: tools above are missing. Install them and run this script again.')
     }
 }
 
+Step (T 'Модели YuE2, SheetSage2, MuScriptor (~10 ГБ)' 'YuE2, SheetSage2, MuScriptor models (~10 GB)')
 if ($SkipWeights) {
-    Write-Step "YuE2/SheetSage2/MuScriptor weights"
-    Write-Host "Skipping weight downloads (-SkipWeights passed)."
-} elseif (Assert-Command "python" "Install Python 3 and put it on PATH.") {
-    Write-Step "YuE2/SheetSage2/MuScriptor weights (~10 GB total)"
+    Note (T 'Пропущено (-SkipWeights).' 'Skipped (-SkipWeights).')
+} elseif (Need 'python' $prereqHint) {
     Push-Location $audioCppDir
     try {
-        foreach ($pkg in "yue2_main_q8_0", "yue2_main_q4_0", "yue2_vae_f16", "sheetsage2_orig", "muscriptor_small_f32") {
-            Write-Host "Installing $pkg ..."
-            python tools/model_manager_v2.py install $pkg
+        foreach ($pkg in 'yue2_main_q8_0', 'yue2_main_q4_0', 'yue2_vae_f16', 'sheetsage2_orig', 'muscriptor_small_f32') {
+            Note $pkg
+            Invoke-Native python @('tools/model_manager_v2.py', 'install', $pkg)
         }
-    } finally {
-        Pop-Location
-    }
-} else {
-    Write-Host "Skipped weight downloads - install Python and re-run this script." -ForegroundColor Yellow
+    } finally { Pop-Location }
+    Ok (T 'Модели на месте' 'The models are in place')
 }
-# ACE-Step's own checkpoints (acestep-v15-sft, LM, VAE, ...) are not fetched
-# here - acestep-api downloads them itself via HuggingFace/ModelScope on its
-# first request, the same way its Gradio UI does.
 
-Write-Step "Demucs (stem separation)"
-# Not an upstream repo to clone - just a throwaway uv project with the
-# `demucs` PyPI package installed into it. Written out explicitly (rather
-# than a plain "uv init" + "uv add demucs") to avoid two problems hit in
-# practice:
-#  1. A bare "uv add demucs" resolves torch from plain PyPI, which on
-#     Windows is a CPU-only wheel - stem separation would silently run on
-#     CPU instead of alongside the GPU model like the UI expects. Routing
-#     "torch" at PyTorch's own cu128 wheel index below (same index
-#     ACE-Step-1.5's own pyproject.toml uses) fixes that.
-#  2. "uv init"'s default requires-python tracks whatever Python is newest
-#     on the machine, which can be newer than what PyTorch's cu128 wheels
-#     support yet - uv then falls back to the CPU wheel again, silently.
-#     Pinning requires-python to ACE-Step-1.5's own range sidesteps that.
-# `numpy` is listed explicitly too: demucs imports it directly (see
-# demucs/transformer.py) but its own package metadata doesn't declare it as
-# a dependency, so it's otherwise missing and demucs fails to import.
-$demucsDir = Join-Path $externalDir "Demucs"
-if (-not (Test-Path $demucsDir)) {
-    New-Item -ItemType Directory -Path $demucsDir -Force | Out-Null
-}
-$demucsProjectFile = Join-Path $demucsDir "pyproject.toml"
+# ---------------------------------------------------------------- Demucs
+Step (T 'Demucs — разделение на стемы' 'Demucs — stem separation')
+# A small uv project with the demucs package. torch is routed at PyTorch's cu128 index (plain PyPI has a CPU-only
+# wheel on Windows) and requires-python is pinned to ACE-Step's range (newer Pythons fall back to the CPU wheel).
+# numpy is listed because demucs imports it without declaring it.
+$demucsDir = Join-Path $externalDir 'Demucs'
+New-Item -ItemType Directory -Path $demucsDir -Force | Out-Null
+$demucsProjectFile = Join-Path $demucsDir 'pyproject.toml'
 if (-not (Test-Path $demucsProjectFile)) {
-    Write-Host "Writing $demucsProjectFile ..."
     @'
 [project]
 name = "demucs-runner"
@@ -247,125 +220,103 @@ explicit = true
 torch = { index = "pytorch-cu128" }
 '@ | Set-Content -Encoding utf8 $demucsProjectFile
 }
+if ($haveUv) { Sync-Project $demucsDir 'Demucs' }
 
-if (Assert-Command "uv" "Install it from https://docs.astral.sh/uv/getting-started/installation/") {
-    Push-Location $demucsDir
-    try {
-        Write-Host "Running 'uv sync' for Demucs (this also pulls the CUDA build of PyTorch, can take a while) ..."
-        uv sync
-    } finally {
-        Pop-Location
-    }
-} else {
-    Write-Host "Skipped Demucs 'uv sync' - install uv and re-run this script." -ForegroundColor Yellow
-}
-
-Write-Step "Stable Audio 3 (sa3-server)"
-# Our own small HTTP server around Stability's stable-audio-3 package: the uv project is
-# tracked in the repository (external/sa3-server), so there is nothing to clone - only
-# "uv sync", which also pulls torch (cu128) and a prebuilt Flash Attention wheel.
-# The weights go to the Hugging Face cache. The easy way is the app: the Stable Audio 3 page
-# lists the checkpoints with a Download button and takes a Hugging Face token. Here they are
-# fetched only when asked for with -StableAudioModels. medium, small-music and small-sfx are
-# gated: accept the licence on their huggingface.co pages first and save a token, either in the
-# app or with "external\sa3-server\.venv\Scripts\hf.exe auth login". The -base ones are open.
-$stableAudioDir = Join-Path $externalDir "sa3-server"
-if (-not (Test-Path (Join-Path $stableAudioDir "pyproject.toml"))) {
-    Write-Host "external/sa3-server is missing from this checkout - skipping Stable Audio 3." -ForegroundColor Yellow
+# ---------------------------------------------------------------- Stable Audio 3
+Step 'Stable Audio 3'
+# Our own server around Stability's stable-audio-3 package, tracked in the repository. medium, small-music and
+# small-sfx are gated: accept the licence on huggingface.co and save a token (in the app, or with
+# "external\sa3-server\.venv\Scripts\hf.exe auth login"). The -base checkpoints are open.
+$stableAudioDir = Join-Path $externalDir 'sa3-server'
+if (-not (Test-Path (Join-Path $stableAudioDir 'pyproject.toml'))) {
+    Warn (T 'В этой копии нет external/sa3-server: Stable Audio 3 пропущен.' 'external/sa3-server is missing from this checkout: Stable Audio 3 skipped.')
 } elseif ($SkipStableAudio) {
-    Write-Host "Skipped (-SkipStableAudio)."
-} elseif (Assert-Command "uv" "Install it from https://docs.astral.sh/uv/getting-started/installation/") {
-    Push-Location $stableAudioDir
-    try {
-        Write-Host "Running 'uv sync' for sa3-server (pulls the CUDA build of PyTorch and Flash Attention, can take a while) ..."
-        uv sync
-        $sa3Python = Join-Path $stableAudioDir ".venv\Scripts\python.exe"
-        foreach ($model in ($StableAudioModels | ForEach-Object { $_ -split ',' } | Where-Object { $_ })) {
-            Write-Host "Downloading the Stable Audio 3 checkpoint '$model' ..."
-            & $sa3Python -m sa3_server.download $model.Trim()
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "Could not download '$model' (see the error above). Download it later from the app's Stable Audio 3 page." -ForegroundColor Yellow
-            }
-        }
-        if (-not $StableAudioModels) {
-            Write-Host "Weights: download them from the app (Stable Audio 3 page), or re-run with -StableAudioModels small-sfx,medium."
-        }
-    } finally {
-        Pop-Location
+    Note (T 'Пропущено (-SkipStableAudio).' 'Skipped (-SkipStableAudio).')
+} elseif ($haveUv) {
+    Sync-Project $stableAudioDir 'Stable Audio 3'
+    $sa3Python = Join-Path $stableAudioDir '.venv\Scripts\python.exe'
+    foreach ($model in ($StableAudioModels | ForEach-Object { $_ -split ',' } | Where-Object { $_ })) {
+        Note ((T 'Скачиваю ' 'Downloading ') + $model.Trim())
+        & $sa3Python -m sa3_server.download $model.Trim()
+        if ($LASTEXITCODE -ne 0) { Warn (T "Не скачалось: $model. Его можно скачать позже на странице Stable Audio 3." "Not downloaded: $model. Download it later on the Stable Audio 3 page.") }
     }
-} else {
-    Write-Host "Skipped sa3-server 'uv sync' - install uv and re-run this script." -ForegroundColor Yellow
+    if (-not $StableAudioModels) { Note (T 'Веса скачиваются в приложении, на странице Stable Audio 3.' 'The weights are downloaded in the app, on the Stable Audio 3 page.') }
 }
 
-Write-Step "Prompt assistant"
-# A local language model that writes each engine's prompt from an idea: the uv project is tracked in the
-# repository (external/prompt-assistant) and runs in place, so only "uv sync" here (the same torch as
-# sa3-server, which uv links from its cache). Its model (Qwen3.5, Apache-2.0) is downloaded from the app's
-# Models page, or here with -PromptAssistantModel Qwen/Qwen3.5-2B.
-$assistantDir = Join-Path $externalDir "prompt-assistant"
-if (-not (Test-Path (Join-Path $assistantDir "pyproject.toml"))) {
-    Write-Host "external/prompt-assistant is missing from this checkout - skipping the prompt assistant." -ForegroundColor Yellow
+# ---------------------------------------------------------------- the prompt assistant
+Step (T 'Помощник промтов' 'The prompt assistant')
+$assistantDir = Join-Path $externalDir 'prompt-assistant'
+if (-not (Test-Path (Join-Path $assistantDir 'pyproject.toml'))) {
+    Warn (T 'В этой копии нет external/prompt-assistant: помощник пропущен.' 'external/prompt-assistant is missing from this checkout: the assistant skipped.')
 } elseif ($SkipPromptAssistant) {
-    Write-Host "Skipped (-SkipPromptAssistant)."
-} elseif (Assert-Command "uv" "Install it from https://docs.astral.sh/uv/getting-started/installation/") {
-    Push-Location $assistantDir
-    try {
-        Write-Host "Running 'uv sync' for the prompt assistant ..."
-        uv sync
-        if ($PromptAssistantModel) {
-            & (Join-Path $assistantDir ".venv\Scripts\python.exe") -m prompt_assistant.download $PromptAssistantModel
-        } else {
-            Write-Host "Its model: download it from the app (Models page), or re-run with -PromptAssistantModel Qwen/Qwen3.5-2B."
-        }
-    } finally {
-        Pop-Location
+    Note (T 'Пропущено (-SkipPromptAssistant).' 'Skipped (-SkipPromptAssistant).')
+} elseif ($haveUv) {
+    Sync-Project $assistantDir (T 'помощника' 'the assistant')
+    if ($PromptAssistantModel) {
+        Invoke-Native (Join-Path $assistantDir '.venv\Scripts\python.exe') @('-m', 'prompt_assistant.download', $PromptAssistantModel)
+    } else {
+        Note (T 'Его модель скачивается в приложении, на странице «Модели».' 'Its model is downloaded in the app, on the Models page.')
     }
-} else {
-    Write-Host "Skipped the prompt assistant's 'uv sync' - install uv and re-run this script." -ForegroundColor Yellow
 }
 
-Write-Step "backend/.env"
-$envExample = Join-Path $root "backend\.env.example"
-$envFile = Join-Path $root "backend\.env"
-$ffmpegBinDir = Find-FfmpegBinDir
-if ($ffmpegBinDir) {
-    Write-Host "Found ffmpeg at $ffmpegBinDir"
+# ---------------------------------------------------------------- the ACE-Step base model
+Step (T 'Base-модель ACE-Step для ИИ-аранжировщика (~4,8 ГБ)' 'The ACE-Step base model for the AI arranger (~4.8 GB)')
+$baseFolder = Join-Path $aceDir 'checkpoints\acestep-v15-base'
+$basePartial = @(Get-ChildItem -LiteralPath (Join-Path $baseFolder '.cache\huggingface\download') -Filter '*.incomplete' -ErrorAction SilentlyContinue)
+$baseReady = (Test-Path (Join-Path $baseFolder 'model.safetensors')) -and $basePartial.Count -eq 0
+if ($baseReady) {
+    Ok (T 'Уже скачана' 'Already downloaded')
+} elseif (-not $haveUv -or $SkipWeights) {
+    Note (T 'Пропущено.' 'Skipped.')
 } else {
-    Write-Host "Could not find ffmpeg (install it via setup_prereqs.bat) - FFMPEG_BIN_DIR will need setting by hand." -ForegroundColor Yellow
+    $want = $AceBase
+    if (-not $want) {
+        $answer = Ask (T 'Скачать сейчас? Без неё не работает «Добавить партию» (y/N)' 'Download it now? "Add a part" needs it (y/N)') 'N'
+        $want = ($null -ne $answer) -and ($answer -match '^[yYдД]')
+    }
+    if ($want) {
+        # --with hf_xet: the models are on Xet storage, plain HTTP was ~80 times slower; --force resumes a half download
+        Push-Location $aceDir
+        try { Invoke-Native uv @('run', '--with', 'hf_xet', 'acestep-download', '--force', '--model', 'acestep-v15-base') } finally { Pop-Location }
+        Ok (T 'Скачана' 'Downloaded')
+    } else {
+        Note (T 'Позже: запустите setup_models.bat -AceBase, или скачайте её из приложения.' 'Later: run setup_models.bat -AceBase, or download it from the app.')
+    }
 }
+
+# ---------------------------------------------------------------- backend/.env
+Step (T 'Настройки сервера (backend\.env)' 'Server settings (backend\.env)')
+$envExample = Join-Path $root 'backend\.env.example'
+$envFile = Join-Path $root 'backend\.env'
+$ffmpegBinDir = Find-FfmpegBinDir
+if ($ffmpegBinDir) { Info 'FFmpeg:' $ffmpegBinDir } else { Warn (T 'FFmpeg не найден: поставьте его через setup_prereqs.bat.' 'FFmpeg was not found: install it with setup_prereqs.bat.'); $warnings.Add('ffmpeg') }
 if (-not (Test-Path $envFile)) {
     $envLines = (Get-Content $envExample) `
-        -replace [regex]::Escape("E:\AI\ACE\ACE-Step-1.5"), $aceDir `
-        -replace [regex]::Escape("E:\AI\YuE2-3B"), $audioCppDir `
-        -replace [regex]::Escape("E:\AI\Demucs"), $demucsDir `
-        -replace [regex]::Escape("E:\AI\StableAudio"), $stableAudioDir
-    if ($ffmpegBinDir) {
-        $envLines = $envLines -replace [regex]::Escape("E:\AI\ACE\tools\ffmpeg-shared\ffmpeg-master-latest-win64-gpl-shared\bin"), $ffmpegBinDir
-    }
+        -replace [regex]::Escape('E:\AI\ACE\ACE-Step-1.5'), $aceDir `
+        -replace [regex]::Escape('E:\AI\YuE2-3B'), $audioCppDir `
+        -replace [regex]::Escape('E:\AI\Demucs'), $demucsDir `
+        -replace [regex]::Escape('E:\AI\StableAudio'), $stableAudioDir
+    if ($ffmpegBinDir) { $envLines = $envLines -replace [regex]::Escape('E:\AI\ACE\tools\ffmpeg-shared\ffmpeg-master-latest-win64-gpl-shared\bin'), $ffmpegBinDir }
     $envLines | Set-Content $envFile
-    Write-Host "Wrote backend/.env pointing at the cloned repos."
-    if ($ffmpegBinDir) {
-        Write-Host "Still check CUDA_BIN_DIR in backend/.env for your machine." -ForegroundColor Yellow
-    } else {
-        Write-Host "Still edit FFMPEG_BIN_DIR and CUDA_BIN_DIR in backend/.env for your machine." -ForegroundColor Yellow
-    }
+    Ok (T 'Записан backend\.env с путями к движкам' 'Wrote backend\.env with the engine paths')
+    Note (T 'Проверьте в нём CUDA_BIN_DIR для этого компьютера.' 'Check CUDA_BIN_DIR in it for this computer.')
 } else {
-    Write-Host "backend/.env already exists - not overwriting. Cloned repo paths:"
-    Write-Host "  ACE_STEP_DIR=$aceDir"
-    Write-Host "  YUE2_DIR=$audioCppDir"
-    Write-Host "  DEMUCS_DIR=$demucsDir"
-    Write-Host "  STABLE_AUDIO_DIR=$stableAudioDir"
-    if ($ffmpegBinDir) {
-        Write-Host "  FFMPEG_BIN_DIR=$ffmpegBinDir (detected - edit backend/.env if it doesn't already match)"
-    }
+    Ok (T 'backend\.env уже есть, не трогаю' 'backend\.env already exists, left as it is')
+    Info 'ACE_STEP_DIR' $aceDir
+    Info 'YUE2_DIR' $audioCppDir
+    Info 'DEMUCS_DIR' $demucsDir
+    Info 'STABLE_AUDIO_DIR' $stableAudioDir
 }
 
-Write-Step "Done"
-Write-Host "Remaining manual steps (see README.md):"
-if (-not $ffmpegBinDir) {
-    Write-Host "  - Install ffmpeg (setup_prereqs.bat) and point FFMPEG_BIN_DIR at its bin folder."
+# ---------------------------------------------------------------- done
+Write-Host ''
+Write-Host ('  ' + (Dim ('─' * 64)))
+if ($warnings.Count) {
+    Write-Host ('  ' + (C $cAmber '!' -Bold) + ' ' + (C $cAmber ((T 'Установка завершена не полностью, не хватает: ' 'The install is not complete, missing: ') + (($warnings | Select-Object -Unique) -join ', ')) -Bold))
+    Note (T 'Поставьте недостающее (setup_prereqs.bat) и запустите install.bat ещё раз.' 'Install what is missing (setup_prereqs.bat) and run install.bat again.')
+} else {
+    Write-Host ('  ' + (C $cGreen '✓' -Bold) + ' ' + (C $cGreen (T 'Установка завершена.' 'Install finished.') -Bold))
 }
-Write-Host "  - ACE-Step's own checkpoints download automatically on its first request."
-Write-Host "  - The editor's AI arranger adds parts with the ACE-Step base model (~4.8 GB). Fetch it once:"
-Write-Host "      cd $aceDir; uv run acestep-download --model acestep-v15-base"
-Write-Host "  - Then run dev.bat or prod_run.bat."
+Write-Host ('  ' + (T 'Запуск: ' 'Start: ') + (C $cCyan 'prod_run.bat' -Bold) + (T '  ·  для разработки: ' '  ·  for development: ') + (C $cCyan 'dev.bat' -Bold))
+Note (T 'Модели ACE-Step скачаются сами при первой генерации.' "ACE-Step's models download by themselves on the first generation.")
+Wait-Close

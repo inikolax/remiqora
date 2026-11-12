@@ -368,6 +368,8 @@ npm run dist    # Windows: dist/Remiqora-Setup-<version>.exe · macOS (run it on
 
 The steps below install from scripts instead: Git, a terminal and, on Windows, the build tools.
 
+**On Windows, in one go:** double-click `install.bat`. It installs the toolchain if something is missing (then asks for a new window and `install.bat` again), sets up the engines and offers the ACE-Step base model the AI arranger needs. Then start Remiqora with `prod_run.bat` (`dev.bat` for development). The scripts answer in Russian or English, after the Windows display language (`REMIQORA_LANG=en` or `ru` overrides it). Steps 0 and 1 below are what `install.bat` runs.
+
 ### Step 0: build tools
 
 ```cmd
