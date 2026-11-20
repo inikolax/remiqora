@@ -530,6 +530,7 @@ CUDA_BIN_DIR=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin
 - `STABLE_AUDIO_DIR` — root of the `sa3-server` uv project (a copy of `external/sa3-server` with its `.venv`). The Stable Audio 3 weights are read from the Hugging Face cache (`HF_HOME`) and downloaded from the app's Stable Audio 3 page (see *Stable Audio 3 weights* above); the main checkpoints are gated, so accept the licence on [`stabilityai/stable-audio-3-medium`](https://huggingface.co/stabilityai/stable-audio-3-medium) (and `-small-music` / `-small-sfx`) first. Optional: `STABLE_AUDIO_API_PORT` (8002), `STABLE_AUDIO_PRELOAD` (the checkpoint warmed up at start, `medium` by default), `STABLE_AUDIO_DEVICE`.
 - `FFMPEG_BIN_DIR` — folder containing `ffmpeg.exe`/`ffprobe.exe`.
 - `CUDA_BIN_DIR` — the `bin` folder of the installed CUDA Toolkit (needs to be on PATH for `audiocpp_server.exe`). Windows only — on macOS this is left unset, since YuE2 runs on the Metal backend instead.
+- To keep the UI and backend local while sending ACE-Step requests to a remote API, set `ACE_STEP_API_URL` in `backend/.env`. See [Remote ACE-Step API](docs/remote-ace-step.md). When unset, Remiqora keeps its usual local ACE-Step behavior.
 
 ---
 

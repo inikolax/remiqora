@@ -16,6 +16,7 @@ from pathlib import Path
 import os
 
 from .config import ACE_STEP_DIR, DEMUCS_DIR, MODELS, STABLE_AUDIO_DIR, YUE2_MODEL_PATH
+from .remote_ace import enabled as remote_ace_enabled
 
 ACE_BASE_MODEL = "acestep-v15-base"
 ACE_XL_MODEL = "acestep-v15-xl-base"
@@ -48,6 +49,8 @@ def has_ace_xl() -> bool:
 
 
 def has_ace_step() -> bool:
+    if remote_ace_enabled():
+        return True
     # Only the environment: a source install (setup_models) leaves the checkpoints to ACE-Step, which downloads them
     # on its first request, so requiring them here would refuse to start a perfectly good install.
     return (ACE_STEP_DIR / ".venv").is_dir()

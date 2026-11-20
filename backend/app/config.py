@@ -136,6 +136,10 @@ CUDA_BIN64_DIR = CUDA_BIN_DIR / "x64"
 UV_BIN = os.getenv("UV_BIN", "uv")
 ACE_STEP_DEVICE = os.getenv("ACE_STEP_DEVICE", "").strip()
 ACE_STEP_API_PORT = int(os.getenv("ACE_STEP_API_PORT", "8001"))
+# Optional remote ACE-Step API base URL. When set, the backend proxies to it
+# and the orchestrator does not launch a local ACE-Step process.
+ACE_STEP_API_URL = os.getenv("ACE_STEP_API_URL", "").rstrip("/")
+ACE_STEP_API_TOKEN = os.getenv("ACE_STEP_API_TOKEN", "")
 # Checkpoint folder names under ACE_STEP_DIR/checkpoints. acestep-api has no
 # DiT CLI flag; it reads ACESTEP_CONFIG_PATH and otherwise loads turbo.
 # Turbo + the 1.7B LM is the fast default. A machine with enough memory can
@@ -209,9 +213,9 @@ MODELS: dict[str, ModelDefinition] = {
         id="ace_step",
         label="ACE-Step 1.5",
         proxy_prefix="ace",
-        proxy_target=f"http://127.0.0.1:{ACE_STEP_API_PORT}",
-        health_url=f"http://127.0.0.1:{ACE_STEP_API_PORT}/health",
-        processes=[
+        proxy_target=ACE_STEP_API_URL or f"http://127.0.0.1:{ACE_STEP_API_PORT}",
+        health_url=(f"{ACE_STEP_API_URL}/health" if ACE_STEP_API_URL else f"http://127.0.0.1:{ACE_STEP_API_PORT}/health"),
+        processes=[] if ACE_STEP_API_URL else [
             ProcessSpec(
                 name="ace_step_api",
                 cwd=ACE_STEP_DIR,

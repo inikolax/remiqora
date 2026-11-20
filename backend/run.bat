@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "SSLKEYLOGFILE="
 
 if not exist ".venv\Scripts\python.exe" (
     echo [Setup] Creating virtual environment...

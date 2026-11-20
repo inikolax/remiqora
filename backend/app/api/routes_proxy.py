@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..config import MODELS
+from .. import remote_ace
 from ..orchestrator.manager import manager
 from ..orchestrator.state import ModelStatus
 
@@ -25,8 +26,10 @@ _HOP_BY_HOP = {
 _client = httpx.AsyncClient(timeout=None)
 
 
-async def _proxy_to(base_url: str, request: Request, path: str) -> Response:
+async def _proxy_to(base_url: str, request: Request, path: str, extra_headers: dict[str, str] | None = None) -> Response:
     headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP}
+    if extra_headers:
+        headers.update(extra_headers)
     body = await request.body()
     url = httpx.URL(f"{base_url}/{path}", params=list(request.query_params.multi_items()))
 
@@ -60,7 +63,8 @@ def _make_proxy_route(model_id: str):
         if rs.status != ModelStatus.RUNNING:
             return JSONResponse({"error": f"model '{model_id}' is not active"}, status_code=503)
         try:
-            return await _proxy_to(MODELS[model_id].proxy_target, request, path)
+            auth = remote_ace.auth_headers() if model_id == "ace_step" and remote_ace.enabled() else None
+            return await _proxy_to(MODELS[model_id].proxy_target, request, path, auth)
         except httpx.HTTPError as exc:
             return JSONResponse({"error": f"upstream request failed: {exc}"}, status_code=502)
 
