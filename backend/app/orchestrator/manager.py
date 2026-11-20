@@ -6,7 +6,7 @@ import logging
 from .. import engine_settings
 from ..config import ALLOW_CONCURRENT_MODELS, MODELS
 from .process import ManagedProcess, StartCancelled, StopFailed
-from .. import remote_ace
+from .. import remote_engine
 from .state import ModelRuntimeState, ModelStatus, OrchestratorState
 
 logger = logging.getLogger("orchestrator")
@@ -48,11 +48,11 @@ class OrchestratorManager:
             await asyncio.sleep(WATCH_INTERVAL)
             for model_id in list(MODELS):
                 try:
-                    if model_id == "ace_step" and remote_ace.enabled():
+                    if remote_engine.enabled(model_id):
                         rs = self.state.models[model_id]
                         if rs.status == ModelStatus.RUNNING:
                             try:
-                                await remote_ace.check_health()
+                                await remote_engine.check_health(model_id)
                             except RuntimeError as exc:
                                 rs.status = ModelStatus.ERROR
                                 rs.error_message = str(exc)
@@ -153,8 +153,8 @@ class OrchestratorManager:
         cancel = self._cancel_start[model_id] = asyncio.Event()
         try:
             settings = engine_settings.get(model_id) if model_id in engine_settings.DEFAULTS else {}
-            if model_id == "ace_step" and remote_ace.enabled():
-                await remote_ace.check_health()
+            if remote_engine.enabled(model_id):
+                await remote_engine.check_health(model_id)
                 self._processes[model_id] = []
                 self.started_settings[model_id] = settings
                 rs.status = ModelStatus.RUNNING

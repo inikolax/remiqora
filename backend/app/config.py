@@ -68,6 +68,16 @@ class ModelDefinition:
     health_url: str
 
 
+@dataclass(frozen=True)
+class RemoteModelEndpoint:
+    """Connection details for a model API hosted outside Remiqora."""
+
+    label: str
+    url: str
+    token: str = ""
+    health_path: str = "/health"
+
+
 ACE_STEP_DIR = _env_path("ACE_STEP_DIR", r"E:\AI\ACE\ACE-Step-1.5")
 YUE2_DIR = _env_path("YUE2_DIR", r"E:\AI\YuE2-3B")
 # Separate uv-managed venv for Demucs (stem separation) - not a "model" in
@@ -140,6 +150,13 @@ ACE_STEP_API_PORT = int(os.getenv("ACE_STEP_API_PORT", "8001"))
 # and the orchestrator does not launch a local ACE-Step process.
 ACE_STEP_API_URL = os.getenv("ACE_STEP_API_URL", "").rstrip("/")
 ACE_STEP_API_TOKEN = os.getenv("ACE_STEP_API_TOKEN", "")
+REMOTE_MODEL_ENDPOINTS: dict[str, RemoteModelEndpoint] = {
+    "ace_step": RemoteModelEndpoint(
+        label="ACE-Step",
+        url=ACE_STEP_API_URL,
+        token=ACE_STEP_API_TOKEN,
+    ),
+}
 # Checkpoint folder names under ACE_STEP_DIR/checkpoints. acestep-api has no
 # DiT CLI flag; it reads ACESTEP_CONFIG_PATH and otherwise loads turbo.
 # Turbo + the 1.7B LM is the fast default. A machine with enough memory can

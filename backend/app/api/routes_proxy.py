@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..config import MODELS
-from .. import remote_ace
+from .. import remote_engine
 from ..orchestrator.manager import manager
 from ..orchestrator.state import ModelStatus
 
@@ -63,7 +63,7 @@ def _make_proxy_route(model_id: str):
         if rs.status != ModelStatus.RUNNING:
             return JSONResponse({"error": f"model '{model_id}' is not active"}, status_code=503)
         try:
-            auth = remote_ace.auth_headers() if model_id == "ace_step" and remote_ace.enabled() else None
+            auth = remote_engine.auth_headers(model_id) if remote_engine.enabled(model_id) else None
             return await _proxy_to(MODELS[model_id].proxy_target, request, path, auth)
         except httpx.HTTPError as exc:
             return JSONResponse({"error": f"upstream request failed: {exc}"}, status_code=502)
