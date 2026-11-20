@@ -6,6 +6,7 @@ import logging
 from .. import engine_settings
 from ..config import ALLOW_CONCURRENT_MODELS, MODELS
 from .process import ManagedProcess, StartCancelled, StopFailed
+from .. import remote_engine
 from .state import ModelRuntimeState, ModelStatus, OrchestratorState
 
 logger = logging.getLogger("orchestrator")
@@ -47,6 +48,17 @@ class OrchestratorManager:
             await asyncio.sleep(WATCH_INTERVAL)
             for model_id in list(MODELS):
                 try:
+                    if remote_engine.enabled(model_id):
+                        rs = self.state.models[model_id]
+                        if rs.status == ModelStatus.RUNNING:
+                            try:
+                                await remote_engine.check_health(model_id)
+                            except RuntimeError as exc:
+                                rs.status = ModelStatus.ERROR
+                                rs.error_message = str(exc)
+                                if self.state.active_model == model_id:
+                                    self.state.active_model = None
+                        continue
                     if self._mark_if_exited(model_id):
                         await self._stop_processes(model_id)
                 except Exception:  # noqa: BLE001 - the watchdog must keep running
@@ -141,6 +153,13 @@ class OrchestratorManager:
         cancel = self._cancel_start[model_id] = asyncio.Event()
         try:
             settings = engine_settings.get(model_id) if model_id in engine_settings.DEFAULTS else {}
+            if remote_engine.enabled(model_id):
+                await remote_engine.check_health(model_id)
+                self._processes[model_id] = []
+                self.started_settings[model_id] = settings
+                rs.status = ModelStatus.RUNNING
+                self.state.active_model = model_id
+                return
             for spec in engine_settings.processes_for(model_id):
                 if cancel.is_set():
                     raise StartCancelled(f"start of '{model_id}' was cancelled")
