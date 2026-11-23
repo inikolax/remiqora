@@ -28,7 +28,9 @@
   <img src="docs/hero-poster.png" alt="Remiqora — made with AI, made by you" width="900">
 </p>
 
-<!-- video link: TODO -->
+<p align="center">
+  <a href="https://youtu.be/MFBPrvuLIng"><b>▶ What's new in 0.7</b></a>, a 7-minute video (<a href="https://youtu.be/7R4wrPZmSxc">in Russian</a>)
+</p>
 
 <p align="center">
   <a href="#why-this-exists">Why</a> ·
