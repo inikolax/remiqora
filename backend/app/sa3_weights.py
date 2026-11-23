@@ -19,6 +19,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
+from . import aproc, bg
 from . import features
 from .config import LOG_DIR, STABLE_AUDIO_DIR
 
@@ -148,7 +149,7 @@ async def start(model: str) -> Download:
         raise FileNotFoundError("Stable Audio 3 is not installed")
     d = Download(model=model, total=MODELS[model]["bytes"])
     _downloads[model] = d
-    asyncio.create_task(_run(d))
+    bg.spawn(_run(d), name=f"sa3-download-{model}")
     return d
 
 
@@ -173,7 +174,7 @@ def _remove_partials(model: str) -> None:
 
 async def _kill_tree(proc: asyncio.subprocess.Process) -> None:
     if IS_WINDOWS:
-        killer = await asyncio.create_subprocess_exec(
+        killer = await aproc.create_subprocess_exec(
             "taskkill", "/PID", str(proc.pid), "/T", "/F",
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         )
@@ -189,7 +190,7 @@ async def _run(d: Download) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / "sa3_download.log"
     try:
-        proc = await asyncio.create_subprocess_exec(
+        proc = await aproc.create_subprocess_exec(
             _python(), "-m", "sa3_server.download", d.model, "--json",
             cwd=str(STABLE_AUDIO_DIR), env=_env(),
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
@@ -235,10 +236,11 @@ async def save_token(token: str) -> dict:
     """Checks a Hugging Face token and saves it where the downloader and the engine look for it."""
     if not features.has_stable_audio_env():
         raise FileNotFoundError("Stable Audio 3 is not installed")
-    proc = await asyncio.create_subprocess_exec(
+    proc = await aproc.create_subprocess_exec(
         _python(), "-m", "sa3_server.download", "--login", "--json",
         cwd=str(STABLE_AUDIO_DIR), env=_env(),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        stream_stdout=False,
     )
     out, _ = await proc.communicate((token.strip() + "\n").encode("utf-8"))
     result: dict = {"ok": False, "user": None, "code": "unknown", "error": None}

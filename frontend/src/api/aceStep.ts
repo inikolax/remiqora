@@ -10,8 +10,10 @@ export interface GenerateMusicRequest {
   model?: string
   bpm?: number
   key_scale?: string
+  /** Beats per bar as the engine takes them: '2', '3', '4' or '6'. */
   time_signature?: string
   vocal_language?: string
+  /** Left out, the API runs 8 steps on every model; Turbo cuts more than 8 to 8. */
   inference_steps?: number
   guidance_scale?: number
   seed?: number
@@ -27,6 +29,32 @@ export interface GenerateMusicRequest {
   track_classes?: string[]
   /** "explicit" passes the repaint range to the model as a 0/1 mask (what ACE-Step's own UI does for repaint). */
   chunk_mask_mode?: 'explicit' | 'auto'
+  // ---- the rest of the API's fields, set from the manual tuning (left out = the engine default) ----
+  /** Timestep shift, 1..5 (Turbo too: measured, it changes Turbo's take). */
+  shift?: number
+  infer_method?: 'ode' | 'sde'
+  /** Adaptive dual guidance instead of plain CFG (base models). */
+  use_adg?: boolean
+  /** The part of the denoising (0..1) where guidance acts. */
+  cfg_interval_start?: number
+  cfg_interval_end?: number
+  /** Decode in tiles: less video memory. */
+  use_tiled_decode?: boolean
+  /** The language model writes the audio codes (a plan) before the music is drawn. */
+  thinking?: boolean
+  lm_temperature?: number
+  lm_cfg_scale?: number
+  lm_top_k?: number
+  lm_top_p?: number
+  lm_negative_prompt?: string
+  use_cot_caption?: boolean
+  use_cot_language?: boolean
+  /** Cover / repaint: how much of the source the starting noise keeps (0 = pure noise). */
+  cover_noise_strength?: number
+  repaint_mode?: 'conservative' | 'balanced' | 'aggressive'
+  repaint_strength?: number
+  repaint_wav_crossfade_sec?: number
+  repaint_latent_crossfade_frames?: number
 }
 
 export interface ModelInventoryEntry {

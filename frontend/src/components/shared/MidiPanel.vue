@@ -7,8 +7,16 @@ import { drawPianoRoll, parseMidiBytes, playMidiNotes } from '../../audio/miniMi
 import type { MidiParsed, MidiSynthHandle } from '../../audio/miniMidiPlayer'
 import NotInstalled from './NotInstalled.vue'
 import { useFeaturesStore } from '../../stores/features'
+import { useYue2Store } from '../../stores/yue2'
+import { notesToAbc } from '../../audio/abcWriter'
+import { useRoute, useRouter } from 'vue-router'
 
-const props = defineProps<{ trackId: number }>()
+const props = defineProps<{
+  trackId: number
+  /** The track's tempo when known (its style or settings say it): MuScriptor's MIDI keeps a default tempo, so the
+   * score's bars line up with the music only with the real one. */
+  bpm?: number | null
+}>()
 const { t } = useI18n()
 /** Transcription runs on the YuE2 engine: without it, MIDI made earlier still plays, nothing new can start. */
 const features = useFeaturesStore()
@@ -60,13 +68,21 @@ function schedulePoll() {
   }, 2000)
 }
 
+/** The source whose start request is out: the server first starts YuE2 when it is not running (MuScriptor lives in
+ *  its server), which takes a while, so the row shows it is waiting instead of a button that seems to do nothing. */
+const launching = ref<MidiSource | null>(null)
+
 async function start(source: MidiSource, force = false) {
+  if (launching.value) return
   actionError.value = null
+  launching.value = source
   try {
     status.value = await midiApi.startTranscription(props.trackId, source, force)
   } catch (e) {
     actionError.value = e instanceof Error ? e.message : String(e)
     return
+  } finally {
+    launching.value = null
   }
   schedulePoll()
 }
@@ -148,6 +164,51 @@ async function toggleRoll(source: MidiSource) {
   }
 }
 
+// ---- MIDI -> a score for YuE2: the vocals as the melody, bass and the rest as the accompaniment ----
+const yue2 = useYue2Store()
+const route = useRoute()
+const router = useRouter()
+const scoreNote = ref<string | null>(null)
+const canMakeScore = computed(() => {
+  const s = status.value?.sources
+  return !!s && (s.vocals?.status === 'done' || s.full?.status === 'done')
+})
+async function toYueScore() {
+  actionError.value = null
+  scoreNote.value = null
+  const s = status.value?.sources
+  if (!s) return
+  type N = { note: number; startSec: number; durationSec: number; channel: number }
+  const notes: N[] = []
+  let melodyChannel: number | undefined
+  let tempo = 0
+  const add = async (source: MidiSource, channel: number | null): Promise<boolean> => {
+    if (s[source]?.status !== 'done') return false
+    const parsed = await getOrLoadMidi(source)
+    if (!parsed) return false
+    tempo = tempo || parsed.tempoBpm
+    for (const n of parsed.notes) if (n.channel !== 9) notes.push({ ...n, channel: channel ?? n.channel })
+    return true
+  }
+  let from: string
+  if (await add('vocals', 0)) {
+    melodyChannel = 0
+    const acc = [(await add('bass', 1)) && 'bass', (await add('other', 2)) && 'other'].filter(Boolean)
+    from = acc.length ? t('midiPanel.scoreFromStems') : t('midiPanel.scoreFromVocals')
+  } else {
+    await add('full', null)
+    from = t('midiPanel.scoreFromFull')
+  }
+  if (!notes.length) {
+    actionError.value = t('midiPanel.scoreEmpty')
+    return
+  }
+  const bpm = props.bpm && props.bpm > 0 ? props.bpm : tempo || 120
+  yue2.requestInsertAbc(notesToAbc(notes, { bpm, melodyChannel }))
+  scoreNote.value = `${from} · ${Math.round(bpm)} BPM`
+  if (!route.path.startsWith('/yue2')) await router.push('/yue2')
+}
+
 async function refresh() {
   try {
     status.value = await midiApi.getMidiStatus(props.trackId)
@@ -182,6 +243,10 @@ onBeforeUnmount(() => {
     <div v-if="expanded" class="space-y-2 border-t border-border/60 p-3">
       <NotInstalled v-if="!features.has('yue2')" feature="yue2" compact />
       <div v-if="actionError" class="rounded-lg bg-status-failed/10 p-2 text-xs text-status-failed">{{ actionError }}</div>
+      <div v-if="canMakeScore" class="flex flex-wrap items-center gap-2 rounded-lg border border-accent1/30 bg-accent1/5 p-2">
+        <button type="button" class="accent-gradient rounded-lg px-2.5 py-1 text-xs font-medium text-white" :title="t('midiPanel.toScoreHint')" @click="toYueScore">{{ t('midiPanel.toScore') }}</button>
+        <span class="text-xs text-text-dim">{{ scoreNote ? t('midiPanel.scoreInserted', { from: scoreNote }) : status?.sources.vocals?.status === 'done' ? t('midiPanel.toScoreHint') : t('midiPanel.betterWithVocals') }}</span>
+      </div>
 
       <div
         v-for="source in status?.available || []"
@@ -190,7 +255,8 @@ onBeforeUnmount(() => {
       >
         <span class="min-w-24 text-xs text-text-dim">{{ SOURCE_LABELS[source] }}</span>
 
-        <template v-if="isBusy(source)">
+        <span v-if="launching === source" class="text-xs text-text-dim" role="status">{{ t('midiPanel.queued') }}</span>
+        <template v-else-if="isBusy(source)">
           <span class="text-xs text-text-dim">
             {{ status?.sources[source].status === 'queued' ? t('midiPanel.queued') : t('midiPanel.running') }}
           </span>

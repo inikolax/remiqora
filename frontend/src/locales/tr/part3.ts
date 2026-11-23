@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'Sesten melodi çıkar (SheetSage2)',
     unloadSheetSage: 'Çıkarmadan sonra SheetSage2’yi boşalt',
     extract: 'ABC çıkar',
-    extracting: 'Çıkarılıyor…',
     randomSeed: 'Rastgele seed',
     cfgScale: 'CFG ölçeği',
     defaultValuePlaceholder: 'varsayılan {value}',

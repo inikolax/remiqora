@@ -1,0 +1,10 @@
+/** The note editor's data layer: a YuE2 score as plain immutable objects, its ABC both ways, edits and checks. */
+export * from './types'
+export * from './theory'
+export * from './parse'
+export * from './write'
+export * from './edit'
+export * from './checks'
+export * from './scaffold'
+export * from './midi'
+export * from './midiFile'

@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
+from . import aproc, bg
 from . import db, engine_settings
 from .config import DEMUCS_DIR, FFMPEG_BIN_DIR, LOG_DIR
 from .orchestrator.process import tail_log
@@ -60,7 +61,7 @@ async def start(track_id: int, *, force: bool = False) -> StemJob:
         return job
     job = StemJob(status="queued")
     _jobs[track_id] = job
-    asyncio.create_task(_run(track_id))
+    bg.spawn(_run(track_id), name=f"demucs-{track_id}")
     return job
 
 
@@ -89,7 +90,7 @@ async def _kill_tree(proc: asyncio.subprocess.Process) -> None:
     # terminate()/kill() on the "uv" process alone leaves the actual
     # GPU computation running. Mirrors ManagedProcess._force_kill().
     if IS_WINDOWS:
-        killer = await asyncio.create_subprocess_exec(
+        killer = await aproc.create_subprocess_exec(
             "taskkill", "/PID", str(proc.pid), "/T", "/F",
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         )
@@ -99,6 +100,18 @@ async def _kill_tree(proc: asyncio.subprocess.Process) -> None:
             proc.kill()
         except ProcessLookupError:
             pass
+
+
+async def shutdown() -> None:
+    """Backend shutdown: kills the Demucs runs in flight (their whole `uv run` trees) so none outlives the server."""
+    for job in list(_jobs.values()):
+        if job.status in ("queued", "running"):
+            job.cancel_requested = True
+            if job.proc is not None and job.proc.returncode is None:
+                try:
+                    await _kill_tree(job.proc)
+                except Exception:  # noqa: BLE001 - shutting down: keep going with the others
+                    pass
 
 
 def status(track_id: int) -> dict:
@@ -146,7 +159,7 @@ async def _run(track_id: int) -> None:
             env["PATH"] = f"{FFMPEG_BIN_DIR}{os.pathsep}{env.get('PATH', '')}"
 
             with open(log_path, "w", encoding="utf-8", errors="replace") as log_file:
-                proc = await asyncio.create_subprocess_exec(
+                proc = await aproc.create_subprocess_exec(
                     "uv", "run", "demucs", "-n", engine_settings.get("demucs")["model"], "-o", str(out_dir), str(audio_path),
                     cwd=str(DEMUCS_DIR),
                     env=env,

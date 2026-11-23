@@ -108,6 +108,65 @@
     },
     "requiredFiles": ["model.safetensors", "t5gemma-b-b-ul2/model.safetensors"]
   },
+  "cover": {
+    "_comment": "Album covers: stable-diffusion.cpp's prebuilt sd-server and the Z-Image Turbo weights, in the layout the backend reads (SDCPP_DIR/bin, SDCPP_DIR/models). The release and the files are the ones backend/app/engine_parts.py pins (SDCPP_RELEASE, _SDCPP_ZIPS, COVER_FILES): the backend checks the weights by size. Each zip is flat and is unpacked into bin/; on Windows the CUDA runtime zip goes into the same folder. The weights' sha256 is the Hugging Face LFS id.",
+    "release": "master-1106-532d2c1",
+    "assets": {
+      "win32-x64": {
+        "files": [
+          {
+            "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-win-cuda12-x64.zip",
+            "sha256": "b087219145a382cc1b1e826318289e1f672b9bb6965977734ef0deb85fe2d03a",
+            "bytes": 412365497
+          },
+          {
+            "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/cudart-sd-bin-win-cu12-x64.zip",
+            "sha256": "fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d",
+            "bytes": 563452046
+          }
+        ]
+      },
+      "darwin-arm64": {
+        "files": [
+          {
+            "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-Darwin-macOS-26.7.2-arm64.zip",
+            "sha256": "8146d6ffc75f8ff8f64b62a80fffee8fb714ab65e368e202084135fa07cc6f36",
+            "bytes": 38331254
+          }
+        ]
+      },
+      "linux-x64": {
+        "files": [
+          {
+            "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-Linux-Ubuntu-26.04-x86_64-vulkan.zip",
+            "sha256": "ca30fe17f1735cdfb4c8561b75799070c25cc86a9e5438f4c0e1b163baae4e12",
+            "bytes": 42212329
+          }
+        ]
+      }
+    },
+    "models": [
+      {
+        "name": "z_image_turbo-Q8_0.gguf",
+        "url": "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q8_0.gguf",
+        "sha256": "df1c5baa86d1398c979495a6072dbcee79444fdb884a2445582ba0769c44e9a1",
+        "bytes": 6577440704
+      },
+      {
+        "name": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+        "bytes": 2497281120
+      },
+      {
+        "name": "ae.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors",
+        "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+        "bytes": 335304388
+      }
+    ],
+    "recommendedVramMiB": 8000
+  },
   "weights": {
     "packageOrder": [
       "yue2_main_q8_0",

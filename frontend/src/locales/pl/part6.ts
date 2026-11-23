@@ -300,7 +300,7 @@ export default {
     recreate: 'Utwórz ponownie',
     recognize: 'Rozpoznaj',
     cancelled: 'anulowano',
-    pianoRoll: 'Mini Piano Roll',
+    pianoRoll: 'Mini piano roll',
     notesCount: 'Nuty: {count} · Tempo: {bpm} BPM',
     deleteAll: 'Usuń całe MIDI',
     confirmDeleteAll: 'Usunąć całe MIDI tego utworu? Pliki zostaną usunięte z dysku.',

@@ -8,6 +8,9 @@
 # backend/.env with all of the above plus an auto-detected FFMPEG_BIN_DIR.
 # Stable Audio 3 weights are downloaded from the app (its Stable Audio 3
 # page), or here with --stable-audio-models=small-music,small-sfx.
+# Album covers (stable-diffusion.cpp's sd-server + the Z-Image Turbo weights,
+# ~9.5 GB, into external/sdcpp) are installed too; --skip-covers leaves
+# them out (the app's Models page can install them later).
 #
 # Windows equivalent: setup_models.ps1 (which always builds audio.cpp from
 # source, CUDA backend, since there's no prebuilt CUDA release - and routes
@@ -31,15 +34,17 @@ fi
 SKIP_BUILD=0
 SKIP_WEIGHTS=0
 FROM_SOURCE=0
+SKIP_COVERS=0
 STABLE_AUDIO_MODELS=""
 for arg in "$@"; do
     case "$arg" in
         --skip-build) SKIP_BUILD=1 ;;
         --skip-weights) SKIP_WEIGHTS=1 ;;
         --from-source) FROM_SOURCE=1 ;;
+        --skip-covers) SKIP_COVERS=1 ;;
         --stable-audio-models=*) STABLE_AUDIO_MODELS="${arg#*=}" ;;
         *)
-            echo "Unknown option: $arg (expected --skip-build / --skip-weights / --from-source / --stable-audio-models=a,b)" >&2
+            echo "Unknown option: $arg (expected --skip-build / --skip-weights / --from-source / --skip-covers / --stable-audio-models=a,b)" >&2
             exit 1
             ;;
     esac
@@ -347,6 +352,98 @@ else
     echo "Skipped the prompt assistant's 'uv sync' - install uv and re-run this script."
 fi
 
+step "Album covers: stable-diffusion.cpp + Z-Image Turbo (~9.5 GB)"
+# stable-diffusion.cpp's prebuilt macOS arm64 sd-server and the Z-Image Turbo
+# weights, in the layout the backend reads (SDCPP_DIR/bin, SDCPP_DIR/models;
+# SDCPP_DIR defaults to external/sdcpp, so backend/.env needs no line for it).
+# The same release and files as backend/app/engine_parts.py (SDCPP_RELEASE,
+# _SDCPP_ZIPS, COVER_FILES) and desktop/manifest.json ("cover") - bump them
+# together. A failure here only warns: the rest of the install goes on and
+# the app's Models page can fetch what is missing.
+SDCPP_RELEASE="master-1106-532d2c1"
+SDCPP_ZIP="sd-master-532d2c1-bin-Darwin-macOS-26.7.2-arm64.zip"
+SDCPP_ZIP_BYTES=38331254
+SDCPP_ZIP_SHA256="8146d6ffc75f8ff8f64b62a80fffee8fb714ab65e368e202084135fa07cc6f36"
+SDCPP_DIR="$EXTERNAL_DIR/sdcpp"
+
+file_bytes() { if [[ -f "$1" ]]; then wc -c < "$1" | tr -d ' '; else echo 0; fi; }
+
+# fetch_pinned url path bytes sha256: curl with retries, resuming a half
+# download (-C -), then the sha256; a file that does not match is removed.
+fetch_pinned() {
+    local url="$1" path="$2" bytes="$3" sha256="$4" actual
+    if [[ "$(file_bytes "$path")" != "$bytes" ]]; then
+        echo "Downloading $(basename "$path") ($(( bytes / 1000000 )) MB) ..."
+        if ! curl -fL --retry 3 --retry-delay 5 -C - -o "$path" "$url"; then
+            echo "[WARN] Could not download $(basename "$path")."
+            return 1
+        fi
+    fi
+    actual=$(shasum -a 256 "$path" | awk '{print $1}')
+    if [[ "$actual" != "$sha256" ]]; then
+        rm -f "$path"
+        echo "[WARN] sha256 mismatch for $(basename "$path") (removed): expected $sha256, got $actual"
+        return 1
+    fi
+}
+
+# fetch_weight name bytes sha256 url: skipped when already there with the
+# right size (a dev box may point external/sdcpp at a shared folder).
+fetch_weight() {
+    local path="$SDCPP_DIR/models/$1"
+    if [[ "$(file_bytes "$path")" == "$2" ]]; then
+        echo "Already in place: $1"
+        return 0
+    fi
+    fetch_pinned "$4" "$path" "$2" "$3"
+}
+
+# Unpacks the flat release zip into bin/ (Python's zipfile, like the app's
+# Models page) and makes the binaries executable.
+install_sd_server() {
+    local zip="$SDCPP_DIR/dl/$SDCPP_ZIP"
+    fetch_pinned "https://github.com/leejet/stable-diffusion.cpp/releases/download/$SDCPP_RELEASE/$SDCPP_ZIP" \
+        "$zip" "$SDCPP_ZIP_BYTES" "$SDCPP_ZIP_SHA256" || return 1
+    "$PYTHON_BIN" -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+        "$zip" "$SDCPP_DIR/bin" || return 1
+    local bin
+    for bin in sd-server sd-cli; do
+        [[ -f "$SDCPP_DIR/bin/$bin" ]] && chmod 755 "$SDCPP_DIR/bin/$bin"
+    done
+    [[ -f "$SDCPP_DIR/bin/sd-server" ]] || { echo "[WARN] $SDCPP_ZIP has no sd-server."; return 1; }
+    rm -f "$zip"
+    echo "Installed sd-server ($SDCPP_RELEASE)."
+}
+
+install_covers() {
+    local failed=0
+    assert_command curl "Install it (should ship with macOS already)." || return 1
+    assert_command "$PYTHON_BIN" "Install Python 3 and put it on PATH." || return 1
+    mkdir -p "$SDCPP_DIR/bin" "$SDCPP_DIR/dl" "$SDCPP_DIR/models" || return 1
+    if [[ -f "$SDCPP_DIR/bin/sd-server" ]]; then
+        echo "sd-server is already in place, skipping."
+    else
+        install_sd_server || failed=1
+    fi
+    fetch_weight z_image_turbo-Q8_0.gguf 6577440704 df1c5baa86d1398c979495a6072dbcee79444fdb884a2445582ba0769c44e9a1 \
+        "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q8_0.gguf" || failed=1
+    fetch_weight Qwen3-4B-Instruct-2507-Q4_K_M.gguf 2497281120 3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597 \
+        "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf" || failed=1
+    fetch_weight ae.safetensors 335304388 afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38 \
+        "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors" || failed=1
+    return "$failed"
+}
+
+COVERS_OK=1
+if [[ "$SKIP_COVERS" == "1" ]]; then
+    echo "Skipping the album covers (--skip-covers passed). Install them later on the app's Models page."
+elif install_covers; then
+    echo "Album covers are ready."
+else
+    COVERS_OK=0
+    echo "[WARN] Album covers are not fully installed - re-run this script (downloads continue) or finish them on the app's Models page."
+fi
+
 step "backend/.env"
 ENV_FILE="$ROOT/backend/.env"
 FFMPEG_BIN_DIR=$(find_ffmpeg_bin_dir || true)
@@ -401,4 +498,10 @@ fi
 echo "  - ACE-Step's own checkpoints download automatically on its first request."
 echo "  - The editor's AI arranger adds parts with the ACE-Step base model (~4.8 GB). Fetch it once:"
 echo "      cd \"$ACE_DIR\" && uv run acestep-download --model acestep-v15-base"
+if [[ "$COVERS_OK" == "0" ]]; then
+    echo "  - Album covers did not finish: re-run this script or install them on the app's Models page."
+fi
+if [[ "$COVERS_OK" == "0" ]]; then
+    echo "  - Album covers did not finish: re-run this script or install them on the app's Models page."
+fi
 echo "  - Then run ./dev.sh or ./prod_run.sh."

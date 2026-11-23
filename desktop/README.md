@@ -19,9 +19,9 @@ The frontend is unchanged: it uses relative `/api/...` URLs and the backend serv
 | --- | --- |
 | Windows x64, NVIDIA RTX 20-series or newer, driver 580 or newer | supported, tested end to end |
 | macOS, Apple Silicon | packaged and set up by the same code, first tested by hand on a Mac (see the notes in the branch history); nothing needs to be installed beforehand |
-| Linux | packaging config exists, the first-run screen reports "not supported" until there are setup scripts (PR #2) |
+| Linux | not offered: Linux installs from source with `setup_linux.sh` (see the main README). The packaging config is kept, but its first-run screen reports "not supported" and points to that README |
 
-The download depends on what is picked on the first-run screen: about 18 GB for ACE-Step alone, about 36 GB with YuE2 (q8_0), stems and the ACE-Step base model, about 80 GB with everything, including the XL base model, Stable Audio 3 and the prompt assistant with their models. The screen asks for the picked parts' size plus a third for unpacking and caches.
+The download depends on what is picked on the first-run screen: about 18 GB for ACE-Step alone, about 36 GB with YuE2 (q8_0), stems and the ACE-Step base model, about 90 GB with everything, including the XL base model, Stable Audio 3, the prompt assistant with their models and the album covers (stable-diffusion.cpp with Z-Image Turbo, about 10 GB, picked by default with 8 GB of video memory or more and on Apple Silicon). The screen asks for the picked parts' size plus a third for unpacking and caches.
 
 The Windows requirement comes from the prebuilt engine: the upstream `audio.cpp` CUDA 13.3 build (compute capability
 7.5 or newer, driver 580 or newer). No CUDA Toolkit, Visual Studio Build Tools or compiler is needed.
@@ -132,6 +132,6 @@ setup runner and the choice of parts) with Node's built-in runner.
 - The install folder can only be chosen on the first-run screen. Moving it later is not supported: the database stores
   absolute file paths.
 - No automatic updates yet (electron-updater from GitHub Releases is the plan) and no code signing.
-- macOS has had a first manual run only (FFmpeg was the first thing it tripped on); Linux has not been run; the CI workflow has never been run.
+- macOS has had a first manual run only (FFmpeg was the first thing it tripped on); Linux is not a target of the app (it uses `setup_linux.sh`); the CI workflow has never been run.
 - Model progress is estimated from the size of the models folder; the downloader prints little.
 - The setup needs Windows 10 1803 or newer (it uses the built-in `tar.exe`).

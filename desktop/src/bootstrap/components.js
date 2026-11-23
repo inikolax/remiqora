@@ -8,7 +8,7 @@ const { extract, extractAtomic } = require('./extract');
 const { applyGitPatch } = require('./patch');
 const { runCommand, cleanEnv } = require('../proc');
 const { IS_WINDOWS } = require('../paths');
-const { LEGACY_PRECISIONS, weightPackages, excludedComponents, sa3ModelInstalled, sa3Bytes } = require('./features');
+const { LEGACY_PRECISIONS, weightPackages, excludedComponents, sa3ModelInstalled, sa3Bytes, coverModelInstalled, sdServerPath } = require('./features');
 
 const exists = (p) => fsp.access(p).then(() => true, () => false);
 const sum = (list) => list.reduce((a, b) => a + b, 0);
@@ -169,7 +169,7 @@ async function placeEngineFiles(extracted, L) {
  * `selection` (bootstrap/features.js) leaves out the optional parts the user did not pick; without one, all of them.
  */
 function buildComponents({ L, manifest, platform, resources, selection }) {
-  const sel = selection || { yue2: true, yue2Precisions: [...LEGACY_PRECISIONS], demucs: true, aceBase: true, aceXl: false, stableAudio: true, assistant: true };
+  const sel = selection || { yue2: true, yue2Precisions: [...LEGACY_PRECISIONS], demucs: true, aceBase: true, aceXl: false, stableAudio: true, assistant: true, cover: false };
   const engine = manifest.engine.assets[platform];
   const uvAsset = manifest.uv.assets[platform];
   const ffAsset = manifest.ffmpeg.assets[platform];
@@ -442,6 +442,61 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
   // The prompt assistant: its language model comes from the Models page too.
   const promptAssistant = bundledUvProject({ id: 'prompt-assistant', weight: manifest.promptAssistant.approxBytes, src: resources.promptAssistant, dest: L.promptAssistant, pkg: 'prompt_assistant', label: 'prompt assistant' });
 
+  // Album covers: stable-diffusion.cpp's prebuilt sd-server (its release zips, flat, unpacked into one bin/ folder;
+  // on Windows the CUDA runtime zip too), then the Z-Image Turbo weights into models/. The same files and layout as
+  // the app's Models page installs (backend/app/engine_parts.py), so the backend finds them under SDCPP_DIR.
+  const coverAsset = manifest.cover && manifest.cover.assets[platform];
+  const coverFiles = coverAsset ? coverAsset.files : [];
+  const coverServer = {
+    id: 'cover-server',
+    weight: sum(coverFiles.map((f) => f.bytes)),
+    version: (manifest.cover && manifest.cover.release) || 'none',
+    verify: () => exists(sdServerPath(L)),
+    async install(ctx, report) {
+      if (!coverAsset) throw new Error('No album cover engine is pinned for this system.');
+      const bin = path.join(L.sdcpp, 'bin');
+      const total = sum(coverFiles.map((f) => f.bytes));
+      await fsp.mkdir(bin, { recursive: true });
+      let base = 0;
+      for (const file of coverFiles) {
+        const archive = await fetchTo(ctx, file, base, total, report);
+        base += file.bytes;
+        await extract(archive, bin);
+        await fsp.rm(archive, { force: true });
+      }
+      if (!IS_WINDOWS) {
+        for (const name of ['sd-server', 'sd-cli']) await fsp.chmod(path.join(bin, name), 0o755).catch(() => {});
+      }
+      if (!(await exists(sdServerPath(L)))) throw new Error(`${path.basename(sdServerPath(L))} was not found in the album cover engine's archive`);
+    },
+  };
+  const coverWeights = (manifest.cover && manifest.cover.models) || [];
+  const coverModels = {
+    id: 'cover-models',
+    weight: sum(coverWeights.map((m) => m.bytes)),
+    version: coverWeights.map((m) => m.name).join('+'),
+    verify: async () => coverWeights.every((m) => coverModelInstalled(L, m)),
+    async install(ctx, report) {
+      const total = sum(coverWeights.map((m) => m.bytes));
+      let base = 0;
+      for (const model of coverWeights) {
+        // a file already there with its size (one the Models page fetched, say) is kept as it is
+        if (!coverModelInstalled(L, model)) {
+          report({ note: model.name, done: base, total });
+          await downloadFile({
+            url: model.url,
+            dest: path.join(L.sdcpp, 'models', model.name),
+            sha256: model.sha256,
+            signal: ctx.signal,
+            onProgress: (done) => report({ done: base + Math.min(done, model.bytes), total }),
+          });
+        }
+        base += model.bytes;
+        report({ done: base, total });
+      }
+    },
+  };
+
   // The common weights plus the YuE2 precisions picked. The version is the package list, so adding a precision later
   // re-runs this step; the downloader skips packages that are already there.
   const packages = weightPackages(manifest, sel);
@@ -472,7 +527,7 @@ function buildComponents({ L, manifest, platform, resources, selection }) {
 
   // Order matters: the backend venv provides the Python that runs the weights downloader.
   const left = new Set(excludedComponents(sel));
-  return [uv, ffmpeg, engineStep, backendEnv, aceStep, aceModels, aceBaseModel, aceXlModel, demucs, stableAudio, sa3Models, promptAssistant, weights].filter((c) => !left.has(c.id));
+  return [uv, ffmpeg, engineStep, backendEnv, aceStep, aceModels, aceBaseModel, aceXlModel, demucs, stableAudio, sa3Models, promptAssistant, weights, coverServer, coverModels].filter((c) => !left.has(c.id));
 }
 
 /** Path of ffmpeg: a pinned build under tools/ffmpeg where there is one, otherwise whatever the system has. */

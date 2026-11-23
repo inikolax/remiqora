@@ -1,8 +1,10 @@
-"""Downloadable parts of ACE-Step and YuE2 for the Models page (Stable Audio 3 has its own, app/sa3_weights.py).
+"""Downloadable parts of ACE-Step, YuE2 and the cover engine for the Models page (Stable Audio 3 has its own, app/sa3_weights.py).
 
 Each part is fetched by the engine's own tool, the way the installers do it: ACE-Step's `acestep-download`
 (Hugging Face, ModelScope as its fallback) and audio.cpp's `tools/model_manager_v2.py install <package>`.
-Neither reports byte counts, so progress is the growth of the folder the part lands in against its known size.
+The cover engine (stable-diffusion.cpp's sd-server + Z-Image-Turbo) has no tool of its own: curl fetches the pinned
+release zips and the three weight files, and the backend's Python unpacks the zips.
+None of them reports byte counts, so progress is the growth of the folder the part lands in against its known size.
 One download at a time; stopping kills the tool, and the next run picks up what it left.
 
 Optional parts can be deleted again (an ACE-Step checkpoint folder; a YuE2 precision through the model manager's
@@ -23,8 +25,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal, Optional
 
+from . import aproc, bg
 from . import engine_settings, features
-from .config import ACE_STEP_DIR, LOG_DIR, MUSCRIPTOR_MODEL_PATH, SHEETSAGE_MODEL_PATH, UV_BIN, YUE2_DIR, YUE2_MODEL_PATH
+from .config import (ACE_STEP_DIR, COVER_DIFFUSION_MODEL, COVER_LLM_MODEL, COVER_VAE_MODEL, IS_MACOS, LOG_DIR,
+                     MUSCRIPTOR_MODEL_PATH, SDCPP_DIR, SHEETSAGE_MODEL_PATH, UV_BIN, YUE2_DIR, YUE2_MODEL_PATH)
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -38,7 +42,7 @@ class Part:
     # what it is, for grouping on the page: the main bundle, a DiT, a language model, a YuE2 precision, shared weights
     kind: str
     bytes: int
-    # where it lands: the download's progress is the growth of the first one; all of them count on disk
+    # where it lands: the download's progress is the growth of all of them together
     folders: tuple[Path, ...]
     installed: Callable[[], bool]
     # called with overwrite=True for a re-download: files that are there are fetched again
@@ -96,7 +100,7 @@ def _add(p: Part) -> None:
 
 # ACE-Step: the main bundle (turbo DiT, the 1.7B language model, the VAE and the text encoder) and the extras.
 _ACE_MAIN_FOLDERS = tuple(_CKPT / n for n in ("acestep-v15-turbo", "acestep-5Hz-lm-1.7B", "vae", "Qwen3-Embedding-0.6B"))
-_add(Part("ace-main", "ace_step", "main", 9_400_000_000, _ACE_MAIN_FOLDERS, _ace_main_installed, _ace(None), required=True))
+_add(Part("ace-main", "ace_step", "main", 10_090_000_000, _ACE_MAIN_FOLDERS, _ace_main_installed, _ace(None), required=True))
 for _name, _size in _ACE_SIZES.items():
     _add(Part(_name, "ace_step", "lm" if "-lm-" in _name else "dit", _size, (_CKPT / _name,),
               (lambda n=_name: engine_settings.ace_checkpoint_ready(n)), _ace(_name), remove=(lambda n=_name: _rm_folder(_CKPT / n))))
@@ -110,6 +114,122 @@ for _p, _size in (("q8_0", 4_260_000_000), ("q4_0", 2_670_000_000), ("bf16", 7_2
     _add(Part(f"yue2-{_p}", "yue2", "precision", _size, (YUE2_MODEL_PATH / f"yue2-3b-{_p}.gguf",),
               (lambda p=_p: p in features.yue2_precisions()), _yue2(f"yue2_main_{_p}"),
               remove=(lambda p=_p: [f"yue2_main_{p}"]), packages=((f"yue2_main_{_p}", YUE2_MODEL_PATH),)))
+
+
+# The cover engine. The release is pinned: sd.cpp's rolling master-N tags rename binaries and flags now and then.
+SDCPP_RELEASE = "master-1106-532d2c1"
+_SDCPP_URL = f"https://github.com/leejet/stable-diffusion.cpp/releases/download/{SDCPP_RELEASE}/"
+if IS_WINDOWS:
+    # the CUDA 12 build plus its runtime DLLs (cudart, cuBLAS), unpacked into one folder: (zip, size, unpacked size)
+    _SDCPP_ZIPS = (("sd-master-532d2c1-bin-win-cuda12-x64.zip", 412_365_497, 510_919_799),
+                   ("cudart-sd-bin-win-cu12-x64.zip", 563_452_046, 788_957_696))
+elif IS_MACOS:
+    _SDCPP_ZIPS = (("sd-master-532d2c1-bin-Darwin-macOS-26.7.2-arm64.zip", 38_331_254, 90_000_000),)
+else:
+    # no Linux CUDA build is published; Vulkan runs on NVIDIA too
+    _SDCPP_ZIPS = (("sd-master-532d2c1-bin-Linux-Ubuntu-26.04-x86_64-vulkan.zip", 42_212_329, 100_000_000),)
+_SDCPP_BIN_DIR = SDCPP_DIR / "bin"
+_SDCPP_DL_DIR = SDCPP_DIR / "dl"
+_SDCPP_MODELS_DIR = SDCPP_DIR / "models"
+# file name -> (URL, size in bytes, Hugging Face repo, path in the repo)
+COVER_FILES: dict[str, tuple[str, int, str, str]] = {
+    "z_image_turbo-Q8_0.gguf": ("https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q8_0.gguf",
+                                6_577_440_704, "leejet/Z-Image-Turbo-GGUF", "z_image_turbo-Q8_0.gguf"),
+    "Qwen3-4B-Instruct-2507-Q4_K_M.gguf": (
+        "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        2_497_281_120, "unsloth/Qwen3-4B-Instruct-2507-GGUF", "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"),
+    "ae.safetensors": ("https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors",
+                       335_304_388, "Comfy-Org/z_image_turbo", "split_files/vae/ae.safetensors"),
+}
+_COVER_WANTED = (COVER_DIFFUSION_MODEL, COVER_LLM_MODEL, COVER_VAE_MODEL)
+_CURL = ["curl", "--location", "--fail", "--retry", "3", "--silent", "--show-error"]
+
+
+def _cover_file_ok(name: str) -> bool:
+    path = _SDCPP_MODELS_DIR / name
+    known = COVER_FILES.get(name)
+    try:
+        return path.is_file() and (known is None or path.stat().st_size == known[1])
+    except OSError:
+        return False
+
+
+def _cover_models_installed() -> bool:
+    return all(_cover_file_ok(n) for n in _COVER_WANTED)
+
+
+def _cover_server_installed() -> bool:
+    return features.has_cover_server()
+
+
+def _cover_models_commands(overwrite: bool = False) -> list[tuple[list[str], Path]]:
+    """curl per weight file still missing (all of them with overwrite); an unfinished one is resumed (-C -)."""
+    _SDCPP_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    out = []
+    for name in _COVER_WANTED:
+        if name not in COVER_FILES or (not overwrite and _cover_file_ok(name)):
+            continue
+        out.append(([*_CURL, *([] if overwrite else ["--continue-at", "-"]), "--output", name, COVER_FILES[name][0]],
+                    _SDCPP_MODELS_DIR))
+    return out
+
+
+# run with the backend's Python (-I): unpack a zip into bin/, make the binaries executable, drop the zip
+_UNZIP = ("import os, sys, zipfile\n"
+          "zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])\n"
+          "for n in ('sd-server', 'sd-cli'):\n"
+          "    p = os.path.join(sys.argv[2], n)\n"
+          "    if os.path.isfile(p): os.chmod(p, 0o755)\n"
+          "os.remove(sys.argv[1])\n")
+
+
+def _cover_server_commands(overwrite: bool = False) -> list[tuple[list[str], Path]]:
+    """Each release zip: curl it into dl/, unpack it into bin/."""
+    _SDCPP_DL_DIR.mkdir(parents=True, exist_ok=True)
+    _SDCPP_BIN_DIR.mkdir(parents=True, exist_ok=True)
+    out = []
+    for name, _size, _unpacked in _SDCPP_ZIPS:
+        out.append(([*_CURL, *([] if overwrite else ["--continue-at", "-"]), "--output", name, _SDCPP_URL + name],
+                    _SDCPP_DL_DIR))
+        out.append(([sys.executable, "-I", "-c", _UNZIP, str(_SDCPP_DL_DIR / name), str(_SDCPP_BIN_DIR)], _SDCPP_DL_DIR))
+    return out
+
+
+_add(Part("cover-server", "cover", "server", sum(z[1] + z[2] for z in _SDCPP_ZIPS), (_SDCPP_BIN_DIR, _SDCPP_DL_DIR),
+          _cover_server_installed, _cover_server_commands, required=True))
+_add(Part("cover-main", "cover", "main", sum(COVER_FILES[n][1] for n in _COVER_WANTED if n in COVER_FILES),
+          tuple(_SDCPP_MODELS_DIR / n for n in _COVER_WANTED), _cover_models_installed, _cover_models_commands,
+          required=True))
+
+
+def _verify_cover_models(problems: list[dict], tally: dict) -> None:
+    """Sizes against the known ones, and the SHA-256 against Hugging Face's list when it can be read."""
+    remotes: dict[str, Optional[dict]] = {}
+    for name in _COVER_WANTED:
+        path = _SDCPP_MODELS_DIR / name
+        tally["files"] += 1
+        if not _is_file(path):
+            problems.append({"file": name, "reason": "missing"})
+            continue
+        size = path.stat().st_size
+        known = COVER_FILES.get(name)
+        if known is None:
+            tally["bytes"] += size  # a file picked through COVER_*_MODEL: nothing to compare it with
+            continue
+        _url, want, repo, rel = known
+        if size != want:
+            problems.append({"file": name, "reason": f"{size} bytes instead of {want}"})
+            continue
+        tally["bytes"] += size
+        if repo not in remotes:
+            remotes[repo] = _remote_files(repo)
+        tally["online"] = tally["online"] or remotes[repo] is not None
+        lfs = ((remotes[repo] or {}).get(rel) or {}).get("lfs")
+        if not lfs:
+            continue
+        tally["hashed"] += 1
+        if _sha256_file(path) != lfs["oid"]:
+            problems.append({"file": name, "reason": "the SHA-256 differs from Hugging Face's"})
 
 
 def _rm_folder(path: Path) -> list[str]:
@@ -137,6 +257,8 @@ def engine_bytes(engine: str) -> int:
         return _size(_CKPT)
     if engine == "yue2":
         return _size(YUE2_MODEL_PATH.parent)
+    if engine == "cover":
+        return _size(_SDCPP_MODELS_DIR) + _size(_SDCPP_BIN_DIR)
     return 0
 
 
@@ -158,9 +280,10 @@ async def delete(part_id: str, engine_running: bool) -> None:
         raise PermissionError("it is the only YuE2 precision; YuE2 needs one")
     packages = await asyncio.to_thread(part.remove)
     for pkg in packages:
-        proc = await asyncio.create_subprocess_exec(
+        proc = await aproc.create_subprocess_exec(
             sys.executable, str(Path("tools") / "model_manager_v2.py"), "uninstall", pkg,
-            cwd=str(YUE2_DIR), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            cwd=str(YUE2_DIR), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            stream_stdout=False)
         out, _ = await proc.communicate()
         if proc.returncode != 0:
             raise RuntimeError(out.decode("utf-8", "replace").strip().splitlines()[-1] if out else f"uninstall exited with {proc.returncode}")
@@ -252,7 +375,15 @@ def verify(part_id: str) -> dict:
         raise KeyError(part_id)
     problems: list[dict] = []
     tally: dict = {"files": 0, "bytes": 0, "hashed": 0, "outdated": [], "online": False}
-    if part.packages:
+    if part_id == "cover-main":
+        _verify_cover_models(problems, tally)
+    elif part_id == "cover-server":
+        tally["files"] += 1
+        if features.has_cover_server():
+            tally["bytes"] += _size(_SDCPP_BIN_DIR)
+        else:
+            problems.append({"file": "sd-server", "reason": "missing"})
+    elif part.packages:
         for pkg, folder in part.packages:
             if not _check_manifest(folder / f".audiocpp-package-{pkg}.json", folder, problems, tally):
                 for p in part.folders:  # installed by an older version: no record, so only that the files are there
@@ -285,7 +416,8 @@ def verify(part_id: str) -> dict:
                             tally["bytes"] += path.stat().st_size
     return {"part": part_id, "ok": not problems and tally["files"] > 0, "problems": problems,
             "files": tally["files"], "bytes": tally["bytes"], "hashed": tally["hashed"], "outdated": tally["outdated"],
-            "method": "sha256" if tally["hashed"] else "structure", "offline": bool(part.packages) and not tally["online"]}
+            "method": "sha256" if tally["hashed"] else ("size" if part.engine == "cover" else "structure"),
+            "offline": (bool(part.packages) or part_id == "cover-main") and not tally["online"]}
 
 
 async def reinstall(part_id: str, engine_running: bool) -> None:
@@ -313,6 +445,8 @@ def engine_ready(engine: str) -> bool:
         return features.has_ace_step()
     if engine == "yue2":
         return (YUE2_DIR / "tools" / "model_manager_v2.py").is_file()
+    if engine == "cover":
+        return shutil.which("curl") is not None
     return False
 
 
@@ -374,7 +508,7 @@ async def start(part_id: str, overwrite: bool = False) -> None:
         raise FileNotFoundError(f"{part.engine} is not installed")
     d = Download(part=part_id, total=part.bytes)
     _downloads[part_id] = d
-    asyncio.create_task(_run(part, d, overwrite))
+    bg.spawn(_run(part, d, overwrite), name=f"part-download-{part_id}")
 
 
 async def cancel(part_id: str) -> None:
@@ -388,7 +522,7 @@ async def cancel(part_id: str) -> None:
 
 async def _kill_tree(proc: asyncio.subprocess.Process) -> None:
     if IS_WINDOWS:
-        killer = await asyncio.create_subprocess_exec("taskkill", "/PID", str(proc.pid), "/T", "/F",
+        killer = await aproc.create_subprocess_exec("taskkill", "/PID", str(proc.pid), "/T", "/F",
                                                       stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         await killer.wait()
     else:
@@ -402,13 +536,13 @@ async def _run(part: Part, d: Download, overwrite: bool = False) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / "engine_downloads.log"
     # Not created here: acestep-download takes an existing folder for a finished download and skips it.
-    watched = part.folders[0]
-    baseline = await asyncio.to_thread(_size, watched)
+    # All of the part's folders count: ACE-Step's main bundle fills four of them one after another.
+    baseline = await asyncio.to_thread(part_bytes, part)
     stop = asyncio.Event()
 
     async def watch() -> None:
         while not stop.is_set():
-            grown = max(0, await asyncio.to_thread(_size, watched) - baseline)
+            grown = max(0, await asyncio.to_thread(part_bytes, part) - baseline)
             d.done = min(grown, int(d.total * 0.99))
             try:
                 await asyncio.wait_for(stop.wait(), timeout=1.5)
@@ -426,7 +560,7 @@ async def _run(part: Part, d: Download, overwrite: bool = False) -> None:
                 log.write(f"\n--- {part.id}: {' '.join(cmd)}\n")
                 log.flush()
                 try:
-                    proc = await asyncio.create_subprocess_exec(*cmd, cwd=str(cwd), env=env, stdin=asyncio.subprocess.DEVNULL,
+                    proc = await aproc.create_subprocess_exec(*cmd, cwd=str(cwd), env=env, stdin=asyncio.subprocess.DEVNULL,
                                                                 stdout=log, stderr=asyncio.subprocess.STDOUT)
                 except OSError as exc:
                     d.error, code = str(exc), -1

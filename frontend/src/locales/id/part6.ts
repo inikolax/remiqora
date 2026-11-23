@@ -300,7 +300,7 @@ export default {
     recreate: 'Buat ulang',
     recognize: 'Kenali',
     cancelled: 'dibatalkan',
-    pianoRoll: 'Mini Piano Roll',
+    pianoRoll: 'Piano roll mini',
     notesCount: 'Not: {count} · Tempo: {bpm} BPM',
     deleteAll: 'Hapus semua MIDI',
     confirmDeleteAll: 'Hapus semua MIDI untuk lagu ini? Berkas akan dihapus dari disk.',

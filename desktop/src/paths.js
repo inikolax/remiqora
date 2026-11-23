@@ -74,6 +74,8 @@ function layout(root, platform = PLATFORM, manifest = null) {
     demucs: path.join(root, 'engines', 'Demucs'),
     stableAudio: path.join(root, 'engines', 'StableAudio'),
     promptAssistant: path.join(root, 'engines', 'PromptAssistant'),
+    // the cover engine (stable-diffusion.cpp): bin/ with sd-server and its libraries, models/ with the weights
+    sdcpp: path.join(root, 'engines', 'sdcpp'),
     backendVenv,
     backendPython: path.join(backendVenv, IS_WINDOWS ? 'Scripts' : 'bin', IS_WINDOWS ? 'python.exe' : 'python'),
     data: path.join(root, 'data'),

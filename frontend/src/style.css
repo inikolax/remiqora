@@ -40,6 +40,14 @@
    * 4.5:1 on panel, panel-2, the clip header and its own /20 tint, where
    * accent1 drops to about 3:1. Too light for a fill behind white text. */
   --color-accent: #d8b4fe;
+  /* Fills behind white text (filled buttons, the accent gradient): white on accent1 is 3.96:1 and on accent2
+   * 3.53:1, under AA's 4.5:1. These darker ones give 5.38:1 (#9333ea) and 4.60:1 (#db2777). accent1/accent2
+   * stay for text, borders, lights and the waveform. */
+  --color-accent1-strong: #9333ea;
+  --color-accent2-strong: #db2777;
+  /* Accent-coloured text such as a link: accent1 is 4.37:1 on the panel; this one is 5.82:1 on the page (#0f0f14),
+   * 5.27:1 on the panel (#1a1a22) and 4.91:1 on panel-2 (#20202b). */
+  --color-accent1-text: #b46bf8;
   --color-status-queued: #eab308;
   --color-status-running: #38bdf8;
   --color-status-done: #22c55e;
@@ -86,8 +94,9 @@ button:not(:disabled) {
   cursor: pointer;
 }
 
+/* The strong tones: the gradient is mostly a fill behind white text (Create, the play buttons, the logo tile). */
 .accent-gradient {
-  background-image: linear-gradient(135deg, var(--color-accent1), var(--color-accent2));
+  background-image: linear-gradient(135deg, var(--color-accent1-strong), var(--color-accent2-strong));
 }
 
 /* Page fade transition */
@@ -113,7 +122,6 @@ button:not(:disabled) {
   opacity: 0;
   overflow: hidden;
 }
-
 /* Custom Range Sliders */
 input[type="range"] {
   -webkit-appearance: none;
@@ -199,4 +207,45 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* A field the idea line just filled in (or put back on undo): a soft accent ring that fades out. The form removes the class after 1.6 s. */
+.idea-flash {
+  border-radius: 0.5rem;
+  animation: idea-flash 1.6s ease-out forwards;
+}
+
+@keyframes idea-flash {
+  0% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent1) 70%, transparent), 0 0 16px color-mix(in srgb, var(--color-accent2) 35%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent, 0 0 16px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idea-flash {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent1) 60%, transparent);
+  }
+}
+
+/* Reduced motion: the page fade and the collapsible slide happen at once, and the sliders' thumb does not grow.
+ * Last in the file, so it wins over the rules above of the same weight. */
+@media (prefers-reduced-motion: reduce) {
+  .fade-enter-active,
+  .fade-leave-active,
+  .slide-enter-active,
+  .slide-leave-active {
+    transition: none;
+  }
+  input[type="range"]::-webkit-slider-runnable-track,
+  input[type="range"]::-webkit-slider-thumb {
+    transition: none;
+  }
+  input[type="range"]:hover::-webkit-slider-thumb,
+  input[type="range"]:active::-webkit-slider-thumb {
+    transform: none;
+  }
 }

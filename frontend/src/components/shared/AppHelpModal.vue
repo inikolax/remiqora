@@ -13,8 +13,9 @@ import SparklesIcon from './icons/SparklesIcon.vue'
 import PulseIcon from './icons/PulseIcon.vue'
 
 defineProps<{ open: boolean }>()
-/** open-guide: the editor's own guide, the AI arranger's or From an idea's, shown by the header in place of this one. */
-const emit = defineEmits<{ close: []; 'open-guide': [which: 'editor' | 'arranger' | 'idea'] }>()
+/** open-guide: the editor's own guide, the AI arranger's or From an idea's, shown by the header in place of this one;
+ *  'notes' (no guide of its own yet) opens YuE2's Notes workspace. */
+const emit = defineEmits<{ close: []; 'open-guide': [which: 'editor' | 'arranger' | 'idea' | 'notes'] }>()
 const { t, tm } = useI18n()
 const router = useRouter()
 
@@ -22,15 +23,16 @@ interface Step { title: string; text: string }
 interface Row { label: string; ace: string; yue: string; sa3: string }
 
 const SECTIONS = [
-  { key: 'idea', to: '/idea', icon: SparklesIcon, title: '' },
+  { key: 'idea', to: '/', icon: SparklesIcon, title: '' },
+  { key: 'yue', to: '/yue2', icon: MicIcon, title: 'YuE2-3B' },
   { key: 'ace', to: '/ace-step', icon: WaveIcon, title: 'ACE-Step 1.5' },
   { key: 'lora', to: '/ace-step/lora', icon: TargetIcon, title: 'LoRA' },
-  { key: 'yue', to: '/yue2', icon: MicIcon, title: 'YuE2-3B' },
   { key: 'sa3', to: '/stable-audio', icon: PulseIcon, title: 'Stable Audio 3' },
   { key: 'editor', to: '/editor', icon: TimelineIcon, title: '' },
 ] as const
-/** The detail sections, in the order a track travels: thought of, made, trained for, split, mixed, arranged, kept. */
-const DETAILS = ['idea', 'ace', 'yue', 'sa3', 'lora', 'stems', 'editor', 'arranger', 'sfx', 'library'] as const
+/** The detail sections, in the order a track travels: thought of, made (the engines in the rail's order, YuE2's notes),
+ *  trained for, dressed, split, mixed, arranged, kept, downloaded. */
+const DETAILS = ['idea', 'yue', 'notes', 'ace', 'sa3', 'lora', 'covers', 'stems', 'editor', 'arranger', 'sfx', 'library', 'trash', 'downloads'] as const
 const LIGHTS = [
   { key: 'stopped', cls: 'border border-text-dim/70' },
   { key: 'starting', cls: 'bg-status-queued animate-pulse' },
@@ -57,7 +59,7 @@ function go(to: string) {
             <component :is="s.icon" class="mt-0.5 h-[18px] w-[18px] shrink-0 text-accent1" />
             <div class="min-w-0 flex-1">
               <div class="flex items-baseline justify-between gap-3">
-                <p class="font-medium text-text">{{ s.title || t(s.key === 'idea' ? 'header.idea' : 'header.editor') }}</p>
+                <p class="font-medium text-text">{{ s.title || t(s.key === 'idea' ? 'header.home' : 'header.editor') }}</p>
                 <button type="button" class="shrink-0 text-xs text-accent1 hover:underline" @click="go(s.to)">{{ t('header.guide.goTo') }}</button>
               </div>
               <p class="text-xs text-text-dim">{{ t(`header.desc.${s.key}`) }}</p>
@@ -104,16 +106,16 @@ function go(to: string) {
             <thead class="bg-panel-2/60 text-text">
               <tr>
                 <th class="w-[22%] px-3 py-2 font-medium"></th>
-                <th class="px-3 py-2 font-semibold"><span class="inline-flex items-center gap-1.5"><WaveIcon class="h-3.5 w-3.5 text-accent1" />ACE-Step 1.5</span></th>
                 <th class="px-3 py-2 font-semibold"><span class="inline-flex items-center gap-1.5"><MicIcon class="h-3.5 w-3.5 text-accent1" />YuE2-3B</span></th>
+                <th class="px-3 py-2 font-semibold"><span class="inline-flex items-center gap-1.5"><WaveIcon class="h-3.5 w-3.5 text-accent1" />ACE-Step 1.5</span></th>
                 <th class="px-3 py-2 font-semibold"><span class="inline-flex items-center gap-1.5"><PulseIcon class="h-3.5 w-3.5 text-accent1" />Stable Audio 3</span></th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="r in (tm('header.guide.compare') as Row[])" :key="r.label" class="border-t border-border/60 align-top">
                 <th scope="row" class="px-3 py-2 font-medium text-text">{{ r.label }}</th>
-                <td class="px-3 py-2 leading-relaxed">{{ r.ace }}</td>
                 <td class="px-3 py-2 leading-relaxed">{{ r.yue }}</td>
+                <td class="px-3 py-2 leading-relaxed">{{ r.ace }}</td>
                 <td class="px-3 py-2 leading-relaxed">{{ r.sa3 }}</td>
               </tr>
             </tbody>
@@ -123,7 +125,7 @@ function go(to: string) {
 
       <!-- Each part in detail -->
       <div class="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-        <section v-for="id in DETAILS" :key="id">
+        <section v-for="id in DETAILS" :id="`help-${id}`" :key="id">
           <h4 class="mb-1.5 text-sm font-semibold text-text">{{ t(`header.helpSections.${id}.title`) }}</h4>
           <p>{{ t(`header.helpSections.${id}.text`) }}</p>
           <!-- the editor, the arranger and From an idea have guides of their own -->
@@ -135,6 +137,16 @@ function go(to: string) {
           >
             <component :is="id === 'editor' ? TimelineIcon : SparklesIcon" class="h-4 w-4" />
             {{ t(id === 'editor' ? 'header.guide.editorGuide' : id === 'idea' ? 'header.guide.ideaGuide' : 'header.guide.arrangerGuide') }}
+          </button>
+          <!-- the notes' own guide is still to come: for now the link opens the Notes workspace itself -->
+          <button
+            v-else-if="id === 'notes'"
+            type="button" data-guide="notes"
+            class="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-accent1/40 px-3 py-1.5 text-sm text-accent1 hover:bg-accent1/10"
+            @click="emit('open-guide', 'notes')"
+          >
+            <MicIcon class="h-4 w-4" />
+            {{ t('header.helpSections.notes.more') }}
           </button>
         </section>
       </div>

@@ -57,7 +57,8 @@ mac:
   hardenedRuntime: false
   artifactName: Remiqora-${version}-${arch}.${ext}
 
-# Packaging works; the first-run setup reports "unsupported" on Linux until it has scripts (see PR #2).
+# Not released: Linux installs from source with setup_linux.sh. Packaging still works, and the first-run screen
+# reports "unsupported" and points to the README.
 linux:
   target: [AppImage]
   category: AudioVideo

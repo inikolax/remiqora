@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'Аудиодан әуен шығару (SheetSage2)',
     unloadSheetSage: 'Шығарғаннан кейін SheetSage2-ні жадтан шығару',
     extract: 'ABC шығару',
-    extracting: 'Шығарылуда…',
     randomSeed: 'Кездейсоқ seed',
     cfgScale: 'CFG scale',
     defaultValuePlaceholder: 'әдепкі {value}',

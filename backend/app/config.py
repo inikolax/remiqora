@@ -79,6 +79,14 @@ STABLE_AUDIO_DIR = _env_path("STABLE_AUDIO_DIR", r"E:\AI\StableAudio")
 # The prompt assistant: a uv project tracked in the repository, run in place on a source install;
 # the desktop app points this at its own copy.
 PROMPT_ASSISTANT_DIR = _env_path("PROMPT_ASSISTANT_DIR", str(Path(__file__).resolve().parents[2] / "external" / "prompt-assistant"))
+# Album covers: stable-diffusion.cpp's sd-server (a prebuilt release binary) with Z-Image-Turbo. The folder holds
+# bin/ (sd-server plus its DLLs; on Windows also the CUDA 12 runtime from the cudart zip) and models/ (the three
+# weight files below). A source checkout looks in external/sdcpp (git-ignored; on the dev box a junction to
+# E:\ai\sdcpp); the desktop app points SDCPP_DIR at its own copy.
+SDCPP_DIR = _env_path("SDCPP_DIR", str(Path(__file__).resolve().parents[2] / "external" / "sdcpp"))
+COVER_DIFFUSION_MODEL = os.getenv("COVER_DIFFUSION_MODEL", "z_image_turbo-Q8_0.gguf").strip() or "z_image_turbo-Q8_0.gguf"
+COVER_LLM_MODEL = os.getenv("COVER_LLM_MODEL", "Qwen3-4B-Instruct-2507-Q4_K_M.gguf").strip() or "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+COVER_VAE_MODEL = os.getenv("COVER_VAE_MODEL", "ae.safetensors").strip() or "ae.safetensors"
 
 # MuScriptor (audio -> MIDI) is loaded into YuE2's own audiocpp_server rather
 # than being launched separately, so it gets no MODELS entry - only the spec
@@ -172,12 +180,20 @@ STABLE_AUDIO_DEVICE = os.getenv("STABLE_AUDIO_DEVICE", "").strip()
 # engine holds the GPU. Off until switched on in the panel's settings.
 STABLE_AUDIO_CPU_PORT = int(os.getenv("STABLE_AUDIO_CPU_PORT", "8003"))
 PROMPT_ASSISTANT_PORT = int(os.getenv("PROMPT_ASSISTANT_PORT", "8004"))
+COVER_SERVER_PORT = int(os.getenv("COVER_SERVER_PORT", "8005"))
+COVER_DEVICE = os.getenv("COVER_DEVICE", "").strip()
+# Extra sd-server flags for small cards, e.g. "--offload-to-cpu --vae-tiling" (empty: everything stays on the GPU).
+COVER_EXTRA_ARGS = os.getenv("COVER_EXTRA_ARGS", "").split()
 # Which Stable Audio 3 checkpoint the server warms up right after it starts (medium needs a
 # CUDA GPU with Flash Attention; small-music / small-sfx run anywhere).
 STABLE_AUDIO_PRELOAD = os.getenv("STABLE_AUDIO_PRELOAD", "medium").strip()
 # Concurrent residency: every engine pinned to its own device, all devices distinct.
 # Otherwise switching stays exclusive (one engine on the GPU at a time).
 _ENGINE_DEVICES = [ACE_STEP_DEVICE, YUE2_DEVICE, STABLE_AUDIO_DEVICE]
+# The cover engine joins only when it has a device of its own; without one, concurrent mode starts it on the
+# default GPU next to the others.
+if COVER_DEVICE:
+    _ENGINE_DEVICES.append(COVER_DEVICE)
 ALLOW_CONCURRENT_MODELS = all(_ENGINE_DEVICES) and len(set(_ENGINE_DEVICES)) == len(_ENGINE_DEVICES)
 CUDA_LIB_DIR = _env_path("CUDA_LIB_DIR", str(CUDA_BIN_DIR.parent / "lib"))
 
@@ -203,6 +219,8 @@ elif IS_LINUX:
     _YUE2_EXTRA_PATH_DIRS = [CUDA_BIN_DIR]
 else:
     raise RuntimeError(f"Unsupported platform for YuE2: {sys.platform}")
+
+SDCPP_BIN = SDCPP_DIR / "bin" / ("sd-server.exe" if IS_WINDOWS else "sd-server")
 
 MODELS: dict[str, ModelDefinition] = {
     "ace_step": ModelDefinition(
@@ -297,6 +315,34 @@ MODELS: dict[str, ModelDefinition] = {
                 # The server answers /health before the weights are loaded (they warm up in the
                 # background), so this only covers Python start-up and imports.
                 startup_timeout=180.0,
+            ),
+        ],
+    ),
+    "cover": ModelDefinition(
+        id="cover",
+        label="Z-Image Turbo (covers)",
+        proxy_prefix="cover",
+        proxy_target=f"http://127.0.0.1:{COVER_SERVER_PORT}",
+        health_url=f"http://127.0.0.1:{COVER_SERVER_PORT}/sdcpp/v1/models/status",
+        processes=[
+            ProcessSpec(
+                name="cover_server",
+                cwd=SDCPP_DIR,
+                cmd=[
+                    str(SDCPP_BIN),
+                    "--listen-ip", "127.0.0.1",
+                    "--listen-port", str(COVER_SERVER_PORT),
+                    "--diffusion-model", str(SDCPP_DIR / "models" / COVER_DIFFUSION_MODEL),
+                    "--llm", str(SDCPP_DIR / "models" / COVER_LLM_MODEL),
+                    "--vae", str(SDCPP_DIR / "models" / COVER_VAE_MODEL),
+                    "--cfg-scale", "1.0",
+                    "--steps", "8",
+                    *COVER_EXTRA_ARGS,
+                ],
+                extra_path_dirs=[SDCPP_DIR / "bin"],
+                env={**({"CUDA_VISIBLE_DEVICES": COVER_DEVICE} if COVER_DEVICE else {})},
+                health_url=f"http://127.0.0.1:{COVER_SERVER_PORT}/sdcpp/v1/models/status",
+                startup_timeout=300.0,
             ),
         ],
     ),

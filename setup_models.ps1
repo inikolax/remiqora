@@ -7,7 +7,8 @@ backend/.env with all of the above plus an auto-detected FFMPEG_BIN_DIR.
 
 Stable Audio 3 weights are downloaded from the app (the Stable Audio 3 page), or here with -StableAudioModels,
 e.g. -StableAudioModels small-sfx,medium. The ACE-Step base model the AI arranger needs: -AceBase (asked when the
-script runs in a window).
+script runs in a window). Album covers (stable-diffusion.cpp + Z-Image Turbo, ~10.4 GB, into external\sdcpp) are
+installed by default; -SkipCovers leaves them out.
 
 Re-run any time: every step skips work that is already done. A newer ACE-Step patch is applied again on the next run,
 keeping the environment and the downloaded models.
@@ -23,6 +24,8 @@ param(
     [string]$PromptAssistantModel = '',
     # The ACE-Step base model (~4.8 GB) for the editor's AI arranger: download it now without asking
     [switch]$AceBase,
+    # Leave out the album-cover engine (stable-diffusion.cpp + Z-Image Turbo, ~10.4 GB; the Models page installs it later)
+    [switch]$SkipCovers,
     [switch]$SkipBuild,
     [switch]$SkipWeights
 )
@@ -282,6 +285,101 @@ if ($baseReady) {
         Ok (T 'Скачана' 'Downloaded')
     } else {
         Note (T 'Позже: запустите setup_models.bat -AceBase, или скачайте её из приложения.' 'Later: run setup_models.bat -AceBase, or download it from the app.')
+    }
+}
+
+# ---------------------------------------------------------------- album covers
+# stable-diffusion.cpp's prebuilt sd-server (CUDA 12 build + its runtime DLLs, unpacked into one bin\ folder) and the
+# Z-Image Turbo weights, in the layout the backend reads (SDCPP_DIR\bin, SDCPP_DIR\models). The same release and files
+# as backend/app/engine_parts.py (SDCPP_RELEASE, _SDCPP_ZIPS, COVER_FILES) and desktop/manifest.json ("cover"): bump
+# them together.
+$sdcppRelease = 'master-1106-532d2c1'
+$sdcppZips = @(
+    @{ Name = 'sd-master-532d2c1-bin-win-cuda12-x64.zip'; Bytes = 412365497; Sha256 = 'b087219145a382cc1b1e826318289e1f672b9bb6965977734ef0deb85fe2d03a' },
+    @{ Name = 'cudart-sd-bin-win-cu12-x64.zip'; Bytes = 563452046; Sha256 = 'fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d' }
+)
+$coverWeights = @(
+    @{ Name = 'z_image_turbo-Q8_0.gguf'; Bytes = 6577440704; Sha256 = 'df1c5baa86d1398c979495a6072dbcee79444fdb884a2445582ba0769c44e9a1'
+       Url = 'https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q8_0.gguf' },
+    @{ Name = 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'; Bytes = 2497281120; Sha256 = '3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597'
+       Url = 'https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf' },
+    @{ Name = 'ae.safetensors'; Bytes = 335304388; Sha256 = 'afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38'
+       Url = 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors' }
+)
+
+# curl.exe (part of Windows) like the app's Models page: retries, and -C - resumes a half-downloaded file. Then the
+# sha256; a file that does not match is removed. Returns $true when the file is in place.
+function Get-PinnedFile([string]$Url, [string]$Path, [long]$Bytes, [string]$Sha256) {
+    $have = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+    $code = 0
+    if (-not $have -or $have.Length -ne $Bytes) {
+        Note ((T 'Скачиваю ' 'Downloading ') + (Split-Path -Leaf $Path) + ' (' + (Gb $Bytes) + ')')
+        & curl.exe --location --fail --retry 3 --retry-delay 5 --continue-at - --output $Path $Url
+        $code = $LASTEXITCODE
+    }
+    if ($code -ne 0) {
+        Warn ((T "Не скачалось (curl, код $code): " "Not downloaded (curl, code $code): ") + (Split-Path -Leaf $Path))
+        return $false
+    }
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+    if ($actual -ne $Sha256) {
+        Remove-Item -LiteralPath $Path -Force
+        Warn ((T 'Не совпала контрольная сумма sha256, файл удалён: ' 'The sha256 does not match, the file was removed: ') + (Split-Path -Leaf $Path))
+        return $false
+    }
+    return $true
+}
+
+# Returns $true when sd-server and all three weight files are in place. Files already there with the right size are
+# kept as they are (a dev box may point external\sdcpp at a shared folder).
+function Install-Covers([string]$SdcppDir) {
+    $binDir = Join-Path $SdcppDir 'bin'
+    $dlDir = Join-Path $SdcppDir 'dl'
+    $modelsDir = Join-Path $SdcppDir 'models'
+    $done = $true
+    if (Test-Path -LiteralPath (Join-Path $binDir 'sd-server.exe')) {
+        Ok (T 'sd-server уже на месте' 'sd-server is already in place')
+    } else {
+        New-Item -ItemType Directory -Path $binDir, $dlDir -Force | Out-Null
+        foreach ($zip in $sdcppZips) {
+            $zipPath = Join-Path $dlDir $zip.Name
+            if (-not (Get-PinnedFile ("https://github.com/leejet/stable-diffusion.cpp/releases/download/$sdcppRelease/" + $zip.Name) $zipPath $zip.Bytes $zip.Sha256)) { $done = $false; break }
+        }
+        # unpacked only once both zips are here, the runtime DLLs first: sd-server.exe (what the next run checks for)
+        # appears last
+        if ($done) {
+            foreach ($zip in @($sdcppZips[1], $sdcppZips[0])) {
+                $zipPath = Join-Path $dlDir $zip.Name
+                Note ((T 'Распаковываю ' 'Unpacking ') + $zip.Name)
+                Expand-Archive -LiteralPath $zipPath -DestinationPath $binDir -Force
+                Remove-Item -LiteralPath $zipPath -Force
+            }
+        }
+        if ($done -and (Test-Path -LiteralPath (Join-Path $binDir 'sd-server.exe'))) { Ok (T "sd-server установлен ($sdcppRelease)" "sd-server is installed ($sdcppRelease)") } else { $done = $false }
+    }
+    New-Item -ItemType Directory -Path $modelsDir -Force | Out-Null
+    foreach ($weight in $coverWeights) {
+        $path = Join-Path $modelsDir $weight.Name
+        $item = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
+        if ($item -and $item.Length -eq $weight.Bytes) { Ok ((T 'Уже на месте: ' 'Already in place: ') + $weight.Name); continue }
+        if (Get-PinnedFile $weight.Url $path $weight.Bytes $weight.Sha256) { Ok $weight.Name } else { $done = $false }
+    }
+    return $done
+}
+
+Step (T 'Обложки альбомов: stable-diffusion.cpp + Z-Image Turbo (~10,4 ГБ)' 'Album covers: stable-diffusion.cpp + Z-Image Turbo (~10.4 GB)')
+if ($SkipCovers) {
+    Note (T 'Пропущено (-SkipCovers). Их можно поставить позже на странице «Модели».' 'Skipped (-SkipCovers). Install them later on the Models page.')
+} else {
+    $sdcppDir = Join-Path $externalDir 'sdcpp'
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    # a failure here does not stop the rest of the install: the Models page fetches what is missing
+    $coversOk = $false
+    try { $coversOk = Install-Covers $sdcppDir } catch { Warn $_.Exception.Message }
+    $ErrorActionPreference = $prev
+    if ($coversOk) { Ok (T 'Обложки готовы' 'Covers are ready') } else {
+        Warn (T 'Обложки поставлены не полностью: запустите скрипт ещё раз (загрузки продолжатся) или докачайте на странице «Модели».' 'Covers are not fully installed: run the script again (downloads continue) or finish them on the Models page.')
     }
 }
 

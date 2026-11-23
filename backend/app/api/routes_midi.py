@@ -11,8 +11,11 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from .. import db, midi
+from .. import db, features, midi
+from ..config import ALLOW_CONCURRENT_MODELS
+from ..gen_queue import queue as gen_queue
 from ..orchestrator.manager import manager
+from ..orchestrator.process import StartCancelled
 from ..orchestrator.state import ModelStatus
 
 router = APIRouter(prefix="/api/tracks", tags=["midi"])
@@ -51,14 +54,21 @@ async def start_midi(track_id: int, source: str, force: bool = False):
         raise HTTPException(status_code=404, detail="unknown source")
     if not db.get_track(track_id):
         raise HTTPException(status_code=404, detail="track not found")
-    # MuScriptor is loaded into YuE2's server, so there is nothing to talk to
-    # unless YuE2 is the active model - refuse now instead of queueing a job
-    # that can only fail.
+    # MuScriptor is loaded into YuE2's server: start YuE2 first when it is not running, the way a generation starts
+    # its engine (stopping whatever else is on the card). Not while a queue take runs on another engine: that would
+    # stop its engine.
     if manager.state.models["yue2"].status != ModelStatus.RUNNING:
-        raise HTTPException(
-            status_code=409,
-            detail="MIDI-транскрипция работает через сервер YuE2 — сначала сделайте YuE2 активной моделью",
-        )
+        if not features.has_yue2():
+            raise HTTPException(status_code=409, detail="YuE2 is not installed")
+        busy = gen_queue.running_engine()
+        if busy is not None and busy != "yue2" and not ALLOW_CONCURRENT_MODELS:
+            raise HTTPException(status_code=409, detail="a take is being generated: notes to MIDI can start when it is done")
+        try:
+            await manager.switch_to("yue2")
+        except StartCancelled as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 - a failed start: a message, not a bare 500
+            raise HTTPException(status_code=502, detail=f"YuE2 did not start: {exc}") from exc
     path = midi.source_audio_path(track_id, source)
     if not path or not path.exists():
         raise HTTPException(status_code=404, detail=f"audio for source '{source}' not found")

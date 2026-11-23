@@ -14,7 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from .config import MODELS
+from . import aproc
+from .config import DATA_DIR, MODELS
 from .api.routes_yue2_upload import get_ffmpeg_bin
 
 TITLE_MAX = 64
@@ -202,13 +203,109 @@ def download_name(tags: Mapping[str, str], ext: str) -> str:
     return f"{base}.{ext}"
 
 
-async def write_tagged_copy(src: Path, tags: Mapping[str, str], cover: Optional[Path] = None) -> Optional[Path]:
+FORMATS = ("mp3", "flac", "wav")
+MEDIA_TYPES = {"mp3": "audio/mpeg", "flac": "audio/flac", "wav": "audio/wav"}
+COVER_MAX_PX = 1000
+
+
+# Tagged / converted download copies live here, not in the system temp folder: a copy whose response never ended
+# (the client went away, the backend was killed) is swept at the next start (sweep_download_tmp).
+DOWNLOAD_TMP_DIR = DATA_DIR / "tmp" / "downloads"
+
+FFMPEG_TIMEOUT_S = 300.0
+PROBE_TIMEOUT_S = 30.0
+
+
+def sweep_download_tmp() -> int:
+    """Startup: removes the download copies an earlier run left behind. Returns how many went."""
+    n = 0
+    if DOWNLOAD_TMP_DIR.is_dir():
+        for f in DOWNLOAD_TMP_DIR.iterdir():
+            try:
+                if f.is_file():
+                    f.unlink()
+                    n += 1
+            except OSError:
+                pass
+    return n
+
+
+def _unlink_quietly(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+async def _communicate(proc: Any, timeout: float) -> tuple[Optional[bytes], Optional[bytes]]:
+    """proc.communicate() within `timeout` seconds; on a timeout (or a cancel) ffmpeg is killed and the error
+    re-raised (asyncio.TimeoutError / CancelledError)."""
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout)
+    except BaseException:
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except (OSError, ProcessLookupError):
+                pass
+            try:
+                await asyncio.wait_for(proc.wait(), 10.0)
+            except BaseException:  # noqa: BLE001 - the kill was sent; do not hang the request on the reap
+                pass
+        raise
+
+
+async def _run_ffmpeg(cmd: list[str], out: str, timeout: Optional[float] = None) -> bool:
+    """Runs ffmpeg to write `out`; False (and `out` removed) when it fails or takes longer than the timeout."""
+    try:
+        proc = await aproc.create_subprocess_exec(*cmd, stdout=aproc.PIPE, stderr=aproc.PIPE, stream_stdout=False)
+        await _communicate(proc, FFMPEG_TIMEOUT_S if timeout is None else timeout)
+    except asyncio.TimeoutError:
+        _unlink_quietly(out)
+        return False
+    except BaseException:
+        _unlink_quietly(out)
+        raise
+    ok = proc.returncode == 0 and Path(out).is_file() and Path(out).stat().st_size > 0
+    if not ok:
+        _unlink_quietly(out)
+    return ok
+
+
+async def probe_audio(ffmpeg_bin: str, src: Path) -> tuple[int, int]:
+    """(sample rate, bit depth 16 or 24) of the first audio stream, read from `ffmpeg -i` (no ffprobe needed).
+    Unknown values fall back to 44100 / 16; float and 32-bit sources count as 24."""
+    proc = await aproc.create_subprocess_exec(ffmpeg_bin, "-hide_banner", "-i", str(src), stdout=aproc.PIPE, stderr=aproc.PIPE, stream_stdout=False)
+    try:
+        _, err = await _communicate(proc, PROBE_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        err = b""  # the defaults below
+    text = (err or b"").decode("utf-8", "replace")
+    line = next((ln for ln in text.splitlines() if "Audio:" in ln), "")
+    m = re.search(r"(\d+) Hz", line)
+    rate = int(m.group(1)) if m else 44100
+    low = line.lower()
+    if "24 bit" in low or "s24" in low or re.search(r"\b(s32p?|flt|fltp|dbl|dblp)\b", low):
+        depth = 24
+    else:
+        depth = 16
+    return rate, depth
+
+
+async def write_tagged_copy(src: Path, tags: Mapping[str, str], cover: Optional[Path] = None, fmt: Optional[str] = None) -> Optional[Path]:
     """A tagged copy of `src` in a temp file (the caller deletes it), or None when ffmpeg is missing
-    or fails - the caller then serves the original."""
+    or fails. With `fmt` (mp3 | flac | wav) different from the source format the audio is transcoded in
+    the same single pass (mp3 CBR 320k, flac level 5, wav PCM; the source's sample rate and bit depth are
+    kept, mp3 caps at 48 kHz) and the cover, if any, is scaled to a JPEG of at most 1000 px; the caller then
+    must not serve the original. Same format as the source: stream copy."""
     ffmpeg_bin = get_ffmpeg_bin()
     if not ffmpeg_bin:
         return None
-    ext = src.suffix.lower().lstrip(".")
+    src_ext = src.suffix.lower().lstrip(".")
+    ext = src_ext
+    transcode = bool(fmt) and fmt != src_ext
+    if transcode:
+        ext = fmt
     with_cover = cover is not None and cover.is_file() and ext in {"mp3", "flac"}
     cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-y", "-i", str(src)]
     if with_cover:
@@ -216,20 +313,31 @@ async def write_tagged_copy(src: Path, tags: Mapping[str, str], cover: Optional[
                 "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"]
     else:
         cmd += ["-map", "0:a"]
-    cmd += ["-c", "copy", "-map_metadata", "-1"]
+    if transcode:
+        rate, depth = await probe_audio(ffmpeg_bin, src)
+        if ext == "mp3":
+            cmd += ["-c:a", "libmp3lame", "-b:a", "320k"]
+            if rate > 48000:
+                cmd += ["-ar", "48000"]
+        elif ext == "flac":
+            cmd += ["-c:a", "flac", "-compression_level", "5"]
+            cmd += ["-sample_fmt", "s32", "-bits_per_raw_sample", "24"] if depth == 24 else ["-sample_fmt", "s16"]
+        else:
+            cmd += ["-c:a", "pcm_s24le" if depth == 24 else "pcm_s16le"]
+        if with_cover:
+            vf = f"scale='if(gt(iw,{COVER_MAX_PX}),{COVER_MAX_PX},iw)':-2,format=yuvj420p"
+            cmd += ["-c:v", "mjpeg", "-q:v", "2", "-vf", vf]
+        cmd += ["-map_metadata", "-1"]
+    else:
+        cmd += ["-c", "copy", "-map_metadata", "-1"]
     if ext == "mp3":
         cmd += ["-id3v2_version", "3"]
     for key, value in tags.items():
         cmd += ["-metadata", f"{key}={value}"]
-    fd, out = tempfile.mkstemp(suffix=f".{ext}")
+    DOWNLOAD_TMP_DIR.mkdir(parents=True, exist_ok=True)
+    fd, out = tempfile.mkstemp(suffix=f".{ext}", dir=str(DOWNLOAD_TMP_DIR))
     os.close(fd)
     cmd.append(out)
-    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    _, _ = await proc.communicate()
-    if proc.returncode != 0 or not Path(out).stat().st_size:
-        try:
-            os.unlink(out)
-        except OSError:
-            pass
+    if not await _run_ffmpeg(cmd, out):
         return None
     return Path(out)

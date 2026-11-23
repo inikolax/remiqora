@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The guide of "From an idea", in the editor guide's look: a quick start, what the assistant writes for
 // each engine, who writes the prompt, the assistant and the GPU, what comes after the prompt, tips and limits.
-// Opened from the idea page and from the app's help.
+// Opened from the home page's "More" and from the app's help.
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import HelpModal from '../shared/HelpModal.vue'

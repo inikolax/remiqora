@@ -9,6 +9,7 @@ from __future__ import annotations
 import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
 
 from ..config import MODELS
 from ..orchestrator.manager import manager
@@ -23,6 +24,22 @@ _HOP_BY_HOP = {
 }
 
 _client = httpx.AsyncClient(timeout=None)
+
+
+class _UpstreamResponse(StreamingResponse):
+    """Streams the engine's answer and closes the upstream response however the stream ends. The generator's own
+    finally does not run when the client went away before the first chunk was asked for (the generator was never
+    started), and a BackgroundTask does not run on a disconnect half way; this finally always does."""
+
+    def __init__(self, *args, upstream: httpx.Response, **kwargs) -> None:
+        super().__init__(*args, background=BackgroundTask(upstream.aclose), **kwargs)
+        self._upstream = upstream
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._upstream.aclose()  # idempotent: a second close after the generator's is a no-op
 
 
 async def _proxy_to(base_url: str, request: Request, path: str) -> Response:
@@ -46,8 +63,9 @@ async def _proxy_to(base_url: str, request: Request, path: str) -> Response:
         finally:
             await upstream.aclose()
 
-    return StreamingResponse(
+    return _UpstreamResponse(
         body_stream(),
+        upstream=upstream,
         status_code=upstream.status_code,
         headers=response_headers,
         media_type=upstream.headers.get("content-type"),

@@ -1,27 +1,51 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MemoryHolder } from '../../api/system'
+import type { ModelRuntimeStatus } from '../../types'
 import { useSystemStore } from '../../stores/system'
 import { useOrchestratorStore } from '../../stores/orchestrator'
 import { MODEL_LABELS } from '../../composables/useModelSwitch'
+import { useDismiss } from '../../composables/useDismiss'
 import ChevronIcon from './icons/ChevronIcon.vue'
 
-// RAM and video memory in use: two small meters in the header, and the details (who holds how much, the card's
-// load and temperature) in a panel on click. A meter turns amber from 80 % and red from 92 %: that is where a
-// render starts to swap or runs out of memory. Same as Remiqora Video's header.
-/** stacked: RAM above video memory, in aligned columns (the header's layout); the numbers only from 1536 px,
- *  narrower the header needs the room, and they are in the panel a click away. Below 1280 px the two meters
- *  become two small rings with their names under them, so the memory stays in sight on any window. */
-const props = defineProps<{ stacked?: boolean }>()
+// The header's status unit, the studio's master meter: what holds the GPU (its light and name) and how full the
+// video memory is, in one button. A click opens the details: the engine's state, video memory and RAM with who
+// holds how much, the card's load and temperature, the button that unloads the model and the way to Models.
+// A bar turns amber from 80 % and red from 92 %: that is where a render starts to swap or runs out of memory.
+// What shows on the button depends on the window: the light and the bar always, the engine's name from lg,
+// the numbers from xl. On a computer without video memory figures (a Mac) the bar is the RAM's.
 const { t } = useI18n()
 const system = useSystemStore()
+const orchestrator = useOrchestratorStore()
+const uid = useId()
 const open = ref(false)
+const trigger = ref<HTMLButtonElement | null>(null)
+const panel = ref<HTMLElement | null>(null)
+useDismiss(open, () => [trigger.value, panel.value], () => { open.value = false }, { returnTo: () => trigger.value })
 watch(open, (v) => { if (!v) confirming.value = false })
+
+/** What holds the GPU: one engine at a time, chosen and started on Create. */
+const gpuModel = computed(() => orchestrator.activeModel)
+const gpuStatus = computed<ModelRuntimeStatus>(() => (gpuModel.value ? orchestrator.statuses[gpuModel.value]?.status ?? 'stopped' : 'stopped'))
+const engineOn = computed(() => !!gpuModel.value && gpuStatus.value !== 'stopped')
+const LED_CLASSES: Record<ModelRuntimeStatus, string> = {
+  stopped: 'border border-text-dim/70',
+  // no pulse when the system asks for reduced motion
+  starting: 'bg-status-queued animate-pulse motion-reduce:animate-none',
+  running: 'bg-status-done shadow-[0_0_6px_var(--color-status-done)]',
+  stopping: 'bg-status-queued animate-pulse motion-reduce:animate-none',
+  error: 'bg-status-failed shadow-[0_0_6px_var(--color-status-failed)]',
+}
+/** On the button: the engine's name, or that the GPU is free. */
+const engineName = computed(() => (engineOn.value && gpuModel.value ? MODEL_LABELS[gpuModel.value] : t('header.gpuFree')))
+/** In the details and for a screen reader: "YuE2-3B is running", "GPU is free". */
+const statusLine = computed(() => (engineOn.value && gpuModel.value
+  ? t(`resources.state.${gpuStatus.value}`, { model: MODEL_LABELS[gpuModel.value] })
+  : t('header.gpuFree')))
 
 // Unloading: stops the engine that holds the GPU, freeing its video memory; the next generation starts it again.
 // It cuts a running generation short, so the first click only asks.
-const orchestrator = useOrchestratorStore()
 const confirming = ref(false)
 const unloading = ref(false)
 const unloadError = ref('')
@@ -46,20 +70,35 @@ async function unload() {
     confirming.value = false
   }
 }
-const root = ref<HTMLElement | null>(null)
 
 const ram = computed(() => system.resources?.ram ?? null)
 const vram = computed(() => system.resources?.vram ?? null)
 const HOLDER_COLORS: Record<MemoryHolder, string> = {
-  ace_step: '#a855f7', yue2: '#3b82f6', stable_audio: '#f59e0b', demucs: '#10b981', backend: '#06b6d4', other: '#64748b',
+  ace_step: '#a855f7', yue2: '#3b82f6', stable_audio: '#f59e0b', demucs: '#10b981', cover: '#ec4899', backend: '#06b6d4', other: '#64748b',
 }
 
 const gb = (bytes: number | null | undefined) => (bytes == null || !Number.isFinite(bytes) ? '–' : (bytes / 1024 ** 3).toFixed(1))
+/** A total as people say it: a 15.99 GB card is "16". */
+const gbTotal = (bytes: number | null | undefined) => {
+  if (bytes == null || !Number.isFinite(bytes)) return '–'
+  const v = bytes / 1024 ** 3
+  return Math.abs(v - Math.round(v)) < 0.06 ? String(Math.round(v)) : v.toFixed(1)
+}
 const pct = (used: number, total: number) => Math.min(100, Math.round((used / total) * 100))
 const level = (used: number, total: number) => {
   const f = used / total
   return f >= 0.92 ? 'bg-status-failed' : f >= 0.8 ? 'bg-status-queued' : 'bg-accent1'
 }
+
+/** The button's meter: video memory, or the RAM where there are no video memory figures. */
+const meter = computed(() => {
+  if (vram.value) return { ...vram.value, label: t('resources.vramLong'), of: 'resources.vramOf' as const }
+  if (ram.value) return { ...ram.value, label: t('resources.ramLong'), of: 'resources.ramOf' as const }
+  return null
+})
+const buttonLabel = computed(() => (meter.value
+  ? `${statusLine.value}. ${t(meter.value.of, { used: gb(meter.value.used), total: gbTotal(meter.value.total) })}`
+  : statusLine.value))
 
 const vramHolders = computed(() =>
   (system.resources?.vram_by ?? [])
@@ -75,110 +114,58 @@ const ramHolders = computed(() =>
     .filter(([, bytes]) => bytes >= 50 * 1024 ** 2)
     .map(([key, bytes]) => ({ key, bytes, label: t(`resources.holder.${key}`) })),
 )
-/** The ring's colour follows the same thresholds as the bars. */
-const ringLevel = (used: number, total: number) => {
-  const f = used / total
-  return f >= 0.92 ? 'text-status-failed' : f >= 0.8 ? 'text-status-queued' : 'text-accent1'
-}
-const RING_C = 2 * Math.PI * 8
-const meters = computed(() => [
-  ram.value && { key: 'ram', label: t('resources.ram'), ...ram.value },
-  vram.value && { key: 'vram', label: t('resources.vram'), ...vram.value },
-].filter((m): m is NonNullable<typeof m> => !!m))
-const ringTitle = (m: { label: string; used: number; total: number }) =>
-  `${m.label}: ${gb(m.used)} / ${gb(m.total)} ${t('resources.unit')} · ${pct(m.used, m.total)}%`
-
-const vramTitle = computed(() => vramHolders.value.map((h) => `${h.label}: ${gb(h.bytes)} ${t('resources.unit')}`).join(' · '))
-
-function onDocClick(e: MouseEvent) {
-  if (open.value && root.value && !root.value.contains(e.target as Node)) open.value = false
-}
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') open.value = false
-}
-onMounted(() => {
-  document.addEventListener('click', onDocClick)
-  document.addEventListener('keydown', onKey)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocClick)
-  document.removeEventListener('keydown', onKey)
-})
 </script>
 
 <template>
-  <div v-if="ram || vram" ref="root" class="relative">
-    <!-- the header: two small meters -->
+  <div class="relative min-w-0">
+    <!-- The master meter. Its bar's track is lighter than the header, so an empty card still reads as a meter. -->
     <button
+      ref="trigger"
       type="button"
-      class="rounded-lg border px-2.5 py-0.5 text-xs text-text-dim transition-colors hover:border-accent1/50 hover:bg-panel hover:text-text"
-      :class="[
-        props.stacked ? 'flex items-center gap-2 py-1 xl:grid xl:grid-cols-[auto_3rem_auto] xl:gap-x-2 xl:gap-y-1 xl:py-1.5 2xl:grid-cols-[auto_3rem_auto_auto]' : 'flex items-center gap-3',
-        open ? 'border-accent1/50 bg-panel text-text' : 'border-border bg-panel-2/40',
-      ]"
+      class="flex h-9 min-w-0 max-w-full items-center gap-2 rounded-lg border px-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent1 sm:px-2.5"
+      :class="open ? 'border-accent1/50 bg-panel text-text' : 'border-border bg-panel-2/40 text-text-dim hover:border-accent1/50 hover:bg-panel hover:text-text'"
+      :aria-label="buttonLabel"
+      :title="buttonLabel"
+      aria-haspopup="dialog"
       :aria-expanded="open"
-      :aria-label="t('resources.title')"
-      :title="vramTitle || t('resources.title')"
+      :aria-controls="open ? `${uid}-details` : undefined"
       @click="open = !open"
     >
-      <!-- narrow window: a ring per meter, its name under it -->
-      <template v-if="props.stacked">
-        <span v-for="m in meters" :key="`ring-${m.key}`" class="flex flex-col items-center gap-0.5 xl:hidden" :title="ringTitle(m)">
-          <svg viewBox="0 0 20 20" class="h-5 w-5 -rotate-90" :class="ringLevel(m.used, m.total)" role="progressbar" :aria-valuenow="pct(m.used, m.total)" aria-valuemin="0" aria-valuemax="100" :aria-label="m.label">
-            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-opacity="0.18" stroke-width="3" />
-            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="transition-[stroke-dasharray] duration-500" :stroke-dasharray="`${(pct(m.used, m.total) / 100) * RING_C} ${RING_C}`" />
-          </svg>
-          <span class="text-[10px] leading-3 whitespace-nowrap">{{ m.label }}</span>
-        </span>
-      </template>
-      <span v-for="m in meters" :key="m.key" :class="props.stacked ? 'hidden xl:contents' : 'contents'">
-        <span :class="props.stacked ? 'contents' : 'flex items-center gap-1.5'">
-          <span class="whitespace-nowrap text-start">{{ m.label }}</span>
-          <span class="flex h-1.5 w-12 overflow-hidden rounded-full bg-panel-2" role="progressbar" :aria-valuenow="pct(m.used, m.total)" aria-valuemin="0" aria-valuemax="100" :aria-label="m.label">
-            <template v-if="m.key === 'vram' && segments.length">
-              <span v-for="g in segments" :key="g.key" class="block h-full transition-[width] duration-500" :style="{ width: g.pct + '%', background: g.color }"></span>
-            </template>
-            <span v-else class="block h-full transition-[width] duration-500" :class="level(m.used, m.total)" :style="{ width: pct(m.used, m.total) + '%' }"></span>
-          </span>
-          <span class="whitespace-nowrap text-end tabular-nums text-text" :class="props.stacked && 'hidden 2xl:inline'">{{ gb(m.used) }}<span class="text-text-dim">/{{ gb(m.total) }} {{ t('resources.unit') }}</span></span>
-        </span>
+      <span class="h-2 w-2 shrink-0 rounded-full" :class="LED_CLASSES[gpuStatus]" aria-hidden="true"></span>
+      <span class="hidden min-w-0 max-w-[10rem] truncate lg:block" :class="engineOn ? 'font-semibold text-text' : 'font-medium'">{{ engineName }}</span>
+      <span v-if="meter" class="flex h-1 w-8 shrink-0 overflow-hidden rounded-full bg-text-dim/30 sm:w-14" aria-hidden="true">
+        <span class="block h-full rounded-full" :class="level(meter.used, meter.total)" :style="{ width: pct(meter.used, meter.total) + '%' }"></span>
       </span>
+      <span v-if="meter" class="hidden whitespace-nowrap tabular-nums text-text-dim xl:inline">{{ gb(meter.used) }} / {{ gbTotal(meter.total) }} {{ t('resources.unit') }}</span>
       <!-- a button, not a readout: the arrow says a click opens the details -->
-      <ChevronIcon class="h-3.5 w-3.5 shrink-0 transition-transform" :class="[props.stacked && 'row-span-2 row-start-1 [grid-column:-2]', open && 'rotate-180']" />
+      <ChevronIcon class="hidden h-3.5 w-3.5 shrink-0 text-text-dim transition-transform motion-reduce:transition-none sm:block" :class="open && 'rotate-180'" />
     </button>
 
-    <!-- the details -->
+    <!-- The details. On a phone the full width under the header (the header's backdrop blur makes it the containing
+         block of a fixed box); wider, under the button and aligned to its end. -->
     <div
       v-if="open"
+      :id="`${uid}-details`"
+      ref="panel"
       role="dialog"
       :aria-label="t('resources.title')"
-      class="absolute end-0 top-full z-50 mt-1 w-[min(24rem,calc(100vw-2rem))] space-y-3 rounded-xl border border-border bg-panel p-4 text-xs text-text shadow-xl"
+      class="fixed inset-x-4 top-[calc(var(--header-h,4rem)+0.25rem)] z-50 space-y-3 rounded-xl border border-border bg-panel p-4 text-xs text-text shadow-xl sm:absolute sm:inset-x-auto sm:end-0 sm:top-full sm:mt-2 sm:w-[min(24rem,calc(100vw-2rem))]"
     >
-      <div v-if="ram">
-        <div class="mb-1 flex items-center justify-between">
-          <span class="text-text-dim">{{ t('resources.ramLong') }}</span>
-          <span class="tabular-nums"><span class="font-medium">{{ gb(ram.used) }}</span> / {{ gb(ram.total) }} {{ t('resources.unit') }} · {{ pct(ram.used, ram.total) }}%</span>
-        </div>
-        <div class="flex h-2 w-full overflow-hidden rounded-full bg-panel-2">
-          <div class="h-full transition-[width] duration-500" :class="level(ram.used, ram.total)" :style="{ width: pct(ram.used, ram.total) + '%' }"></div>
-        </div>
-        <ul v-if="ramHolders.length" class="mt-2 space-y-0.5 text-text-dim">
-          <li v-for="h in ramHolders" :key="h.key" class="flex justify-between gap-3">
-            <span>{{ t('resources.holds', { who: h.label }) }}</span>
-            <span class="tabular-nums text-text">{{ gb(h.bytes) }} {{ t('resources.unit') }}</span>
-          </li>
-        </ul>
-      </div>
+      <!-- the engine's state -->
+      <p class="flex items-center gap-2 text-[13px] font-semibold">
+        <span class="h-2 w-2 shrink-0 rounded-full" :class="LED_CLASSES[gpuStatus]" aria-hidden="true"></span>
+        <span class="min-w-0">{{ statusLine }}</span>
+      </p>
       <div v-if="vram" class="border-t border-border/60 pt-3">
         <div class="mb-1 flex items-center justify-between gap-3">
           <span class="truncate text-text-dim">{{ vram.name || t('resources.vramLong') }}</span>
-          <span class="shrink-0 tabular-nums"><span class="font-medium">{{ gb(vram.used) }}</span> / {{ gb(vram.total) }} {{ t('resources.unit') }} · {{ pct(vram.used, vram.total) }}%</span>
+          <span class="flex shrink-0 gap-2 tabular-nums"><span><span class="font-medium">{{ gb(vram.used) }}</span> / {{ gbTotal(vram.total) }} {{ t('resources.unit') }}</span><span class="text-text-dim">{{ pct(vram.used, vram.total) }}%</span></span>
         </div>
-        <div class="flex h-2 w-full overflow-hidden rounded-full bg-panel-2">
+        <div class="flex h-2 w-full overflow-hidden rounded-full bg-panel-2" role="progressbar" :aria-valuenow="pct(vram.used, vram.total)" aria-valuemin="0" aria-valuemax="100" :aria-label="t('resources.vramLong')">
           <template v-if="segments.length">
-            <div v-for="g in segments" :key="g.key" class="h-full transition-[width] duration-500" :style="{ width: g.pct + '%', background: g.color }"></div>
+            <div v-for="g in segments" :key="g.key" class="h-full" :style="{ width: g.pct + '%', background: g.color }"></div>
           </template>
-          <div v-else class="h-full transition-[width] duration-500" :class="level(vram.used, vram.total)" :style="{ width: pct(vram.used, vram.total) + '%' }"></div>
+          <div v-else class="h-full" :class="level(vram.used, vram.total)" :style="{ width: pct(vram.used, vram.total) + '%' }"></div>
         </div>
         <ul v-if="vramHolders.length" class="mt-2 space-y-1.5">
           <li v-for="g in vramHolders" :key="g.key" class="flex items-center gap-2">
@@ -187,35 +174,62 @@ onBeforeUnmount(() => {
             <span class="shrink-0 tabular-nums">{{ gb(g.bytes) }} {{ t('resources.unit') }}</span>
           </li>
         </ul>
-        <p v-if="vram.load != null || vram.temp != null" class="mt-2 text-text-dim">
-          <template v-if="vram.load != null">{{ t('resources.load', { n: vram.load }) }}</template><template v-if="vram.load != null && vram.temp != null"> · </template><template v-if="vram.temp != null">{{ vram.temp }}°C</template>
+        <p v-if="vram.load != null || vram.temp != null" class="mt-2 flex gap-3 text-text-dim">
+          <span v-if="vram.load != null">{{ t('resources.load', { n: vram.load }) }}</span>
+          <span v-if="vram.temp != null">{{ vram.temp }}°C</span>
         </p>
       </div>
-      <!-- the loaded engine, and a way to unload it -->
-      <div class="border-t border-border/60 pt-3">
-        <template v-if="loaded">
-          <div class="flex items-center gap-3">
-            <p class="min-w-0 flex-1 text-text-dim">
-              {{ confirming ? t('resources.unloadConfirm') : t('resources.loaded', { model: MODEL_LABELS[loaded] }) }}
-            </p>
-            <button
-              type="button"
-              class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium transition-colors disabled:opacity-50"
-              :class="confirming ? 'border-status-failed/60 bg-status-failed/15 text-status-failed hover:bg-status-failed/25' : 'border-border text-text hover:border-accent1/50 hover:bg-panel-2'"
-              :disabled="unloading"
-              @click="unload"
-            >
-              <span v-if="unloading" class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true"></span>
-              {{ unloading ? t('resources.unloading') : confirming ? t('resources.unloadYes') : t('resources.unload') }}
-            </button>
-            <button v-if="confirming && !unloading" type="button" class="shrink-0 rounded-lg px-2 py-1.5 text-text-dim hover:text-text" @click="confirming = false">
-              {{ t('common.cancel') }}
-            </button>
-          </div>
-          <p v-if="!confirming" class="mt-1 text-[11px] leading-snug text-text-dim">{{ t('resources.unloadHint') }}</p>
-        </template>
-        <p v-else class="text-text-dim">{{ t('resources.noneLoaded') }}</p>
-        <p v-if="unloadError" class="mt-1 text-status-failed">{{ unloadError }}</p>
+      <div v-if="ram" class="border-t border-border/60 pt-3">
+        <div class="mb-1 flex items-center justify-between gap-3">
+          <span class="text-text-dim">{{ t('resources.ramLong') }}</span>
+          <span class="flex shrink-0 gap-2 tabular-nums"><span><span class="font-medium">{{ gb(ram.used) }}</span> / {{ gbTotal(ram.total) }} {{ t('resources.unit') }}</span><span class="text-text-dim">{{ pct(ram.used, ram.total) }}%</span></span>
+        </div>
+        <div class="flex h-2 w-full overflow-hidden rounded-full bg-panel-2" role="progressbar" :aria-valuenow="pct(ram.used, ram.total)" aria-valuemin="0" aria-valuemax="100" :aria-label="t('resources.ramLong')">
+          <div class="h-full" :class="level(ram.used, ram.total)" :style="{ width: pct(ram.used, ram.total) + '%' }"></div>
+        </div>
+        <ul v-if="ramHolders.length" class="mt-2 space-y-0.5 text-text-dim">
+          <li v-for="h in ramHolders" :key="h.key" class="flex justify-between gap-3">
+            <span>{{ t('resources.holds', { who: h.label }) }}</span>
+            <span class="tabular-nums text-text">{{ gb(h.bytes) }} {{ t('resources.unit') }}</span>
+          </li>
+        </ul>
+      </div>
+      <!-- unloading the engine, and the way to Models, where engines are installed and set up -->
+      <div class="space-y-3 border-t border-border/60 pt-3">
+        <div v-if="loaded" class="flex items-center gap-3">
+          <p class="min-w-0 flex-1 leading-snug text-text-dim">
+            {{ confirming ? t('resources.unloadConfirm') : t('resources.unloadHint') }}
+          </p>
+          <button
+            type="button"
+            class="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent1 disabled:opacity-50"
+            :class="confirming ? 'border-status-failed/60 bg-status-failed/15 text-status-failed hover:bg-status-failed/25' : 'border-border text-text hover:border-accent1/50 hover:bg-panel-2'"
+            :disabled="unloading"
+            @click="unload"
+          >
+            <span v-if="unloading" class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" aria-hidden="true"></span>
+            {{ unloading ? t('resources.unloading') : confirming ? t('resources.unloadYes') : t('resources.unload') }}
+          </button>
+          <button
+            v-if="confirming && !unloading" type="button"
+            class="min-h-8 shrink-0 rounded-lg px-2 py-1.5 text-text-dim hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent1"
+            @click="confirming = false"
+          >
+            {{ t('common.cancel') }}
+          </button>
+        </div>
+        <p v-if="unloadError" class="text-status-failed">{{ unloadError }}</p>
+        <router-link
+          to="/models"
+          class="inline-flex min-h-8 items-center gap-2 rounded-lg px-2 py-1.5 -ms-2 font-medium text-accent1-text hover:bg-panel-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent1"
+          @click="open = false"
+        >
+          <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          {{ t('header.models') }}
+        </router-link>
       </div>
     </div>
   </div>

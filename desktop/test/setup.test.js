@@ -127,6 +127,8 @@ test('the backend environment points every path at the data root', () => {
   assert.equal(env.HF_HOME, L.hfHome, 'model caches stay inside the chosen folder');
   assert.equal(env.TORCH_HOME, L.torchHome);
   assert.equal(env.CUDA_BIN_DIR, L.yue2Bin);
+  assert.equal(env.SDCPP_DIR, L.sdcpp, 'the cover engine the installer put there');
+  assert.equal(L.sdcpp, path.join(L.root, 'engines', 'sdcpp'));
   assert.ok(env.PATH.split(path.delimiter).includes(L.uvDir));
   assert.equal(env.ELECTRON_RUN_AS_NODE, undefined);
 });

@@ -394,7 +394,8 @@ export const useAiPartsStore = defineStore('aiParts', {
       this.discarded = this.discarded.filter((v) => usedUrls.has(v.url))
       for (const v of drop) {
         try {
-          await tracksApi.deleteTrack(v.trackId as number)
+          // the app's own clean-up, not the user's delete: past the trash
+          await tracksApi.deleteTrack(v.trackId as number, { permanent: true })
         } catch {
           // already gone; nothing references it
         }

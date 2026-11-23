@@ -20,7 +20,7 @@ from .routes_proxy import _proxy_to
 
 router = APIRouter(prefix="/api", tags=["engines"])
 
-ENGINES = ("ace_step", "yue2", "stable_audio", "demucs")
+ENGINES = ("ace_step", "yue2", "stable_audio", "demucs", "cover")
 
 
 def _engine(engine: str) -> dict:
@@ -38,7 +38,7 @@ def _engine(engine: str) -> dict:
         out["started"] = manager.started_settings.get(engine)
     if engine in manager.state.models:
         out["status"] = manager.state.models[engine].status.value
-    if engine in ("ace_step", "yue2"):
+    if engine in ("ace_step", "yue2", "cover"):
         out["ready"] = engine_parts.engine_ready(engine)
         out["parts"] = engine_parts.snapshot(engine)
         out["on_disk"] = engine_parts.engine_bytes(engine)

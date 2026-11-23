@@ -3,12 +3,12 @@
 import { apiFetch, apiJson } from './http'
 import type { Sa3ModelId } from './stableAudio'
 
-export type EngineId = 'ace_step' | 'yue2' | 'stable_audio' | 'demucs'
+export type EngineId = 'ace_step' | 'yue2' | 'stable_audio' | 'demucs' | 'cover'
 
 export interface EnginePart {
   id: string
   /** main: ACE-Step's core bundle; dit / lm: ACE-Step checkpoints; common / precision: YuE2 weights. */
-  kind: 'main' | 'dit' | 'lm' | 'common' | 'precision'
+  kind: 'main' | 'dit' | 'lm' | 'common' | 'precision' | 'server'
   bytes: number
   required: boolean
   /** Can be removed again from the Models page (not while its engine runs). */
@@ -37,7 +37,8 @@ export interface EngineInfo {
 }
 
 export interface EnginesState {
-  engines: Record<EngineId, EngineInfo>
+  /** cover: absent on an older backend. */
+  engines: Record<Exclude<EngineId, 'cover'>, EngineInfo> & { cover?: EngineInfo }
   /** The part downloading now (one at a time). */
   downloading: string | null
 }

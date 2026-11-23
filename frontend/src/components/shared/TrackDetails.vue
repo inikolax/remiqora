@@ -7,7 +7,8 @@ import { useI18n } from 'vue-i18n'
 import CopyIcon from './icons/CopyIcon.vue'
 import CheckIcon from './icons/CheckIcon.vue'
 
-const props = defineProps<{ styleText?: string; lyrics?: string }>()
+/** `iconCopy`: the style's Copy as a small icon button in the block's corner (the library's details panel). */
+const props = defineProps<{ styleText?: string; lyrics?: string; iconCopy?: boolean }>()
 const { t } = useI18n()
 
 // Tags: a comma-separated list of short items. A long free-text description (ACE-Step "Simple" mode)
@@ -66,6 +67,16 @@ async function copy(what: 'style' | 'lyrics') {
           {{ t('trackDetails.style') }}
         </h4>
         <button
+          v-if="iconCopy" type="button"
+          class="-me-1.5 -mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-accent1 motion-reduce:transition-none"
+          :class="copied === 'style' ? 'text-status-done' : 'text-text-dim hover:bg-panel hover:text-text'"
+          :aria-label="t('trackDetails.copyStyle')" :title="copied === 'style' ? t('trackDetails.copied') : t('trackDetails.copyStyle')" @click="copy('style')"
+        >
+          <CheckIcon v-if="copied === 'style'" class="h-3.5 w-3.5" />
+          <CopyIcon v-else class="h-3.5 w-3.5" />
+        </button>
+        <button
+          v-else
           type="button"
           class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
           :class="copied === 'style' ? 'border-status-done/50 bg-status-done/10 text-status-done' : 'border-border bg-panel text-text-dim hover:border-accent1/60 hover:text-text'"
@@ -76,6 +87,7 @@ async function copy(what: 'style' | 'lyrics') {
           {{ copied === 'style' ? t('trackDetails.copied') : t('trackDetails.copy') }}
         </button>
       </div>
+      <p v-if="iconCopy" class="sr-only" role="status" aria-live="polite">{{ copied === 'style' ? t('trackDetails.copied') : '' }}</p>
       <ul v-if="tags.length" class="flex flex-wrap gap-1.5">
         <li v-for="(tag, i) in tags" :key="i" class="rounded-full border border-accent1/30 bg-accent1/10 px-2.5 py-0.5 text-xs text-text">
           {{ tag }}

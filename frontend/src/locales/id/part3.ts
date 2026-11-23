@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'Ekstrak melodi dari audio (SheetSage2)',
     unloadSheetSage: 'Bongkar SheetSage2 setelah ekstraksi',
     extract: 'Ekstrak ABC',
-    extracting: 'Mengekstrak…',
     randomSeed: 'Seed acak',
     cfgScale: 'Skala CFG',
     defaultValuePlaceholder: 'bawaan {value}',

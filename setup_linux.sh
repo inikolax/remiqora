@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Remiqora from source on Linux with an NVIDIA GPU: clones ACE-Step 1.5 and audio.cpp (YuE2), applies our patch,
-# builds YuE2 with CUDA, downloads its weights, sets up Demucs, Stable Audio 3 and the prompt assistant, and writes
-# backend/.env. Run it again any time: what is done is skipped, a newer ACE-Step patch is applied again.
+# builds YuE2 with CUDA, downloads its weights, sets up Demucs, Stable Audio 3, the prompt assistant and the album-cover
+# engine, and writes backend/.env. Run it again any time: what is done is skipped, a newer ACE-Step patch is applied again.
 #   SKIP_WEIGHTS=1               leave out YuE2's weights (to download them later)
 #   STABLE_AUDIO_MODELS="medium small-sfx"   Stable Audio 3 checkpoints to download now (or later in the app)
 #   PROMPT_ASSISTANT_MODEL=Qwen/Qwen3.5-2B   the assistant's model to download now (or later on the Models page)
 #   ACE_BASE=1                   download the ACE-Step base model for the AI arranger without asking
+#   SKIP_COVERS=1                leave out the album-cover engine (sd.cpp + Z-Image Turbo, ~9.5 GB; or later in the app)
 #   REMIQORA_LANG=ru|en          the language of the messages
 set -euo pipefail
 
@@ -254,6 +255,93 @@ else
     ok "$(t 'Скачана' 'Downloaded')"
   else
     note "$(t 'Позже: ACE_BASE=1 ./setup_linux.sh, или скачайте её из приложения.' 'Later: ACE_BASE=1 ./setup_linux.sh, or download it from the app.')"
+  fi
+fi
+
+# ---------------------------------------------------------------- album covers
+# stable-diffusion.cpp's prebuilt sd-server (Vulkan: no Linux CUDA build is published, Vulkan runs on NVIDIA too) and
+# the Z-Image Turbo weights, in the layout the backend reads (SDCPP_DIR/bin, SDCPP_DIR/models; SDCPP_DIR defaults to
+# external/sdcpp). The same release and files as backend/app/engine_parts.py (SDCPP_RELEASE, _SDCPP_ZIPS, COVER_FILES)
+# and desktop/manifest.json ("cover"): bump them together. A failure here only warns, the rest of the install goes on:
+# the Models page fetches what is missing.
+step "$(t 'Обложки альбомов: stable-diffusion.cpp + Z-Image Turbo (~9,5 ГБ)' 'Album covers: stable-diffusion.cpp + Z-Image Turbo (~9.5 GB)')"
+SDCPP_RELEASE="master-1106-532d2c1"
+SDCPP_ZIP="sd-master-532d2c1-bin-Linux-Ubuntu-26.04-x86_64-vulkan.zip"
+SDCPP_DIR="$EXTERNAL_DIR/sdcpp"
+
+file_bytes() { if [[ -f "$1" ]]; then wc -c < "$1" | tr -d ' '; else echo 0; fi; }
+
+# fetch_pinned url path bytes sha256: curl with retries, a half download resumed (-C -), then the sha256; a file that
+# does not match is removed. Files already there with the right size are not downloaded again.
+fetch_pinned() {
+  local url="$1" path="$2" bytes="$3" sha256="$4" name actual
+  name="$(basename "$path")"
+  if [[ "$(file_bytes "$path")" != "$bytes" ]]; then
+    run_step "$(t 'Скачиваю' 'Downloading') $name ($(( bytes / 1000000 )) MB)" "covers-$name" \
+      curl -fL --retry 3 --retry-delay 5 -C - -o "$path" "$url" || return 1
+  fi
+  actual="$(sha256sum "$path" | cut -d' ' -f1)"
+  if [[ "$actual" != "$sha256" ]]; then
+    rm -f "$path"
+    warn "$(t "Не совпала контрольная сумма sha256, файл удалён: $name" "The sha256 does not match, the file was removed: $name")"
+    return 1
+  fi
+}
+
+# fetch_weight name bytes sha256 url: a file already there with the right size is kept as it is
+fetch_weight() {
+  if [[ "$(file_bytes "$SDCPP_DIR/models/$1")" == "$2" ]]; then
+    ok "$(t 'Уже на месте:' 'Already in place:') $1"
+    return 0
+  fi
+  fetch_pinned "$4" "$SDCPP_DIR/models/$1" "$2" "$3" && ok "$1"
+}
+
+install_sd_server() {
+  local zip="$SDCPP_DIR/dl/$SDCPP_ZIP" bin
+  fetch_pinned "https://github.com/leejet/stable-diffusion.cpp/releases/download/$SDCPP_RELEASE/$SDCPP_ZIP" "$zip" \
+    42212329 ca30fe17f1735cdfb4c8561b75799070c25cc86a9e5438f4c0e1b163baae4e12 || return 1
+  # the zip is flat: unpacked into bin/ with Python's zipfile (like the Models page), which drops the exec bits
+  "$PYTHON_BIN" -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$zip" "$SDCPP_DIR/bin" || return 1
+  for bin in sd-server sd-cli; do
+    if [[ -f "$SDCPP_DIR/bin/$bin" ]]; then chmod 755 "$SDCPP_DIR/bin/$bin"; fi
+  done
+  [[ -f "$SDCPP_DIR/bin/sd-server" ]] || return 1
+  rm -f "$zip"
+  ok "$(t "sd-server установлен ($SDCPP_RELEASE)" "sd-server is installed ($SDCPP_RELEASE)")"
+}
+
+install_covers() {
+  local failed=0
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "$(t 'Не найден curl: обложки пропущены.' 'curl was not found: covers skipped.')"
+    return 1
+  fi
+  mkdir -p "$SDCPP_DIR/bin" "$SDCPP_DIR/dl" "$SDCPP_DIR/models" || return 1
+  if [[ -f "$SDCPP_DIR/bin/sd-server" ]]; then
+    ok "$(t 'sd-server уже на месте' 'sd-server is already in place')"
+  else
+    install_sd_server || failed=1
+  fi
+  fetch_weight z_image_turbo-Q8_0.gguf 6577440704 df1c5baa86d1398c979495a6072dbcee79444fdb884a2445582ba0769c44e9a1 \
+    https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q8_0.gguf || failed=1
+  fetch_weight Qwen3-4B-Instruct-2507-Q4_K_M.gguf 2497281120 3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597 \
+    https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf || failed=1
+  fetch_weight ae.safetensors 335304388 afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38 \
+    https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors || failed=1
+  return "$failed"
+}
+
+if [[ "${SKIP_COVERS:-0}" == "1" ]]; then
+  note "$(t 'Пропущено (SKIP_COVERS=1). Их можно поставить позже на странице «Модели».' 'Skipped (SKIP_COVERS=1). Install them later on the Models page.')"
+else
+  if ! command -v vulkaninfo >/dev/null 2>&1 && ! { ldconfig -p 2>/dev/null | grep -q 'libvulkan\.so\.1'; }; then
+    warn "$(t 'Не найден загрузчик Vulkan: обложкам он нужен (libvulkan1 и mesa-vulkan-drivers или Vulkan-драйвер NVIDIA).' 'The Vulkan loader was not found: covers need it (libvulkan1 and mesa-vulkan-drivers, or NVIDIA'"'"'s Vulkan driver).')"
+  fi
+  if install_covers; then
+    ok "$(t 'Обложки готовы' 'Covers are ready')"
+  else
+    warn "$(t 'Обложки поставлены не полностью: запустите скрипт ещё раз (загрузки продолжатся) или докачайте на странице «Модели».' 'Covers are not fully installed: run the script again (downloads continue) or finish them on the Models page.')"
   fi
 fi
 

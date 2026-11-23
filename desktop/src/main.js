@@ -8,7 +8,7 @@ const { runChecks } = require('./bootstrap/checks');
 const { describePlan, runSetup, isSetupComplete } = require('./bootstrap/run');
 const { BackendServer } = require('./server');
 const { loadConfig, updateConfig, ensureWritableDir } = require('./config');
-const { FEATURE_IDS, PRECISIONS, detectInstalled, resolveSelection, featureSizes, sa3Offered, sa3Defaults } = require('./bootstrap/features');
+const { FEATURE_IDS, PRECISIONS, detectInstalled, resolveSelection, featureSizes, sa3Offered, sa3Defaults, coverOffered } = require('./bootstrap/features');
 const { signInWithHuggingFace } = require('./hfLogin');
 
 // Only these links can be opened from the first-run screen.
@@ -65,6 +65,7 @@ async function saveFeatures(picked) {
     stableAudio: !!picked.stableAudio,
     sa3Models: sa3Offered(manifest, PLATFORM).filter((m) => Array.isArray(picked.sa3Models) && picked.sa3Models.includes(m)),
     assistant: !!picked.assistant,
+    cover: !!picked.cover && coverOffered(manifest, PLATFORM),
   };
   savedFeatures = clean;
   await updateConfig(app.getPath('userData'), { features: clean });
@@ -76,7 +77,7 @@ async function saveFeatures(picked) {
  * was picked but not finished (an "add" left half way) does not hold the app back; its Install button resumes it.
  */
 function coreContext() {
-  const none = { yue2: false, yue2Precisions: [], demucs: false, aceBase: false, aceXl: false, stableAudio: false, sa3Models: [], assistant: false };
+  const none = { yue2: false, yue2Precisions: [], demucs: false, aceBase: false, aceXl: false, stableAudio: false, sa3Models: [], assistant: false, cover: false };
   return { ...ctx, selection: resolveSelection(none, ctx.installed) };
 }
 
@@ -228,8 +229,13 @@ function registerIpc() {
         sa3Models: sa3Offered(manifest, PLATFORM),
         sa3Defaults: sa3Defaults(manifest, PLATFORM),
         hfTokenSaved: !!pendingHfToken || !!sessionHfToken || !!savedHfToken(),
+        // album covers: offered where an sd.cpp build is pinned; ticked by default from this much video memory
+        coverOffered: coverOffered(manifest, PLATFORM),
+        coverVramMiB: manifest.cover.recommendedVramMiB,
         // nothing picked yet: the screen may still adjust the defaults to the card (q4_0 on a small one)
         untouched: savedFeatures === null,
+        // no state.json either: a first run, not an install from before the choice (those never get covers by default)
+        fresh: savedFeatures === null && !fs.existsSync(ctx.L.state),
       },
       neededBytes: neededBytes(plan),
       // Opened from the app to add parts: the server is running, setup is not a first run.

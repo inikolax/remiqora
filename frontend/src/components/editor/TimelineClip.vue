@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { Ref } from 'vue'
 import { stretchFactor } from '../../audio/timelineTypes'
 import type { Clip, EditorTool } from '../../audio/timelineTypes'
 import { bufferPeaks, PEAK_BLOCK } from '../../audio/waveformPeaks'
@@ -63,6 +64,9 @@ const maxTrimEnd = computed(() => props.sourceDuration ?? Infinity)
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 
 /** Clip buttons that are not switched on stay out of the waveform's way until the clip is hovered, focused or selected. */
+/** The editor's clips whose track is in the library's trash (provided by EditorPage; none elsewhere). */
+const trashedClipIds = inject<Ref<Set<string>> | null>('editor:trashedClipIds', null)
+const inTrash = computed(() => !!trashedClipIds?.value.has(props.clip.id))
 const idleButton = computed(() => (props.selected ? 'opacity-100' : 'opacity-0 group-hover/clip:opacity-100 group-focus-within/clip:opacity-100'))
 
 const duration = computed(() => (props.clip.trimEnd - props.clip.trimStart) * effectiveStretchFactor.value)
@@ -527,6 +531,14 @@ onBeforeUnmount(() => {
         :title="clip.sourceLabel"
       >
         {{ t('editor.sourceMissing') }}
+      </div>
+      <!-- the track is in the library's trash: it still plays; the editor's banner restores it -->
+      <div
+        v-else-if="inTrash"
+        class="absolute inset-x-0 bottom-0.5 truncate px-2 text-[11px] font-medium text-status-queued"
+        :title="t('editor.clipInTrashHint')"
+      >
+        {{ t('editor.clipInTrash') }}
       </div>
     </div>
 

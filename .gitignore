@@ -14,6 +14,8 @@ frontend/dist/
 external/ACE-Step-1.5/
 external/audio.cpp/
 external/Demucs/
+# stable-diffusion.cpp's sd-server + Z-Image-Turbo weights for covers (a junction to E:\ai\sdcpp on the dev box)
+external/sdcpp
 
 # Editor/OS
 .DS_Store

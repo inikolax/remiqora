@@ -5,8 +5,8 @@ import { useOrchestratorStore } from '../../stores/orchestrator'
 import { useAceStepStore } from '../../stores/aceStep'
 import * as trainingApi from '../../api/aceStepTraining'
 import ModelOfflineBanner from '../../components/shared/ModelOfflineBanner.vue'
+import EngineStartNotice from '../../components/shared/EngineStartNotice.vue'
 import GenerateForm from './GenerateForm.vue'
-import ResultsFeed from './ResultsFeed.vue'
 import AceStepTabs from './AceStepTabs.vue'
 
 const orchestrator = useOrchestratorStore()
@@ -25,14 +25,12 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => {
-  void store.loadHistory()
-  store.startBackgroundTasks()
-})
+// The history is loaded by Create, for all the engines at once.
+onMounted(() => store.startBackgroundTasks())
 onBeforeUnmount(() => store.stopBackgroundTasks())
 
 // Training and generation share the same GPU/model process, so while a LoRA
-// training run is active (started from the /ace-step/lora tab, possibly in
+// training run is active (started from ACE-Step's LoRA mode, possibly in
 // another browser tab) the generation form is replaced with a notice instead
 // of letting the user submit jobs that would just fail server-side.
 const isTraining = ref(false)
@@ -56,16 +54,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <AceStepTabs />
-    <ModelOfflineBanner v-if="!isRunning" model-id="ace_step" :status="modelStatus" :error="modelError" />
+  <div class="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+    <!-- from lg up the engine rail switches the modes -->
+    <AceStepTabs class="lg:hidden" />
+    <!-- stopped: the form works, Create starts the engine; a start under way or failed says so itself -->
+    <EngineStartNotice v-if="modelStatus === 'stopped'" model-id="ace_step" />
+    <ModelOfflineBanner v-else-if="!isRunning" model-id="ace_step" :status="modelStatus" :error="modelError" />
     <div v-else-if="isTraining" class="rounded-xl border border-status-queued/40 bg-status-queued/10 p-6 text-center text-sm text-text-dim">
       {{ t('acePage.trainingActive') }}
       <RouterLink to="/ace-step/lora" class="text-accent1 hover:underline">{{ t('acePage.openTrainingPage') }}</RouterLink>
     </div>
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-[480px_minmax(0,1fr)]">
-      <GenerateForm v-if="isRunning && !isTraining" />
-      <ResultsFeed :class="{ 'lg:col-span-2': !isRunning || isTraining }" />
-    </div>
+    <GenerateForm v-if="!isTraining" />
   </div>
 </template>

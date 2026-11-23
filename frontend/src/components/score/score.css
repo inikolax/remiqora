@@ -1,0 +1,67 @@
+/* The note editor's shared look (the approved mockup's controls), prefixed se- so nothing else picks it up. */
+.se-btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--color-border);font-size:12px;color:var(--color-text);white-space:nowrap;background:transparent;flex-shrink:0}
+.se-btn:hover:not(:disabled){background:var(--color-panel-2)}
+.se-btn:disabled{opacity:.4;cursor:default}
+.se-btn.icon{width:28px;padding:0;justify-content:center;color:var(--color-text-dim)}
+.se-btn.icon:hover:not(:disabled){color:var(--color-text)}
+.se-btn.grad{background:linear-gradient(135deg,var(--color-accent1-strong),var(--color-accent2-strong));border-color:transparent;color:#fff;font-weight:600}
+.se-btn.on{background:rgba(168,85,247,.18);border-color:rgba(168,85,247,.45);color:var(--color-text)}
+.se-btn.plain{border-color:transparent;color:var(--color-text-dim)}
+.se-btn.plain:hover{color:var(--color-text)}
+.se-btn.danger{color:#fca5a5}
+.se-btn svg{width:14px;height:14px;flex:none}
+.se-sep{width:1px;height:20px;background:var(--color-border);flex:none}
+.se-chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 9px;border-radius:9px;background:var(--color-panel-2);border:1px solid var(--color-border);font-size:12.5px;white-space:nowrap;color:var(--color-text)}
+.se-chip:hover:not(:disabled){border-color:#3d3d4d}
+.se-chip:disabled{opacity:.45}
+.se-chip .l{color:var(--color-text-dim);font-size:11.5px}
+.se-chip .v{font-weight:600}
+.se-chip .h{color:#6e6e80;font-size:11.5px}
+.se-chip svg{width:12px;height:12px;color:#6e6e80}
+.se-seg{display:inline-flex;border:1px solid var(--color-border);border-radius:8px;overflow:hidden;font-size:12px;height:28px;flex-shrink:0}
+.se-seg>button{padding:0 9px;display:flex;align-items:center;gap:5px;color:var(--color-text-dim);white-space:nowrap}
+.se-seg>button+button{border-left:1px solid var(--color-border)}
+.se-seg>button:hover:not(:disabled){color:var(--color-text)}
+.se-seg>button.on{background:rgba(168,85,247,.2);color:var(--color-text);font-weight:600}
+.se-seg>button:disabled{opacity:.5;cursor:default}
+.se-toggle{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--color-text-dim);white-space:nowrap;flex-shrink:0}
+.se-toggle .sw{width:28px;height:16px;border-radius:99px;background:#3a3a48;position:relative;flex:none}
+.se-toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#cfcfda;transition:left .15s}
+.se-toggle[aria-checked=true] .sw{background:var(--color-accent1-strong)}
+.se-toggle[aria-checked=true] .sw::after{left:14px;background:#fff}
+.se-toggle[aria-checked=true]{color:var(--color-text)}
+.se-toggle svg{width:12px;height:12px}
+.se-kbd{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:10px;padding:0 4px;border-radius:4px;border:1px solid #3a3a48;color:var(--color-text-dim);line-height:15px}
+.se-tools{display:flex;align-items:center;gap:2px;padding:3px;border-radius:10px;background:var(--color-panel-2);border:1px solid var(--color-border);flex-shrink:0}
+.se-tool{position:relative;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--color-text-dim);white-space:nowrap}
+.se-tool:hover{background:#2a2a37;color:var(--color-text)}
+.se-tool[aria-pressed=true]{background:linear-gradient(135deg,var(--color-accent1-strong),var(--color-accent2-strong));color:#fff;font-weight:600}
+.se-tool svg{width:14px;height:14px;flex:none}
+.se-dur{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--color-panel-2);border:1px solid var(--color-border);flex-shrink:0}
+.se-dur button{height:28px;min-width:32px;padding:0 6px;border-radius:7px;font-size:12px;color:var(--color-text-dim);display:inline-flex;align-items:center;justify-content:center}
+.se-dur button:hover{background:#2a2a37;color:var(--color-text)}
+.se-dur button[aria-pressed=true]{background:rgba(168,85,247,.22);color:var(--color-text);font-weight:600;box-shadow:inset 0 0 0 1px rgba(168,85,247,.5)}
+.se-time{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:12px;color:var(--color-text-dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+.se-time b{color:var(--color-text);font-weight:500}
+.se-menu{padding:6px}
+.se-menu .it{display:flex;gap:10px;padding:8px 9px;border-radius:8px;align-items:flex-start;width:100%;text-align:start}
+.se-menu .it:hover,.se-menu .it:focus-visible{background:#2a2a37;outline:none}
+.se-menu .it:disabled{opacity:.45}
+.se-menu .it .ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--color-panel-2);border:1px solid var(--color-border);flex:none;color:var(--color-accent)}
+.se-menu .it .ic svg{width:14px;height:14px}
+.se-menu .it b{font-size:12.5px;font-weight:600;display:block}
+.se-menu .it small{font-size:11px;color:var(--color-text-dim);display:block;line-height:1.4}
+.se-menu .hr{height:1px;background:#33333f;margin:4px 6px}
+.se-h{font-size:12.5px;font-weight:600;margin:0}
+.se-d{font-size:11px;color:#8a8a9c;margin:2px 0 0}
+.se-lab{font-size:10.5px;color:#8a8a9c;text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.se-input{height:28px;border-radius:7px;border:1px solid var(--color-border);background:var(--color-panel-2);padding:0 8px;font-size:12.5px;color:var(--color-text)}
+.se-ssec{font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:99px}
+.se-box{border:1px solid var(--color-border);border-radius:10px;background:var(--color-panel-2)}
+.se-root :focus-visible,.score-pop :focus-visible,.se-full :focus-visible{outline:2px solid var(--color-accent1);outline-offset:1px}
+.se-cchip{position:absolute;top:4px;height:20px;border-radius:6px;display:flex;align-items:center;gap:5px;padding:0 7px;font-size:12px;font-weight:600;color:#f9a8d4;background:rgba(236,72,153,.10);border:1px solid rgba(236,72,153,.28);white-space:nowrap;overflow:hidden}
+.se-cchip small{font-size:10px;font-weight:500;color:rgba(249,168,212,.6)}
+.se-cchip:hover{border-color:rgba(236,72,153,.6)}
+.se-cchip.open{background:rgba(236,72,153,.28);border-color:#ec4899;color:#fff}
+.se-cchip.empty{color:#6e6e80;background:transparent;border-style:dashed;border-color:#3a3a48;justify-content:center;font-weight:500}
+@media (prefers-reduced-motion: reduce){.se-toggle .sw::after{transition:none}}

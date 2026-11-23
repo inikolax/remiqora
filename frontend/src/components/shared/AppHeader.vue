@@ -1,261 +1,170 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useOrchestratorStore } from '../../stores/orchestrator'
-import { useFeaturesStore } from '../../stores/features'
-import { MODEL_FEATURE, MODEL_LABELS, MODEL_ROUTES, useModelSwitch } from '../../composables/useModelSwitch'
-import { setLocale, LOCALES, type LocaleCode } from '../../i18n'
-import type { ModelId, ModelRuntimeStatus } from '../../types'
 import AppHelpModal from './AppHelpModal.vue'
 import EditorHelpModal from '../editor/EditorHelpModal.vue'
 import EditorHotkeysModal from '../editor/EditorHotkeysModal.vue'
 import AiArrangerGuide from '../editor/AiArrangerGuide.vue'
 import IdeaGuide from '../idea/IdeaGuide.vue'
 import ResourceMeters from './ResourceMeters.vue'
-import MicIcon from './icons/MicIcon.vue'
+import HeaderLanguage from './HeaderLanguage.vue'
+import HeaderMore from './HeaderMore.vue'
 import TimelineIcon from './icons/TimelineIcon.vue'
-import WaveIcon from './icons/WaveIcon.vue'
-import PulseIcon from './icons/PulseIcon.vue'
 import SparklesIcon from './icons/SparklesIcon.vue'
+import LibraryIcon from './icons/LibraryIcon.vue'
+import NotesHelp from '../score/help/NotesHelp.vue'
 
 const orchestrator = useOrchestratorStore()
-const features = useFeaturesStore()
 const route = useRoute()
 const onEditor = computed(() => route.path.startsWith('/editor'))
-const onIdea = computed(() => route.name === 'idea')
-const { selectModel } = useModelSwitch()
-const { t, locale } = useI18n()
+const onLibrary = computed(() => route.name === 'library')
+// Create covers the engines' forms and ACE-Step's LoRA training. Home (with From an idea) is not a section.
+const onCreate = computed(() => ['create', 'ace-step-lora'].includes(String(route.name)))
+const { t } = useI18n()
 const helpOpen = ref(false)
+const notesHelpOpen = ref(false)
 /** A guide opened from the help: the editor's, its shortcut sheet, the AI arranger's or From an idea's. */
 const guide = ref<'editor' | 'hotkeys' | 'arranger' | 'idea' | null>(null)
-function openGuide(which: 'editor' | 'arranger' | 'idea') {
+function openGuide(which: 'editor' | 'arranger' | 'idea' | 'notes') {
   helpOpen.value = false
+  // "More about notes": the notes' own guide (the one the note editor opens)
+  if (which === 'notes') { notesHelpOpen.value = true; return }
   guide.value = which
 }
-
-async function changeLocale(event: Event) {
-  const next = (event.target as HTMLSelectElement).value as LocaleCode
-  await setLocale(next)
-  locale.value = next
+/** The help closed (Escape, the cross, a click outside): the focus goes back to the "?" that opened it, also when the
+ *  dialog's own return missed it (the opener had lost the focus by then). Under md the "?" is in the more-menu. */
+const helpBtn = ref<HTMLButtonElement | null>(null)
+function closeNotesHelp() {
+  notesHelpOpen.value = false
+  void nextTick(() => { if (helpBtn.value?.offsetParent) helpBtn.value.focus() })
+}
+function closeHelp() {
+  helpOpen.value = false
+  void nextTick(() => { if (helpBtn.value?.offsetParent) helpBtn.value.focus() })
 }
 
-// The header's height (it wraps on a phone) as --header-h, so sticky bars below it know where to stop.
+// The header's real height as --header-h (57 px with the border, more while the switch error shows under the row), so the sticky
+// columns and bars below it know where to stop.
 const headerEl = ref<HTMLElement | null>(null)
 let observer: ResizeObserver | null = null
 onMounted(() => {
   if (!headerEl.value || typeof ResizeObserver === 'undefined') return
   observer = new ResizeObserver(() => {
     document.documentElement.style.setProperty('--header-h', `${headerEl.value?.offsetHeight ?? 0}px`)
-    updateNavMore()
   })
   observer.observe(headerEl.value)
-  showCurrentTab()
 })
 onUnmounted(() => observer?.disconnect())
 
-// On a narrow window the tabs scroll sideways: the right edge fades while more tabs hide past it, and the
-// current section's tab is scrolled into view.
-const navEl = ref<HTMLElement | null>(null)
-const navMore = ref(false)
-function updateNavMore() {
-  const nav = navEl.value
-  navMore.value = !!nav && Math.abs(nav.scrollLeft) + nav.clientWidth < nav.scrollWidth - 4
-}
-async function showCurrentTab() {
-  await nextTick()
-  navEl.value?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  updateNavMore()
-}
-watch(() => route.path, showCurrentTab)
-
-function statusOf(id: ModelId): ModelRuntimeStatus {
-  return orchestrator.statuses[id]?.status ?? 'stopped'
-}
-
-/** The status lights: a lit green dot runs, a hollow ring is stopped, amber pulses while it changes. */
-const LED_CLASSES: Record<ModelRuntimeStatus, string> = {
-  stopped: 'border border-text-dim/70',
-  starting: 'bg-status-queued animate-pulse',
-  running: 'bg-status-done shadow-[0_0_6px_var(--color-status-done)]',
-  stopping: 'bg-status-queued animate-pulse',
-  error: 'bg-status-failed shadow-[0_0_6px_var(--color-status-failed)]',
-}
-/** One engine runs on the GPU at a time, so the running one is named; a stopped one keeps just its hollow light. */
-function statusShown(id: ModelId): boolean {
-  return statusOf(id) !== 'stopped'
-}
-/** Left out at install (or, for Stable Audio, its weights not fetched yet): no light, it cannot run. */
-function installed(id: ModelId): boolean {
-  const feature = MODEL_FEATURE[id]
-  return !feature || features.has(feature)
-}
-/** The engines, one group in the header: one of them holds the GPU at a time. */
-const ENGINES: { id: ModelId; icon: typeof MicIcon }[] = [
-  { id: 'ace_step', icon: WaveIcon },
-  { id: 'yue2', icon: MicIcon },
-  { id: 'stable_audio', icon: PulseIcon },
-]
-/** An engine's tab is current on its page and on the pages under it (ACE-Step's LoRA training). */
-function onEngine(id: ModelId): boolean {
-  return route.name === MODEL_ROUTES[id] || (id === 'ace_step' && route.name === 'ace-step-lora')
-}
-const STATUS_TEXT_CLASSES: Record<ModelRuntimeStatus, string> = {
-  stopped: 'text-text-dim',
-  starting: 'text-status-queued',
-  running: 'text-status-done',
-  stopping: 'text-status-queued',
-  error: 'text-status-failed',
-}
-const DESC_KEYS: Record<ModelId, string> = { ace_step: 'header.desc.ace', yue2: 'header.desc.yue', stable_audio: 'header.desc.sa3' }
-/** The tab's tooltip: what the engine is for, its state, and, unless it runs, that a click starts it. */
-function engineTitle(id: ModelId): string {
-  if (!installed(id)) return t(`notInstalled.${MODEL_FEATURE[id]}.title`)
-  const title = t('header.engineTitle', { model: MODEL_LABELS[id], desc: t(DESC_KEYS[id]), status: t(STATUS_LABEL_KEYS[statusOf(id)]) })
-  return statusOf(id) === 'running' ? title : `${title}
-${t('header.engineStart')}`
-}
-
-const STATUS_LABEL_KEYS: Record<ModelRuntimeStatus, string> = {
-  stopped: 'modelStatus.stopped',
-  starting: 'modelStatus.starting',
-  running: 'modelStatus.running',
-  stopping: 'modelStatus.stopping',
-  error: 'modelStatus.error',
-}
-
-async function onSelect(id: ModelId) {
-  try {
-    await selectModel(id)
-  } catch {
-    // orchestrator.switchError already holds the message, rendered below.
-  }
-}
+/** The sections. On a phone the current one keeps its name and the other two are icons (the name stays for a screen
+ *  reader); from sm up all three are named. */
+const sections = computed(() => [
+  { to: '/create', label: t('header.create'), title: t('header.desc.create'), icon: SparklesIcon, current: onCreate.value },
+  { to: '/library', label: t('header.library'), title: t('header.desc.library'), icon: LibraryIcon, current: onLibrary.value },
+  { to: '/editor', label: t('header.editor'), title: t('header.desc.editor'), icon: TimelineIcon, current: onEditor.value },
+])
+const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent1'
 </script>
 
 <template>
   <header ref="headerEl" class="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur">
-    <!-- One row over the whole window: the brand, the sections centred on the window, the tools. As the window
-         narrows, things drop out in order (the tagline, the memory numbers, the brand name; below 1280 px the memory
-         meters turn into two rings) rather than wrapping. On a phone the tabs get a row of their own and scroll sideways. -->
-    <div class="flex flex-wrap items-stretch gap-x-4 px-4 sm:h-[4.75rem] sm:flex-nowrap sm:px-6 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:gap-4 xl:gap-6">
-      <!-- the mark is as tall as the two lines next to it (24 + 16 px); the R is drawn, not set in a
-           font - an SVG <text> falls back to a different face and looks uneven -->
-      <router-link to="/" class="flex h-14 shrink-0 items-center gap-2.5 self-center justify-self-start text-text sm:h-auto">
-        <span class="accent-gradient flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-md shadow-accent1/20">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <!-- One row, 56 px, in the same container as a wide page, so the brand and the help line up with the page's
+         columns. The brand and the sections on the start side, the status unit and the tools on the end side. As the
+         window narrows things drop out rather than wrap: the brand's name (below xl), the memory numbers (below xl),
+         the engine's name (below lg), the language, gear and help go behind a more-button (below md), the other
+         sections' names (below sm). -->
+    <div class="mx-auto flex h-16 w-full max-w-[1920px] items-stretch gap-1 px-4 sm:gap-3 sm:px-6 2xl:px-8">
+      <!-- the R is drawn, not set in a font - an SVG <text> falls back to a different face and looks uneven -->
+      <router-link
+        to="/"
+        class="flex shrink-0 items-center gap-3 self-center rounded-lg text-text"
+        :class="FOCUS"
+        aria-label="Remiqora"
+      >
+        <span class="accent-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] shadow-md shadow-accent1/20">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="white" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M7 19V5h5.5a3.75 3.75 0 0 1 0 7.5H7M12.5 12.5 17 19" />
           </svg>
         </span>
-        <span class="hidden flex-col min-[1440px]:flex">
-          <span class="text-lg leading-6 font-semibold">Remiqora</span>
-          <!-- 12px, not 10: at 10px grey on dark Windows' smoothing made it look blurred -->
-          <span class="hidden text-xs leading-4 font-medium tracking-wide whitespace-nowrap text-text/70 min-[1680px]:block">{{ t('header.tagline') }}</span>
+        <!-- the name over the motto, together as tall as the mark (20 + 16 px); 12px, not smaller: at 10px grey on
+             dark Windows' smoothing made it look blurred -->
+        <span class="hidden flex-col whitespace-nowrap xl:flex" aria-hidden="true">
+          <span class="text-base leading-5 font-semibold">Remiqora</span>
+          <span class="text-xs leading-4 font-medium text-text-dim">{{ t('header.tagline') }}</span>
         </span>
       </router-link>
 
-      <!-- The sections: the idea, the engines as one group, the editor. The current page is underlined (the idea,
-           the editor) or raised in the group (an engine). LoRA training is a tab inside ACE-Step's page. -->
-      <nav
-        ref="navEl"
-        class="order-last flex h-12 min-w-0 basis-full items-stretch overflow-x-auto [scrollbar-width:none] sm:order-none sm:h-auto sm:basis-auto [&::-webkit-scrollbar]:hidden"
-        :class="navMore && '[mask-image:linear-gradient(to_right,#000_calc(100%-3rem),transparent)] rtl:[mask-image:linear-gradient(to_left,#000_calc(100%-3rem),transparent)]'"
-        :aria-label="t('header.navLabel')"
-        @scroll.passive="updateNavMore"
-      >
-        <!-- the simplest way in comes first: an idea in words, the prompt is written for whichever engine -->
+      <!-- The sections, right after the brand. The current one is underlined at the header's bottom edge. LoRA training
+           is a tab inside ACE-Step's page; From an idea is on the home page, reached by the brand. -->
+      <!-- min-w-0 all the way down: should a long translation not fit, the names are cut short rather than the row
+           scrolling sideways -->
+      <nav class="flex min-w-0 items-stretch md:ms-2 lg:ms-5" :aria-label="t('header.navLabel')">
         <router-link
-          to="/idea"
-          class="relative flex shrink-0 items-center gap-2 px-2 transition-colors xl:px-3"
-          :class="onIdea ? 'text-text' : 'text-text-dim hover:text-text'"
-          :title="t('header.desc.idea')"
-          :aria-current="onIdea ? 'page' : undefined"
+          v-for="s in sections"
+          :key="s.to"
+          :to="s.to"
+          class="relative flex w-[4.25rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-md px-0.5 transition-colors focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent1 sm:w-auto sm:min-w-0 sm:shrink sm:flex-row sm:justify-start sm:gap-2 sm:px-2 md:px-3"
+          :class="s.current ? 'text-text' : 'text-text-dim hover:text-text'"
+          :title="s.title"
+          :aria-current="s.current ? 'page' : undefined"
         >
-          <SparklesIcon class="h-[18px] w-[18px] shrink-0" :class="onIdea && 'text-accent1'" />
-          <span class="text-[15px] leading-5 whitespace-nowrap" :class="onIdea ? 'font-semibold' : 'font-medium'">{{ t('header.idea') }}</span>
-          <span v-if="onIdea" class="accent-gradient absolute inset-x-2 bottom-0 h-0.5 rounded-full xl:inset-x-3" aria-hidden="true"></span>
-        </router-link>
-
-        <!-- the engines as one group: a light tells whether each runs, a click opens its page and starts it on the
-             GPU (the running one stops). What each is for and its state are in the tooltip. -->
-        <div role="group" :aria-label="t('header.engines')" class="mx-3 flex shrink-0 lg:mx-2 xl:mx-5 2xl:mx-7 items-center gap-0.5 self-center rounded-xl border border-border bg-panel-2/40 p-1">
-          <button
-            v-for="engine in ENGINES"
-            :key="engine.id"
-            type="button"
-            class="flex h-9 items-center gap-2 rounded-lg px-2 text-start transition-colors xl:px-3"
-            :class="onEngine(engine.id) ? 'bg-panel text-text shadow-sm shadow-black/20' : 'text-text-dim hover:bg-panel/60 hover:text-text'"
-            :title="engineTitle(engine.id)"
-            :aria-current="onEngine(engine.id) ? 'page' : undefined"
-            @click="onSelect(engine.id)"
-          >
-            <component :is="engine.icon" class="h-[17px] w-[17px] shrink-0" :class="onEngine(engine.id) && 'text-accent1'" />
-            <span class="text-[14px] leading-5 whitespace-nowrap" :class="onEngine(engine.id) ? 'font-semibold' : 'font-medium'">{{ MODEL_LABELS[engine.id] }}</span>
-            <!-- left out at install: no light, it cannot run -->
-            <span v-if="installed(engine.id)" class="h-2 w-2 shrink-0 rounded-full" :class="LED_CLASSES[statusOf(engine.id)]" aria-hidden="true"></span>
-            <span v-if="installed(engine.id) && statusShown(engine.id)" class="hidden text-[11px] font-medium 2xl:inline" :class="STATUS_TEXT_CLASSES[statusOf(engine.id)]">{{ t(STATUS_LABEL_KEYS[statusOf(engine.id)]) }}</span>
-          </button>
-        </div>
-
-        <router-link
-          to="/editor"
-          class="relative flex shrink-0 items-center gap-2 px-2 transition-colors xl:px-3"
-          :class="onEditor ? 'text-text' : 'text-text-dim hover:text-text'"
-          :title="t('header.desc.editor')"
-          :aria-current="onEditor ? 'page' : undefined"
-        >
-          <TimelineIcon class="h-[18px] w-[18px] shrink-0" :class="onEditor && 'text-accent1'" />
-          <span class="text-[15px] leading-5 whitespace-nowrap" :class="onEditor ? 'font-semibold' : 'font-medium'">{{ t('header.editor') }}</span>
-          <span v-if="onEditor" class="accent-gradient absolute inset-x-2 bottom-0 h-0.5 rounded-full xl:inset-x-3" aria-hidden="true"></span>
+          <!-- a phone: every section is its icon over a small name, all three the same width, nothing cut to "Библиоте…" -->
+          <component :is="s.icon" class="h-[18px] w-[18px] shrink-0" :class="s.current && 'text-accent1'" />
+          <span
+            class="max-w-full truncate text-[10px] leading-3 whitespace-nowrap sm:min-w-0 sm:text-[15px] sm:leading-5"
+            :class="s.current ? 'font-semibold' : 'font-medium'"
+          >{{ s.label }}</span>
+          <span v-if="s.current" class="accent-gradient absolute inset-x-2 bottom-0 h-0.5 rounded-full md:inset-x-3" aria-hidden="true"></span>
         </router-link>
       </nav>
 
-      <div class="ms-auto flex shrink-0 items-center gap-1 self-center lg:ms-0 lg:justify-self-end">
-        <!-- RAM above video memory, always in sight (two rings on a narrow window); a click opens the details and
-             the button that unloads the model -->
-        <ResourceMeters stacked class="me-1 sm:me-3" />
-        <select
-          :value="locale"
-          class="h-9 cursor-pointer rounded-lg bg-transparent px-1.5 text-xs font-semibold text-text-dim transition-colors hover:bg-panel-2 hover:text-text"
-          :title="t('header.language')"
-          :aria-label="t('header.language')"
-          @change="changeLocale"
-        >
-          <option v-for="l in LOCALES" :key="l.code" :value="l.code" class="bg-panel text-text">{{ l.name }}</option>
-        </select>
-        <!-- Models and settings: a settings page, so a gear beside the help rather than a tab next to the engines -->
-        <router-link
-          to="/models"
-          :title="t('header.models')"
-          :aria-label="t('header.models')"
-          class="flex h-9 w-9 items-center justify-center rounded-lg text-text-dim transition-colors hover:bg-panel-2 hover:text-text"
-          active-class="bg-panel-2 text-text"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        </router-link>
-        <button
-          type="button"
-          :title="t('header.help')"
-          :aria-label="t('header.help')"
-          class="flex h-9 w-9 items-center justify-center rounded-lg text-text-dim transition-colors hover:bg-panel-2 hover:text-text"
-          @click="helpOpen = true"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.33c-.77.32-1.4.98-1.4 1.92V14" />
-            <circle cx="12" cy="17.5" r=".8" fill="currentColor" stroke="none" />
-            <circle cx="12" cy="12" r="10" />
-          </svg>
-        </button>
+      <div class="ms-auto flex min-w-0 shrink items-center gap-1 sm:gap-1.5">
+        <!-- the status unit: what holds the GPU and how full the memory is; a click opens the details -->
+        <ResourceMeters class="sm:me-1 md:me-2" />
+        <div class="hidden items-center gap-1 md:flex">
+          <HeaderLanguage />
+          <!-- Models and settings: a settings page, so a gear beside the help rather than a section -->
+          <router-link
+            to="/models"
+            :title="t('header.models')"
+            :aria-label="t('header.models')"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-dim transition-colors hover:bg-panel-2 hover:text-text"
+            :class="FOCUS"
+            active-class="bg-panel-2 text-text"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </router-link>
+          <button
+            ref="helpBtn"
+            type="button"
+            :title="t('header.help')"
+            :aria-label="t('header.help')"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-dim transition-colors hover:bg-panel-2 hover:text-text"
+            :class="FOCUS"
+            @click="helpOpen = true"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.33c-.77.32-1.4.98-1.4 1.92V14" />
+              <circle cx="12" cy="17.5" r=".8" fill="currentColor" stroke="none" />
+              <circle cx="12" cy="12" r="10" />
+            </svg>
+          </button>
+        </div>
+        <!-- narrower than md: the language, Models and the help in one menu -->
+        <HeaderMore class="md:hidden" @help="helpOpen = true" />
       </div>
     </div>
-    <p v-if="orchestrator.switchError" class="border-t border-status-failed/30 bg-status-failed/10 px-4 py-2 text-xs whitespace-pre-line text-status-failed sm:px-6">
-      {{ orchestrator.switchError }}
+    <p v-if="orchestrator.switchError" class="border-t border-status-failed/30 bg-status-failed/10 text-xs whitespace-pre-line text-status-failed">
+      <span class="mx-auto block w-full max-w-[1920px] px-4 py-2 sm:px-6 2xl:px-8">{{ orchestrator.switchError }}</span>
     </p>
 
-    <AppHelpModal :open="helpOpen" @close="helpOpen = false" @open-guide="openGuide" />
+    <AppHelpModal :open="helpOpen" @close="closeHelp" @open-guide="openGuide" />
+    <NotesHelp :open="notesHelpOpen" @close="closeNotesHelp" />
     <EditorHelpModal :show="guide === 'editor'" @close="guide = null" @open-guide="guide = 'arranger'" @open-hotkeys="guide = 'hotkeys'" />
     <EditorHotkeysModal :show="guide === 'hotkeys'" @close="guide = null" />
     <AiArrangerGuide :open="guide === 'arranger'" @close="guide = null" />

@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: '音声からメロディーを抽出（SheetSage2）',
     unloadSheetSage: '抽出後に SheetSage2 をアンロード',
     extract: 'ABC を抽出',
-    extracting: '抽出中…',
     randomSeed: 'ランダム seed',
     cfgScale: 'CFG スケール',
     defaultValuePlaceholder: 'デフォルト {value}',

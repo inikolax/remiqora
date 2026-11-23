@@ -183,12 +183,6 @@ export async function runTask(model: string, request: unknown, signal?: AbortSig
   })
 }
 
-export async function generateTrack(lyrics: string, seed: number, options: GenerateOptions, precision: 'q8_0' | 'q4_0' | 'bf16', signal?: AbortSignal): Promise<TaskRunResult> {
-  const spec = await getYue2ModelSpec()
-  await ensureLoaded(spec, precisionSessionOptions(precision))
-  return runTask(spec.id, { lyrics, seed, options }, signal)
-}
-
 export async function extractAbcFromAudio(audioPath: string): Promise<TaskRunResult> {
   const spec = await getSheetSageModelSpec()
   await ensureLoaded(spec)
@@ -208,13 +202,6 @@ export function abcFromResult(result: TaskRunResult): string {
     }
   }
   return ''
-}
-
-export function base64AudioBlob(data: string): Blob {
-  const binary = atob(data)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return new Blob([bytes], { type: 'audio/wav' })
 }
 
 export async function health(): Promise<HealthResponse> {

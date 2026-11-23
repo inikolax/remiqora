@@ -98,8 +98,10 @@ function bufferFor(clip: Clip): { buffer: AudioBuffer; sf: number } | null {
       
       <!-- Row 1: Name, Mute, Solo -->
       <div class="flex items-center gap-1">
+        <!-- the header is narrow: the whole name is in the tooltip -->
         <input
           :value="lane.name"
+          :title="lane.name"
           :placeholder="t('timeline.trackNamePlaceholder')"
           class="flex-1 min-w-0 rounded border border-transparent bg-panel/50 px-1 py-0.5 text-xs font-medium text-text focus:border-accent1/50 focus:bg-panel focus:outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-accent1 focus-visible:outline-offset-1 transition-colors"
           @input="emit('rename', ($event.target as HTMLInputElement).value)"

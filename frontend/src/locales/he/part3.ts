@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'חילוץ לחן מאודיו (SheetSage2)',
     unloadSheetSage: 'פריקת SheetSage2 לאחר החילוץ',
     extract: 'חילוץ ABC',
-    extracting: 'מחלץ…',
     randomSeed: 'Seed אקראי',
     cfgScale: 'CFG scale',
     defaultValuePlaceholder: 'ברירת מחדל {value}',

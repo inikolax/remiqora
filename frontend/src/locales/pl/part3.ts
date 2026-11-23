@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'Wyodrębnij melodię z audio (SheetSage2)',
     unloadSheetSage: 'Zwolnij SheetSage2 po wyodrębnieniu',
     extract: 'Wyodrębnij ABC',
-    extracting: 'Wyodrębnianie…',
     randomSeed: 'Losowy seed',
     cfgScale: 'CFG scale',
     defaultValuePlaceholder: 'domyślnie {value}',

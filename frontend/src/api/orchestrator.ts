@@ -1,5 +1,5 @@
 import { apiFetch, apiJson } from './http'
-import type { ModelId, OrchestratorStatus } from '../types'
+import type { GpuModelId, OrchestratorStatus } from '../types'
 
 export interface Yue2ModelSpecConfig {
   id: string
@@ -27,7 +27,7 @@ export function getStatus(): Promise<OrchestratorStatus> {
   return apiFetch<OrchestratorStatus>('/api/orchestrator/status')
 }
 
-export function switchModel(model: ModelId): Promise<OrchestratorStatus> {
+export function switchModel(model: GpuModelId): Promise<OrchestratorStatus> {
   return apiJson<OrchestratorStatus>('/api/orchestrator/switch', { model })
 }
 

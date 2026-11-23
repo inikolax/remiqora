@@ -51,6 +51,7 @@ function backendEnv({ L, manifest, platform }) {
     DEMUCS_DIR: L.demucs,
     STABLE_AUDIO_DIR: L.stableAudio,
     PROMPT_ASSISTANT_DIR: L.promptAssistant,
+    SDCPP_DIR: L.sdcpp,
     FFMPEG_BIN_DIR: ffmpegBin,
     // The prebuilt engine keeps its CUDA runtime DLLs next to the executable.
     CUDA_BIN_DIR: L.yue2Bin,

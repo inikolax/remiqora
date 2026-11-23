@@ -6,6 +6,7 @@ Checked on disk on every call - cheap, and right after an install from the app o
 - demucs: the stem separation environment;
 - ace_base: ACE-Step's base model, which the editor's AI arranger needs to add parts (turbo cannot);
 - ace_xl: its XL base model (about 20 GB), an optional bigger alternative for those parts;
+- cover: stable-diffusion.cpp's sd-server and the Z-Image-Turbo weights (album covers);
 - stable_audio: the sa3-server environment plus at least one Stable Audio 3 checkpoint in the Hugging Face cache
   (the weights are gated, so they are fetched by the user, not by the installer).
 """
@@ -15,7 +16,8 @@ from pathlib import Path
 
 import os
 
-from .config import ACE_STEP_DIR, DEMUCS_DIR, MODELS, STABLE_AUDIO_DIR, YUE2_MODEL_PATH
+from .config import (ACE_STEP_DIR, COVER_DIFFUSION_MODEL, COVER_LLM_MODEL, COVER_VAE_MODEL, DEMUCS_DIR, MODELS, SDCPP_BIN,
+                     SDCPP_DIR, STABLE_AUDIO_DIR, YUE2_MODEL_PATH)
 
 ACE_BASE_MODEL = "acestep-v15-base"
 ACE_XL_MODEL = "acestep-v15-xl-base"
@@ -32,6 +34,20 @@ def yue2_precisions() -> list[str]:
 
 def has_yue2() -> bool:
     return _yue2_server().is_file() and bool(yue2_precisions()) and (YUE2_MODEL_PATH / "yue2-vae-f16.gguf").is_file()
+
+
+def cover_model_files() -> list[Path]:
+    """The three weight files the cover engine (sd-server + Z-Image-Turbo) starts with."""
+    return [SDCPP_DIR / "models" / n for n in (COVER_DIFFUSION_MODEL, COVER_LLM_MODEL, COVER_VAE_MODEL)]
+
+
+def has_cover_server() -> bool:
+    return SDCPP_BIN.is_file()
+
+
+def has_cover() -> bool:
+    """sd-server and all three weight files are there."""
+    return has_cover_server() and all(p.is_file() for p in cover_model_files())
 
 
 def has_demucs() -> bool:
@@ -106,4 +122,5 @@ def snapshot() -> dict:
         "stable_audio": has_stable_audio(),
         "stable_audio_env": has_stable_audio_env(),
         "stable_audio_models": stable_audio_models(),
+        "cover": has_cover(),
     }

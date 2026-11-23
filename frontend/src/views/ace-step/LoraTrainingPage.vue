@@ -281,7 +281,8 @@ async function onExport() {
 
 <template>
   <div class="space-y-6">
-    <AceStepTabs />
+    <!-- from lg up the engine rail switches the modes -->
+    <AceStepTabs class="lg:hidden" />
     <ModelOfflineBanner v-if="!isRunning" model-id="ace_step" :status="modelStatus" :error="modelError" />
 
     <template v-else>

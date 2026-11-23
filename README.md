@@ -8,7 +8,7 @@
 <p align="center"><i>Made with AI. Made by you.</i></p>
 
 <p align="center">
-  A local, GPU-powered music generation and production studio — one interface for <b>ACE-Step 1.5</b>, <b>YuE2-3B</b> and <b>Stable Audio 3</b>, with a built-in multitrack DAW, an <b>AI arranger</b> that writes new parts into your track, and <b>From an idea</b>: one phrase in, and a local language model writes the prompt.
+  A local, GPU-powered music generation and production studio — one interface for <b>ACE-Step 1.5</b>, <b>YuE2-3B</b> and <b>Stable Audio 3</b>, with a built-in multitrack DAW, an <b>AI arranger</b> that writes new parts into your track, a <b>notes editor</b> for YuE2's melody, a <b>library</b> with album covers drawn on your own GPU, and a home page where one phrase is enough: a local language model writes the prompt.
 </p>
 
 <p align="center">🚧 Actively in development — expect breaking changes, bugs, and rough edges. Not a stable release yet.</p>
@@ -28,15 +28,21 @@
   <img src="docs/hero-poster.png" alt="Remiqora — made with AI, made by you" width="900">
 </p>
 
+<!-- video link: TODO -->
+
 <p align="center">
   <a href="#why-this-exists">Why</a> ·
   <a href="#whats-inside">What's inside</a> ·
-  <a href="#from-an-idea">From an idea</a> ·
+  <a href="#home-and-create">Home and Create</a> ·
   <a href="#languages">Languages</a> ·
   <a href="#ace-step-generation">ACE-Step</a> ·
   <a href="#yue2-and-sheetsage2-generation">YuE2</a> ·
+  <a href="#notes-yue2s-score">Notes</a> ·
   <a href="#stable-audio-3-generation">Stable Audio 3</a> ·
   <a href="#lora-training-ace-step">LoRA</a> ·
+  <a href="#library">Library</a> ·
+  <a href="#album-covers">Covers</a> ·
+  <a href="#downloads">Downloads</a> ·
   <a href="#built-in-daw">DAW</a> ·
   <a href="#ai-arranger">AI arranger</a> ·
   <a href="#desktop-app-experimental">Desktop app</a> ·
@@ -52,13 +58,14 @@
 ACE-Step and YuE2 are two independent music generation engines, each with its own web UI, its own result-storage format, and its own process that has to be started and stopped by hand. They typically cannot run simultaneously on a single consumer GPU. Remiqora solves this with a single layer on top:
 
 - **One UI** instead of two different interfaces with different UX.
-- **Mutually-exclusive orchestrator**: pick a model in the header — it starts up, and the other one stops on its own. No need to manually kill processes before starting the other engine.
-- **Shared storage**: every track (generated, uploaded, or assembled in the editor) is tracked in a centralized SQLite database and shared folder, available from every module — Demucs, MuScriptor and the editor all work off the same library instead of three separate ones.
+- **Mutually-exclusive orchestrator**: pick an engine on the Create page and press Create — it starts up, and the one that ran stops on its own. Takes wait in a queue on the server, so they survive a page reload. No need to manually kill processes before starting the other engine.
+- **Shared storage**: every track (generated, uploaded, or assembled in the editor) is tracked in a centralized SQLite database and shared folder, available from every module — Demucs, MuScriptor and the editor all work off the same library instead of three separate ones. The Library page searches, filters, tags and collects them, and deleted tracks wait 30 days in the trash.
 - **A DAW on top of generation**: a generated track isn't the end point, it's raw material — split it into stems, drag it onto a timeline, process it with effects, blend it with other tracks, and export.
 - **An AI arranger inside the DAW**: instead of re-rolling a whole song, build it up part by part — the model listens to the lanes you pick and writes drums, bass, strings or a new section that fit their tempo and key, as variants on their own lanes.
-- **From an idea**: describe a song in one phrase; a local language model writes the prompt in the chosen engine's own format (style tags, lyrics, tempo, key), you can edit it, and the engine makes the track.
+- **From an idea**: describe a song in one phrase on the home page; a local language model writes the prompt in the chosen engine's own format (style tags, lyrics, tempo, key), you can edit it, and the engine makes the track.
+- **Album covers on the same machine**: a song can get a cover drawn locally by Z-Image Turbo, with a caption if you want one, and it goes into the MP3 and FLAC you download.
 - **Built-in LoRA training**: not just generation — fine-tune ACE-Step on your own voice or style right from the browser, no console needed.
-- **Install only what you need**: the desktop installer lets you leave out YuE2, stem separation or the arranger's base models and add them later from the app; the header shows RAM and video memory and can unload the running model.
+- **Install only what you need**: the desktop installer lets you leave out YuE2, stem separation, album covers or the arranger's base models and add them later from the app; the header shows RAM and video memory and can unload the running model.
 
 ---
 
@@ -69,32 +76,54 @@ ACE-Step and YuE2 are two independent music generation engines, each with its ow
 | **ACE-Step 1.5** | Fast generation from text/style tags, covers, section repainting, extracting/adding parts on top of a reference track. |
 | **YuE2-3B** | Full-length track generation with CoT score planning (a symbolic ABC plan before the audio). |
 | **SheetSage2** | Extracts melody and harmony from a reference track into ABC notation — used as YuE2's input. |
+| **Notes** | YuE2's score editor: a piano roll, sheet music and a simple view of the melody; draw notes, import a MIDI file, play a MIDI keyboard or take the melody from a song, then check the score for YuE2. |
 | **Stable Audio 3** | Instrumentals and sound effects from a description in seconds (no vocals); in the editor's AI arranger it repaints, continues and covers by listening to the audio around the range. |
-| **From an idea** | One phrase in, a track out: a local language model (Qwen3.5) writes the prompt for ACE-Step, YuE2 or Stable Audio 3, you edit it if you like, and the engine generates. |
+| **From an idea** | One phrase on the home page, a track out: a local language model (Qwen3.5) writes the prompt for ACE-Step, YuE2 or Stable Audio 3, you edit it if you like, and the engine generates. The same assistant suggests song titles and cover descriptions. |
+| **Library** | Every saved track with search, filters, favourites, collections, tags, bulk actions and a 30-day trash. |
+| **Album covers** | Z-Image Turbo through stable-diffusion.cpp, on your GPU: one cover per song, a cover studio with captions, covers in the player and in downloaded files. |
 | **LoRA training** | Dataset → auto-labeling → preprocessing → training → export — the whole ACE-Step fine-tuning pipeline for your own voice/style, in the browser. |
 | **Demucs** | Splits any track into 4 stems: vocals, drums, bass, other. |
 | **MuScriptor** | Transcribes audio (the full mix or a single stem) into MIDI notes. |
 | **Built-in DAW** | A multitrack timeline editor for assembling tracks/stems into a final mix: an effects rack on every channel, auto-BPM and time-stretch, WAV/MP3 export, or stems with a Reaper project / DAWproject to finish in your own DAW. |
 | **AI arranger** | Adds a part (drums, bass, strings, keys, vocals and more) on top of the lanes you choose, repaints a section, continues the track or covers it in another style — each variant lands on its own lane. |
 | **Samples** | One-shots, loops at the project tempo and textures from a description (Stable Audio 3), auditioned in the editor and dropped onto a track. |
+| **Downloads** | A track as MP3 (320 kbps) or FLAC with the cover and tags, or as WAV. |
 
 Remiqora's interface and installer come in 20 languages: see [Languages](#languages).
 
 ---
 
-## From an idea
+## Home and Create
 
-![From an idea: the idea, the engine and the prompt the assistant wrote for ACE-Step](docs/screenshots/en/01-idea.png)
+The header has five places: **Home**, **Create**, **Library**, **Editor** and the gear for **Models and settings**. The status button next to them shows what holds the GPU, with RAM and video memory, and can unload it.
 
-The first tab in the header. Describe a song or an instrumental in your own words, pick an engine, and a local language model, the prompt assistant, writes the prompt in that engine's own format:
+### From an idea (the home page)
+
+![The home page: "What shall we make?" with an idea typed in, Song with vocals and ACE-Step picked, and the recent tracks with their covers below](docs/screenshots/en/01-idea.png)
+
+The home page asks **What shall we make?** Describe the music in a sentence or two, pick **Song with vocals**, **Instrumental** or **Sound** and an engine (one that cannot make that kind cannot be picked; a sound is always Stable Audio's). **More** holds the lyrics language and who writes the lyrics and style (the assistant, or ACE-Step itself). **Compose** has a local language model, the prompt assistant, write the prompt in that engine's own format:
 
 - **ACE-Step**: a style caption, lyrics, tempo, key and length. While the engine runs, ACE-Step's own language model can write it instead: faster, but it strays further from the idea.
 - **YuE2** (songs): the song's language as the first tag (`Russian`, `English`...), then 5–9 style tags in English, and lyrics split into sections, in the language of the idea or the one you pick.
 - **Stable Audio 3** (instrumentals and sounds): Stable Audio's own classifier first decides whether the idea is music or a sound ("rain on a window" is a sound, not a song), then the prompt is written with its instructions for that kind; a *Music / Sound* switch fixes a wrong guess, and a sound gets the `small-sfx` checkpoint when it is downloaded.
 
-While the prompt is written, the page shows the stage, an estimated percent, the text as it grows and a *Stop* button. The prompt then opens as editable fields. *Generate* starts the engine if needed and sends the job; the track is named after the idea and lands in the engine's feed. *Open in the form* puts the prompt into the engine's own page for the settings this page leaves out, and the form takes it as soon as the engine has started. The idea and the prompt stay when you leave the page and after a reload.
+While the prompt is written, the page shows the stage, an estimated percent, the text as it grows and a *Stop* button. The prompt then opens as editable fields. *Generate* puts the takes into the engine's queue, which starts the engine when their turn comes, and opens Create, where the takes show up in the session. *Open in the form* puts the prompt into the engine's form on the Create page, with all its settings. The idea and the prompt stay when you leave the page and after a reload. Below, **Recent tracks** shows the latest tracks with their covers, and **Editor projects** the latest projects.
 
-The assistant is Qwen3.5 (0.8B, 2B by default, or 4B; Apache-2.0), downloaded and set up on the Models page. On *auto* it writes on the GPU while no engine runs and on the CPU otherwise: a song's lyrics take about 10 s on the GPU and up to a minute on the CPU. On *GPU* it unloads the running engine to write, and *Generate* swaps the engine back. It starts with the first request and stops after a set idle time.
+The assistant is Qwen3.5 (0.8B, 2B by default, or 4B; Apache-2.0), downloaded and set up on the Models page. On *Auto* it writes on the GPU while no engine runs and on the CPU otherwise: a song's lyrics take about 10 s on the GPU and up to a minute on the CPU. *CPU* always leaves the GPU to the engine; *GPU* unloads the running engine to write, and *Generate* swaps the engine back. It starts with the first request and stops after a set idle time.
+
+### The Create page
+
+One page for all three engines. A rail on the left picks **YuE2**, **ACE-Step** or **Stable Audio 3**; under YuE2 sits **Notes**, under ACE-Step **LoRA** training.
+
+- **The form works while the engine is stopped.** Fill it in and press *Start YuE2 and create* (or the same for ACE-Step and Stable Audio): the engine starts, the one that ran stops, and the takes go out.
+- **A queue on the server.** Takes wait and run on the backend, so a page reload or a closed tab does not lose them.
+- **The session**: the takes of today, the last 7 days or all time, one row per take, with a waveform, the cover, the take menu (*Split into stems*, *Notes to MIDI*, *Rename*, *Download*) and *Repeat with these settings*. The player bar at the bottom has previous and next.
+- **The idea line** above each form takes one phrase and writes the lyrics and style straight into the form (*Describe* for Stable Audio). *Put back what was there* undoes it, and the same goes for a preset, a help example or a reused take.
+- **Presets** save the form's settings under a name. **The console** shows every parameter group at once, with the values set by hand marked. What is typed into a form stays after a reload.
+- **Titles.** A new song is named by its hook, the chorus line that comes back most often; an instrumental or a sound by your own few words. *Suggest a title* asks the assistant for a name, for one track or for a selection in the library; *Another one* asks again, and *Undo* puts the old titles back.
+- **Compare takes** plays the takes of one song A/B: keys 1–4 switch between them at the same position, Space plays and pauses. Star the best one and *Keep the best, move the others to the trash*.
+
+![Compare takes: four takes of one song as tiles A to D, one starred as the best, and the button that keeps it and moves the others to the trash](docs/screenshots/en/21-compare.png)
 
 ---
 
@@ -109,13 +138,13 @@ The assistant is Qwen3.5 (0.8B, 2B by default, or 4B; Apache-2.0), downloaded an
 | **Asia** | Қазақша · 简体中文 · 繁體中文 · 日本語 · 한국어 · Tiếng Việt · Bahasa Indonesia · हिन्दी |
 | **Right-to-left** | العربية · فارسی · עברית |
 
-> **Every language except Russian and English is a machine translation.** A large language model translated 1,831 interface strings and 140 installer strings per language; scripts checked that every key and placeholder matches the English text. No native speaker has read them, so expect clumsy phrasing and wrong terms, most of all in the rarer languages. Traditional Chinese is converted from Simplified with OpenCC. Corrections are welcome.
+> **Every language except Russian and English is a machine translation.** A large language model translated every interface string (2,477 keys, the help included) and 144 installer strings per language; scripts checked that every key and placeholder matches the English text. No native speaker has read them, so expect clumsy phrasing and wrong terms, most of all in the rarer languages. Traditional Chinese is converted from Simplified with OpenCC. Corrections are welcome.
 
 Arabic, Persian and Hebrew mirror the whole layout. The timeline, waveform and mixer stay left-to-right on purpose: time and signal flow do not mirror.
 
 ### Ideas and songs in any language
 
-- **From an idea** works in all 20 languages and in the 51 vocal languages of the *Lyrics language* list. The language of your idea is recognised from its alphabet, its special letters and its most frequent words (checked on 65 texts in 20 languages with no misses); when it is ambiguous, pick the language by hand.
+- **From an idea** (the home page and the idea line on Create) works in all 20 languages and in the 51 vocal languages of the *Lyrics language* list. The language of your idea is recognised from its alphabet, its special letters and its most frequent words (checked on 65 texts in 20 languages with no misses); when it is ambiguous, pick the language by hand.
 - **Kazakh** is not on ACE-Step's own list, so it was tested: with the `kk` tag ACE-Step sings it as well as with `ru` (average error 0.45 against 0.43 over nine seeds each), so `kk` is sent as it is.
 - **Quality follows the model.** The default assistant (Qwen3.5-2B) writes in the requested language every time, but its verse in Kazakh or Hindi is clumsy; the 4B model on the Models page does noticeably better.
 
@@ -162,38 +191,58 @@ The test songs are not part of the repository.
 
 ## ACE-Step: generation
 
-![ACE-Step: generation and track feed](docs/screenshots/en/02-ace-step.png)
+![ACE-Step on the Create page: the engine rail, the Song tab with style tags and lyrics, and the session of takes](docs/screenshots/en/02-ace-step.png)
 
-Two input modes: **“Simple”** — a single text description the model uses to infer both style and lyrics on its own; and **“Custom”** — style tags with autocomplete plus lyrics with structure markup (`[Verse]/[Chorus]/[Bridge]`) and performance annotations (`(whisper)`, `(falsetto)`), or an “Instrumental” checkbox.
+The form has three tabs. **Song**: **From a description** — plain words the model turns into style and lyrics on its own (the caption and lyrics it writes are saved with the take, and the take is named by its hook); or **Own lyrics and style** — style tags with autocomplete plus lyrics with structure markup (`[Verse]/[Chorus]/[Bridge]`) and performance annotations (`(whisper)`, `(falsetto)`); or **No vocal**. A style typed without pressing Enter is kept as tags.
 
-Attaching a reference track unlocks 5 remix scenarios:
+On **From a track**, a reference track unlocks 5 remix scenarios:
 - **Cover** — restyle while keeping the melody (tunable original-preservation strength).
 - **Repaint a section** — replace only a chosen part of the track.
 - **Extract a part** — pull one instrument/voice out of a finished mix (12 options: vocals, drums, bass, guitar, etc.).
 - **Add a part** — compose one missing instrument on top of the mix.
 - **Finish the composition** — the same, but for a whole list of parts at once.
 
-Plus: 10–300 s duration, batch of 1/2/4 variants, mp3/wav/flac formats, advanced parameters (BPM, key, time signature, vocal language — guessed from the lyrics by default, inference steps, guidance scale, seed), LoRA adapter support with adjustable strength, local presets, and a "Stop all" button for bulk job cancellation.
+**Tuning** has *Simple* (steps, length, tempo, mode, format) and *Manual*, with every parameter in groups (BPM, key, time signature, vocal language — guessed from the lyrics by default, inference steps, guidance scale, seed and the rest). Plus: 10–300 s duration, batch of 1/2/4 variants, mp3/wav/flac formats, and a trained LoRA adapter with a strength from 0 to 1.
 
 ## YuE2 and SheetSage2: generation
 
-![YuE2: generation and track feed](docs/screenshots/en/03-yue2.png)
+![YuE2 on the Create page: the Song tab with lyrics, style, Length and Quality, and the session of takes](docs/screenshots/en/03-yue2.png)
 
-Three **CoT (Chain-of-Thought)** modes: `off` — straight to audio; `melody` — the arrangement is built around a given melody (ABC); `full` — the model first builds a symbolic plan (melody + chords), then generates the audio.
+The form has three tabs:
 
-**SheetSage2** lets you upload a reference track and pull its melody into ABC notation, right in the form, with one click — editable by hand afterwards. Beyond that: `q8_0`/`q4_0` precision, batch of 1–4, a full set of sampling parameters for audio generation and the ABC planner separately, local presets, and viewing/reusing the ABC score of an already-generated track.
+- **Song**: lyrics in sections, style tags, **Length** (*Auto*, as long as the lyrics take, or 1 to 8 minutes: a shorter lyric is sung and played on to that length, a longer one is cut there) and **Quality**: *Draft* (`q4_0`), *Normal* (`q8_0`), *Final* (`bf16`, 32 decoding steps, closer to the style tags with CFG 1.2) or *Own* (precision, steps and CFG by hand). Batch of 1–4.
+- **Melody**: the melody plan, YuE2's **CoT (Chain-of-Thought)** mode — *No plan* (`off`, straight to audio), *Follow a melody* (`melody`, the arrangement is built around a given ABC melody) or *Melody and chords* (`full`, the model first writes a symbolic plan of both, then the audio). The score comes from [Notes](#notes-yue2s-score).
+- **Tuning**: *Simple* has three plain choices — **Singing** (steadier or bolder), **Repeats** (fewer, when one phrase goes round) and **Score** (more careful, when the melody rambles); *Manual* has every sampling parameter for the audio and for the score planner in groups, with the engine's default on each row, and the console shows them all at once. The help **What to do if…** lists the usual failures (cut short, looping, off-key and so on) with an *Apply* button that puts the fix into the fields.
+
+**SheetSage2** (*From a song…*) takes a reference track and writes its melody and chords down as an ABC score, editable afterwards. A finished YuE2 take keeps the score it was sung from: *Open notes* opens a copy of it.
+
+## Notes: YuE2's score
+
+![Notes in full screen: the piano roll with a vocal melody and the accompaniment, the tools on the left, the transport above it, and the section with its lyric line and chords on the right](docs/screenshots/en/17-notes.png)
+
+**Notes** is YuE2's workspace: the button under YuE2 in the Create rail opens it on the right, in place of the session. It shows and edits the melody plan YuE2 sings from (an ABC score with a vocal and an instrument voice) and sends it to the form's Melody tab.
+
+- **Three views**: *Piano roll*, where you draw and edit; *Staff*, the same notes as sheet music, on a dark sheet like the app or a light one; and *Simple*. *For musicians* adds chord degrees (I, IV, V…).
+- **Tools**: *Select*, *Pencil* (a click adds a note of the chosen length, keys 1–6; it can be held to the key's notes), *Eraser* and *Split*, with undo and redo.
+- **Listening**: *Listen* plays the notes on a piano (Space), *Loop the marked bars*, *Metronome*.
+- **Where the notes come from**: *Import MIDI* (pick which part is the vocal and which the instrument; drums are dropped, chords give their top note), *Play it on the piano* on the on-screen keys or a MIDI keyboard (Web MIDI), *From a song…* (SheetSage2), *Paste ABC*, or *Draw*, which lays out a skeleton from the lyrics' `[Verse]` / `[Chorus]` sections with a placeholder chord a bar.
+- **From a finished track**: *Notes to MIDI* in a take's menu (or the Stems and notes tab in the library), then *To a YuE2 score*: the vocals become the melody, the bass and the rest the accompaniment. *Notes to MIDI* starts YuE2 by itself if another engine is on the GPU, but not while a take is being generated.
+- **Check for YuE2** goes through what YuE2 expects: a key, tempo and meter, a chord in every bar, a vocal with about as many notes as the lyrics have syllables and within the voice's range, sections that match the lyrics, an instrument that rests while the voice sings, and an ABC text that is not too long. A remark can be shown in the score and, where it can, fixed with *Fix*.
+- **Paste or import ABC** from elsewhere: what the editor does not read (triplets, ornaments, grace notes, more than two voices and so on) is simplified or dropped, and each case is listed.
+
+![Notes in the Staff view: the same melody as sheet music, vocal and instrument staves with the chords above](docs/screenshots/en/18-notes-staff.png)
 
 ## Stable Audio 3: generation
 
 ![Stable Audio 3: a description, the length and model, and a feed of instrumentals and sounds](docs/screenshots/en/15-stable-audio.png)
 
-Instrumentals and sound effects from a description, in seconds; no vocals. Pick **Music** or **Sound**, describe it in English (genre, instruments, mood and tempo; for a sound its source, how it happens and the room), set the length (up to 6 minutes on `medium`, 2 on the small checkpoints) and 1, 2 or 4 variants. A **reference track** turns the same form into a cover (audio-to-audio with a closeness slider), a repaint of one or more ranges, or a continuation. Six checkpoints are downloaded from the Models page; the page says how many are there. More on the page's options under [Samples](#samples).
+Instrumentals and sound effects from a description, in seconds; no vocals. The form has the tabs **Description**, **From a track** and **Tuning**. Pick **Music** or **Sound**, describe it (genre, instruments, mood and tempo; for a sound its source, how it happens and the room), set the length (up to 6 minutes on `medium`, 2 on the small checkpoints) and 1, 2 or 4 variants. Stable Audio understands English only, so a description in another language goes through the prompt assistant: **Write the prompt** rewrites it as a Stable Audio prompt (genre, instruments, sound, tempo and length), **Only translate** just translates it. On **From a track**, a **reference track** turns the same form into a cover (audio-to-audio with a closeness slider), a repaint of one or more ranges, or a continuation. Six checkpoints are downloaded from the Models page; the page says how many are there. More on the page's options under [Samples](#samples).
 
 ## LoRA training (ACE-Step)
 
 ![LoRA training](docs/screenshots/en/04-lora-training.png)
 
-The full ACE-Step fine-tuning pipeline on your own dataset, no console required. It is a tab on ACE-Step's page, next to *Generate*:
+The full ACE-Step fine-tuning pipeline on your own dataset, no console required. It sits under ACE-Step in the Create page's rail, next to generation; it needs ACE-Step running, and the page offers to start it:
 
 1. **Dataset** — upload audio files straight from the browser (drag & drop) or point at an existing server folder, a trigger word, an "all tracks are instrumental" flag.
 2. **Automatic labeling** — LLM-generated description, genre, BPM/key, lyrics transcription/reformatting.
@@ -202,17 +251,54 @@ The full ACE-Step fine-tuning pipeline on your own dataset, no console required.
 5. **Training** — LoRA rank/alpha/dropout, learning rate, epochs, batch size, FP8, gradient checkpointing, live progress with an ETA and a TensorBoard link.
 6. **Export and registry** — the finished adapter is immediately added to the LoRA list on the generation form.
 
+## Library
+
+![The Library page: filters on the left, the track list with covers in the middle, and the panel of the selected track with its cover, lyrics and actions on the right](docs/screenshots/en/19-library.png)
+
+Every saved track, whatever made it, on one page:
+
+- **Search** by title, style or a line of the lyrics. **Filters**: all tracks, *Favourites* (the star), *Today*; *Made by* (the engine, the editor, uploaded); *What the track has* (stems, MIDI, notes); *Collections* and *Tags*. A period filter and newest or oldest first.
+- **The track panel** has the tabs *About* (the cover, how it was made: model, melody plan, where it was made, file), *Lyrics* and *Stems and notes*. From there: *Repeat with these settings* opens Create with the track's lyrics, style and settings; *Open in the editor* makes a new editor project with the track on a lane; *Open in Notes* opens a copy of a YuE2 track's score; downloads and the cover.
+- **Selection**: tick several tracks (or *Select all*) to tag them, add them to a collection or favourites, *Suggest titles*, *Make covers*, *Caption* their covers in one style, or delete them.
+- **Trash**: deleted tracks wait there for 30 days, then go for good; restore or delete forever from there, with an undo. A track that an editor project still plays is named in the warning before it goes.
+
+A YuE2 track is marked with its non-commercial licence in the panel.
+
+## Album covers
+
+![The cover studio: a picture of a night city with the song's title and the artist name in one of the caption layouts, and the font, text and colour settings beside it](docs/screenshots/en/20-cover-studio.png)
+
+A song can get a square cover (1024 × 1024) drawn on this computer by **Z-Image Turbo**, run by stable-diffusion.cpp's `sd-server` on the GPU like the other engines (a CUDA build on Windows, a prebuilt arm64 build on Apple Silicon, a Vulkan build on Linux). The model is about 10 GB and installed separately (see [Installation](#-installation)); once it is installed covers are on, and **Models and settings → Covers** (*Make album covers for tracks*) switches them off.
+
+- **After the song**: tick *Make a cover* under the form, and one cover for all the takes comes after the song. It takes the GPU for a little longer: the engine is switched for the cover model, and the next song loads its engine back. The box's starting value is set in Models and settings → General.
+- **Later**: in the library's track panel, make a cover, *Another cover*, *Edit the description…* (a scene in a few words, English works best) or *Make it with the assistant*, which writes the description from your text in any language or, with the field empty, from the song. *Make covers* does the same for a selection.
+- **The description is built from the song's style** and asks for a picture, not a cover, so the model does not letter the genre or the tempo across the image; a style written as sentences, or with a "Requested: … seconds" line, is cut to its visual parts first.
+- **Design the cover** (the cover studio) adds a caption: the artist, the title and the year over the picture, in 15 layouts (Classic, Band, Frame, Poster, Cassette, Record, Neon and others) and 8 bundled fonts, with the text colour and an accent taken from the picture. *Pick for me* chooses a font from the genre and a layout from where the picture is calm enough for text. A new picture keeps the caption.
+- Covers show in the session, the library, the home page and the player, and go into downloaded MP3 and FLAC files (with the caption, if it has one).
+
+## Downloads
+
+A track downloads as:
+
+| Format | What you get |
+|---|---|
+| **MP3** | 320 kbps, with the cover and tags; plays everywhere |
+| **FLAC** | Lossless, with the cover and tags |
+| **WAV** | The original for a DAW, no cover |
+
+Pick the format in the *Download* menu of a take or a library track; the choice is remembered and can also be set in Models and settings → General. The tags carry the artist name, which the app asks for once and which can be changed in the footer or in General.
+
 ## Stem separation (Demucs)
 
 ![Stem separation](docs/screenshots/en/05-stems-panel.png)
 
-One click splits any saved track into 4 isolated stems (Demucs `htdemucs`), with a progress bar, a separate player and download per stem, and the option to redo or delete. Runs alongside the active generation model (without stopping it), sharing a GPU lock. The **"Open in editor"** button allows you to instantly send all 4 stems into a new built-in DAW project for further mixdown.
+One click splits any saved track into 4 isolated stems (Demucs `htdemucs`): *Split into stems* in a take's menu, the *Stems and notes* tab in the library, or a track in the editor. Each stem has a progress bar, a separate player and download, and the option to redo or delete. Runs alongside the active generation model (without stopping it), sharing a GPU lock. The **"Open in editor"** button allows you to instantly send all 4 stems into a new built-in DAW project for further mixdown.
 
 ## MIDI transcription (MuScriptor)
 
 ![MIDI transcription](docs/screenshots/en/06-midi-panel.png)
 
-Transcribes the full mix, or any already-separated stem, into MIDI. Technically this isn't a separate process — it's a model loaded into the already-running YuE2 server, so **transcription requires YuE2 to be the active model**. Result: a built-in Web Audio synth player, a mini piano roll, a note count and BPM readout, and `.mid` download.
+Transcribes the full mix, or any already-separated stem, into MIDI (*Notes to MIDI* in a take's menu, or the *Stems and notes* tab in the library). Technically this isn't a separate process — it's a model loaded into the YuE2 server, so **transcription needs YuE2 installed**: when another engine holds the GPU, *Notes to MIDI* starts YuE2 by itself (not while a take is being generated). Result: a built-in Web Audio synth player, a mini piano roll, a note count and BPM readout, `.mid` download, and *To a YuE2 score*, which turns the MIDI into a score for [Notes](#notes-yue2s-score).
 
 ## Built-in DAW
 
@@ -220,7 +306,9 @@ Transcribes the full mix, or any already-separated stem, into MIDI. Technically 
 
 Any number of tracks, onto which you can add anything from the shared library (a full mix, a single stem, a file uploaded from disk) — via a picker dialog or by dragging a file straight onto a track. The picker has search, a "with stems" filter, a preview player with seeking and an **"As stems"** button that brings a track in as four lanes (splitting it first if it has no stems yet). A lane that plays one whole library track can be split into stems right on the timeline. The quickest way in is still the **"Open in editor"** button on the stems panel, which creates a ready-made four-track project (vocals, drums, bass, other).
 
-The editor fills the whole window. The AI arranger and the mixer are panels you can drag to the top, the right or the bottom of the screen (by default the arranger sits on the right and the mixer at the bottom). Projects open from a list of cards that show each project's lanes, length, tempo and source track.
+The editor fills the whole window. The AI arranger and the mixer are panels you can drag to the top, the right or the bottom of the screen (by default the arranger sits on the right and the mixer at the bottom, folded until you open it once, so the tracks get the height on a first visit). Projects open from a list of cards that show each project's lanes, length, tempo and source track; *Open in the editor* in the library starts a new one from a track.
+
+A clip whose source track is in the library's trash still plays, but is marked, and a banner names those tracks with *Restore from the trash*: the trash deletes them for good after 30 days.
 
 ### Timeline and clips
 
@@ -276,16 +364,16 @@ On the Stable Audio 3 page itself: a description per variant (an A/B of two prom
 
 ### Models and settings
 
-The gear in the header opens the **Models** page: for every engine the weights it can download and the settings it starts with. ACE-Step: the core bundle, the other DiT checkpoints (`sft`, `base`, the XL ones) and the 0.6B and 4B language models, plus which DiT and language model it starts with. YuE2: the shared weights and the `q8_0` / `q4_0` / `bf16` main models. Stable Audio 3: the six checkpoints with the Hugging Face token, the model warmed up at start, and samples on the CPU. Demucs: `htdemucs` or the fine-tuned, slower `htdemucs_ft`. The prompt assistant of [From an idea](#from-an-idea): its model, the device (auto: the GPU while no engine runs, else the CPU; GPU: a running engine is unloaded while it writes, and *Generate* swaps it back), the idle time, and a box to try it with the same progress and *Stop*. The engines are listed on the left with what their models take on disk; an optional part can be deleted again from its row (not while its engine runs). **Check** on any downloaded part reads its files and says whether they are whole (YuE2: size and SHA-256 against Hugging Face's list, and whether the repository holds a newer file; ACE-Step: the safetensors headers, which catches a download that stopped half-way); **Re-download** fetches it again and replaces the files, for the required parts too. Downloads run in the background one at a time and can be stopped; a stopped one resumes. An engine's settings apply on its next start, and the page offers a restart when it runs with the old ones.
+The gear in the header opens **Models and settings**, with its sections in a side list. **General** holds the app's own settings: the artist name for the tags, whether *Make a cover* starts ticked, the download format and the interface language. Then, for every engine, the weights it can download and the settings it starts with. ACE-Step: the core bundle, the other DiT checkpoints (`sft`, `base`, the XL ones) and the 0.6B and 4B language models, plus which DiT and language model it starts with. YuE2: the shared weights and the `q8_0` / `q4_0` / `bf16` main models. Stable Audio 3: the six checkpoints with the Hugging Face token, the model warmed up at start, and samples on the CPU. Demucs: `htdemucs` or the fine-tuned, slower `htdemucs_ft`. Covers: the switch that turns them on, and the image server and Z-Image Turbo weights. The prompt assistant of [From an idea](#from-an-idea-the-home-page): its model, the device (Auto: the GPU while no engine runs, else the CPU; CPU; GPU: a running engine is unloaded while it writes, and *Generate* swaps it back), the idle time, and a box to try it with the same progress and *Stop*. The engines are listed on the left with what their models take on disk; an optional part can be deleted again from its row (not while its engine runs). **Check** on any downloaded part reads its files and says whether they are whole (YuE2: size and SHA-256 against Hugging Face's list, and whether the repository holds a newer file; ACE-Step: the safetensors headers, which catches a download that stopped half-way); **Re-download** fetches it again and replaces the files, for the required parts too. Downloads run in the background one at a time and can be stopped; a stopped one resumes. An engine's settings apply on its next start, and the page offers a restart when it runs with the old ones.
 
 ![Models page: YuE2's weights with Check and Re-download on every part, and the result of a check](docs/screenshots/en/16-models-check.png)
 
 ## Architecture
 
-- **`backend/`** — FastAPI (Python). `app/orchestrator/` manages the models' process lifecycle (start/stop/health-poll) and enforces their mutual exclusion on a single GPU. `app/api/routes_proxy.py` reverse-proxies `/api/ace/*` → ACE-Step's REST API (port 8001) and `/api/yue2/*` → YuE2's native server (`audiocpp_server.exe`, port 8080). `app/db.py` + `routes_tracks.py` are the shared SQLite database and files, organized per model, regardless of how a track was created (generation, upload, or assembled in the editor).
+- **`backend/`** — FastAPI (Python). `app/orchestrator/` manages the models' process lifecycle (start/stop/health-poll) and enforces their mutual exclusion on a single GPU. `app/api/routes_proxy.py` reverse-proxies `/api/ace/*` → ACE-Step's REST API (port 8001) and `/api/yue2/*` → YuE2's native server (`audiocpp_server.exe`, port 8080). `app/db.py` + `routes_tracks.py` are the shared SQLite database and files, organized per model, regardless of how a track was created (generation, upload, or assembled in the editor). `app/gen_queue.py` is the server-side generation queue (takes and covers), `app/covers.py` builds cover descriptions and runs the cover engine (stable-diffusion.cpp's `sd-server`), and `app/tagging.py` writes the MP3/FLAC/WAV downloads with their tags. `app/security.py` refuses requests whose Host or Origin is not a local one (DNS rebinding, cross-site requests), since the server has no login.
 - **`frontend/`** — Vue 3 + TypeScript + Tailwind v4 + Pinia + vue-router + vue-i18n. A fully native implementation (not an iframe) on top of the models' original APIs — `src/audio/` contains its own Web Audio engine (mixer, timeline, effects, a MIDI parser and synth, WAV/MP3 encoders).
 - **`desktop/`** — an optional Electron shell and installer: first-run setup, server lifecycle and packaging. It runs the same `backend/` and `frontend/`; see [`desktop/README.md`](desktop/README.md).
-- Only the models' own inference process (`acestep-api` and `audiocpp_server.exe`) runs from their original code — everything else (UI, proxying, storage, file upload/transcoding) is written in this repository. YuE2's own web UI (`web-ui/server.py`) is no longer used — the one useful part of it (transcoding non-WAV uploads via ffmpeg) has been ported to `backend/app/api/routes_yue2_upload.py`.
+- Only the models' own inference process (`acestep-api`, `audiocpp_server.exe` and `sd-server`) runs from their original code — everything else (UI, proxying, storage, file upload/transcoding) is written in this repository. YuE2's own web UI (`web-ui/server.py`) is no longer used — the one useful part of it (transcoding non-WAV uploads via ffmpeg) has been ported to `backend/app/api/routes_yue2_upload.py`.
 
 ---
 
@@ -299,7 +387,10 @@ Remiqora is a UI and orchestrator on top of third-party inference engines. Their
 | [audio.cpp](https://github.com/0xShug0/audio.cpp) (`dev` branch) | YuE2 (generation), SheetSage2 (melody extraction), MuScriptor (MIDI transcription) | Apache-2.0 |
 | [Demucs](https://github.com/adefossez/demucs) | Stem separation (`htdemucs`) | MIT |
 | [Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) | Instrumentals and sound effects; inpainting, continuation and audio-to-audio in the arranger. Run through our own small server, `external/sa3-server` | Code MIT; weights under the [Stability AI Community License](https://stability.ai/community-license-agreement) (free below $1M annual revenue) plus the Gemma Terms of Use for the text encoder |
-| [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-2B) | The prompt assistant of *From an idea* (0.8B, 2B or 4B), run through our own small server, `external/prompt-assistant`. Stable Audio's prompt instructions in it come from Stable Audio 3's `reprompt.py` (MIT) | Apache-2.0 (code and weights) |
+| [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-2B) | The prompt assistant of *From an idea* (0.8B, 2B or 4B), also used for song titles, Stable Audio translations and cover descriptions; run through our own small server, `external/prompt-assistant`. Stable Audio's prompt instructions in it come from Stable Audio 3's `reprompt.py` (MIT) | Apache-2.0 (code and weights) |
+| [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | Runs the cover model: its prebuilt `sd-server` release (CUDA 12 on Windows, arm64 on macOS, Vulkan on Linux), pinned and checked by SHA-256 | MIT |
+| [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) | Draws the album covers: the `Q8_0` GGUF conversion ([leejet/Z-Image-Turbo-GGUF](https://huggingface.co/leejet/Z-Image-Turbo-GGUF)), with Qwen3-4B-Instruct-2507 as its text encoder and the `ae.safetensors` VAE ([Comfy-Org/z_image_turbo](https://huggingface.co/Comfy-Org/z_image_turbo)) | Apache-2.0 (Z-Image Turbo and Qwen3-4B-Instruct) |
+| Fonts: Unbounded, Oswald, Playfair Display, Cormorant Garamond, Rubik Mono One, Caveat, Press Start 2P, Manrope; Inter for the interface | Captions on covers; bundled with the app | SIL Open Font License 1.1 |
 
 Patch details and exact base commits are in [`external/patches/README.md`](external/patches/README.md). Stable Audio 3 in Remiqora is **Powered by Stability AI**.
 
@@ -309,14 +400,16 @@ The desktop app additionally uses [Electron](https://www.electronjs.org) (MIT), 
 
 ## License & liability for generated content
 
-Remiqora's own code (this repository) is [MIT-licensed](LICENSE). That covers the UI and orchestrator only — it is a separate thing from the license of a *track* you generate with it. Remiqora is an orchestrator, not a generator with its own model — all audio is produced by third-party engines (ACE-Step 1.5, YuE2-3B, Stable Audio 3, and the SheetSage2/MuScriptor tools built on top of them). Because of that:
+Remiqora's own code (this repository) is [MIT-licensed](LICENSE). That covers the UI and orchestrator only — it is a separate thing from the license of a *track* you generate with it. Remiqora is an orchestrator, not a generator with its own model — all audio is produced by third-party engines (ACE-Step 1.5, YuE2-3B, Stable Audio 3, and the SheetSage2/MuScriptor tools built on top of them), and album covers by Z-Image Turbo. Because of that:
 
 - **The author of Remiqora takes no responsibility** for what happens to tracks generated through this app afterward — commercial or otherwise, published or private. Whatever you create, and how you use it next, is entirely your own responsibility.
 - **A generated track is covered by the license of whichever model produced it**, not by a license from this repository. The table above lists the *code* license — the *model weights* can be licensed differently:
   - **ACE-Step 1.5** — both the code and the model weights are MIT-licensed, and the model's authors explicitly state the generated music can be used commercially.
   - **YuE2-3B** — the model weights (unlike audio.cpp's own Apache-2.0 *code*) are distributed under **CC BY-NC 4.0**. That means tracks generated through YuE2 **cannot be used commercially** without separate permission from the rights holder, and attribution is required for any use.
   - **Stable Audio 3** — the code is MIT, the weights are under the [Stability AI Community License](https://stability.ai/community-license-agreement). It allows commercial use, the generated audio included, for individuals and organizations with under US $1M in annual revenue (counted together with affiliates); commercial use requires a free registration with Stability AI, and above that revenue a separate license from Stability AI is needed. You own the outputs as far as the law allows, but they may not be used to create or improve other foundation generative models. The text encoder also falls under the Gemma Terms of Use.
-  - **The prompt assistant** (Qwen3.5, Apache-2.0) writes only text prompts, not audio; its license places no terms on what it writes.
+  - **SheetSage2 and MuScriptor** — their weights are CC BY-NC 4.0 as well, according to their model cards, so treat the scores and MIDI they extract the same way as YuE2's tracks: non-commercial.
+  - **The prompt assistant** (Qwen3.5, Apache-2.0) writes only text prompts, titles and cover descriptions, not audio; its license places no terms on what it writes.
+  - **Album covers** — Z-Image Turbo and its Qwen3-4B-Instruct text encoder are Apache-2.0 (stable-diffusion.cpp, which runs them, is MIT). Apache-2.0 is a license for the model, and it places no terms on the pictures it draws. The caption fonts are under the SIL Open Font License 1.1. What a cover shows, and whether it resembles someone else's work, is yours to check before you publish it, as with a track.
 - Before publishing, monetizing, or otherwise distributing a generated track, **check the current license terms of that specific model** on its HuggingFace/weights page — those terms belong to the model's own rights holder and can change independently of this repository.
 - Remiqora is provided "as is", with no warranty of any kind. By using it, you accept that verifying a generated track's compliance with applicable law and with the license of the model that produced it is solely your responsibility.
 - **Attribution**: if you fork, copy, or build on Remiqora's code, keep the credit — a link back to this repository and to Nikolay Cherkashin ([inikolax](https://github.com/inikolax)) as the original author. The MIT license above already requires keeping the copyright notice in any copy; this is just that requirement spelled out plainly.
@@ -331,7 +424,7 @@ There are two ways to install Remiqora: the **desktop app** (experimental, descr
 
 For anyone who would rather not use a terminal, Remiqora also comes as a **desktop app** for **Windows** (NVIDIA RTX 20-series or newer, driver 580 or newer) and **macOS** (Apple Silicon). It opens in its own window and sets everything up on the first launch, so there is no Git, Python, CUDA Toolkit or compiler to install. The Windows installer installs per user and needs no administrator rights.
 
-**Download (v0.6.0, pre-release):** [Windows installer (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.6.0/Remiqora-Setup-0.6.0.exe) · [macOS installer (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.6.0/Remiqora-0.6.0-arm64.dmg) · [all files and SHA-256 sums](https://github.com/inikolax/remiqora/releases/tag/v0.6.0)
+**Download (v0.7.0, pre-release):** [Windows installer (.exe)](https://github.com/inikolax/remiqora/releases/download/v0.7.0/Remiqora-Setup-0.7.0.exe) · [macOS installer (.dmg, Apple Silicon)](https://github.com/inikolax/remiqora/releases/download/v0.7.0/Remiqora-0.7.0-arm64.dmg) · [all files and SHA-256 sums](https://github.com/inikolax/remiqora/releases/tag/v0.7.0)
 
 > [!WARNING]
 > Official builds are published only on this repository's [Releases](https://github.com/inikolax/remiqora/releases) page and on [remiqora.com](https://remiqora.com). Copies of Remiqora under other GitHub accounts that offer a `.zip` "installer" are not ours and may carry malware: do not download or run them.
@@ -347,11 +440,12 @@ For anyone who would rather not use a terminal, Remiqora also comes as a **deskt
   - **Stable Audio 3** (about 4.5 GB, off by default): its Python environment and the models ticked under it (`medium` 10.4 GB, `small-music` and `small-sfx` 3.5 GB each; `medium` is not offered on a Mac). The weights are gated on Hugging Face: accept the licence on each model page, then sign in with Hugging Face from the setup screen (a browser opens) or paste a token with the Read role; the setup checks the access before it starts. A pasted token stays in the data folder; the one from the browser sign-in expires after a few hours, so it serves the setup only. Models left out, and the open base checkpoints, can be downloaded later on the Models page;
   - **Prompt assistant** (about 4 GB, off by default) for *From an idea*: its Python environment, mostly shared with Stable Audio 3's when both are picked. Its model (Qwen3.5-2B, about 4.6 GB) is downloaded afterwards on the Models page;
   - **ACE-Step base model** (about 4.8 GB) for adding parts with the AI arranger;
-  - **ACE-Step XL base model** (about 20 GB), off by default, with a warning when the card has less than 16 GB.
+  - **ACE-Step XL base model** (about 20 GB), off by default, with a warning when the card has less than 16 GB;
+  - **Album covers** (about 10 GB): stable-diffusion.cpp's image server and the Z-Image Turbo weights. On a first install it is ticked on an NVIDIA card with 8 GB of video memory or more and on Apple Silicon; it is not added to an existing install by itself. Once it is installed, covers are on; Models and settings → Covers switches them off.
 
   The free space it asks for follows what is picked. Anything left out shows up in the app as "not installed" with an **Install** button that downloads just that part while the app keeps running. If the setup is interrupted, finished steps are skipped and downloads resume.
 - **Every launch after that.** The app starts the server and opens the interface. Closing the window stops the model servers and frees the GPU.
-- **Where things live.** Models, the database, generated audio and logs stay in the folder you chose, and nothing is uploaded anywhere. The folder cannot be moved later, because the database stores absolute paths.
+- **Where things live.** Models, the database, generated audio, covers and logs stay in the folder you chose, and nothing is uploaded anywhere. The folder cannot be moved later, because the database stores absolute paths.
 
 **Status.** Experimental. The installers are not signed yet, so Windows shows a SmartScreen warning ("More info" → "Run anyway") and macOS says it cannot verify the app: close that message, open System Settings → Privacy & Security, click "Open Anyway" and confirm (needed once). If macOS instead says the app "is damaged and can't be opened" (the 0.2.1 build and earlier, [#33](https://github.com/inikolax/remiqora/issues/33)), drag it to Applications and run `xattr -dr com.apple.quarantine /Applications/Remiqora.app` in Terminal. The SHA-256 sum of every file is in `SHA256SUMS.txt` on the release page. To build an installer yourself instead:
 
@@ -431,6 +525,8 @@ UI does.
 
 **Stable Audio 3 weights** are downloaded in the app. The Models page (the gear in the header) lists the six checkpoints with their sizes, a *Download* button and the progress; a download can be stopped (finished files are kept, the file it was on starts over next time) and keeps running while you use other pages. `medium`, `small-music` and `small-sfx` are gated on Hugging Face: sign in there, press *Agree* on the model page, create a token with the *Read* role and paste it on the same page (it is saved to the Hugging Face cache, as `hf auth login` would). The `-base` checkpoints are open. Without the app: `setup_models.bat -StableAudioModels small-sfx,medium` (macOS: `--stable-audio-models=small-music,small-sfx`, Linux: `STABLE_AUDIO_MODELS="medium small-sfx"`), or `python -m sa3_server.download medium` with `external/sa3-server`'s own Python.
 
+**Album covers**: the script also installs the cover engine — stable-diffusion.cpp's prebuilt `sd-server` (CUDA 12) and the Z-Image Turbo weights, ~10.4 GB, sha256-checked, into `external/sdcpp`. `-SkipCovers` leaves it out; the Models page can install it later.
+
 The script is idempotent — safe to re-run (the `-SkipBuild` / `-SkipWeights`
 flags skip the corresponding steps). It expects `git`,
 [`uv`](https://docs.astral.sh/uv/getting-started/installation/), Python 3,
@@ -466,7 +562,8 @@ behind a `dev`-only fix, or on Intel Macs, which the prebuilt asset doesn't
 cover) — that path needs full **Xcode.app** (not just the Command Line
 Tools) for its Metal shader compiler; `setup_prereqs.sh` prints exact steps
 if it's missing. `--skip-build` / `--skip-weights` mirror `-SkipBuild` /
-`-SkipWeights`. Otherwise it expects `git`, `uv` and Python 3 to already be
+`-SkipWeights`. Album covers (the prebuilt arm64 `sd-server` + Z-Image Turbo,
+~9.5 GB, into `external/sdcpp`) are installed too; `--skip-covers` leaves them out. Otherwise it expects `git`, `uv` and Python 3 to already be
 installed (`cmake` too, for `--from-source`).
 
 Hard machine requirements this path can't remove: macOS, Apple Silicon
@@ -486,7 +583,7 @@ tag instead, so it doesn't drift on its own.
 ```
 Builds audio.cpp with its native Linux CUDA backend, installs ACE-Step and Demucs in isolated environments, downloads the model weights, and writes `backend/.env`. It expects git, Python 3.11/3.12, uv, Node.js 20.19+ (or 22.12+), npm, CMake, ffmpeg, and a CUDA toolkit with nvcc plus cuBLAS/cuFFT development headers. The NVIDIA driver is deliberately not installed or modified.
 
-Tool paths are overrideable (`UV_BIN`, `NODE_BIN`, `NPM_BIN`, `CMAKE_BIN`, `NVCC_BIN`, `CUDA_TOOLKIT_PREFIX`, `CUDA_LIB_DIR`); `STABLE_AUDIO_MODELS="medium small-sfx"` also downloads those Stable Audio 3 checkpoints. On multi-GPU hosts, `ACE_STEP_DEVICE=0 YUE2_DEVICE=1 ./setup_linux.sh` pins the engines separately and enables concurrent model residency when the two explicit device values differ; leave either value unset (or set both to the same device) to retain the default exclusive switching behavior. Validated end-to-end on Ubuntu 24.04 x86_64 with NVIDIA CUDA.
+Tool paths are overrideable (`UV_BIN`, `NODE_BIN`, `NPM_BIN`, `CMAKE_BIN`, `NVCC_BIN`, `CUDA_TOOLKIT_PREFIX`, `CUDA_LIB_DIR`); `STABLE_AUDIO_MODELS="medium small-sfx"` also downloads those Stable Audio 3 checkpoints. Album covers (stable-diffusion.cpp's Vulkan `sd-server` + Z-Image Turbo, ~9.5 GB, into `external/sdcpp`) are installed too and need the Vulkan loader (`libvulkan1` with `mesa-vulkan-drivers` or NVIDIA's driver); `SKIP_COVERS=1` leaves them out. On multi-GPU hosts, `ACE_STEP_DEVICE=0 YUE2_DEVICE=1 ./setup_linux.sh` pins the engines separately and enables concurrent model residency when the two explicit device values differ; leave either value unset (or set both to the same device) to retain the default exclusive switching behavior. Validated end-to-end on Ubuntu 24.04 x86_64 with NVIDIA CUDA.
 
 ### Step 2: run
 
@@ -503,7 +600,7 @@ Builds the client via `npm run build` and serves the finished SPA bundle togethe
 
 Stem separation's `demucs` uv project is set up by `setup_models.bat` above; the `htdemucs` weights themselves download automatically on first use.
 
-**On Linux:** `./prod_run_linux.sh` builds the frontend and serves the SPA and API on `127.0.0.1:9000` by default. Override with `REMIQORA_HOST` / `REMIQORA_PORT`. To opt in to LAN access, run `REMIQORA_HOST=0.0.0.0 ./prod_run_linux.sh`; Remiqora has no built-in authentication, so only expose it on a trusted network or behind an authenticated reverse proxy.
+**On Linux:** `./prod_run_linux.sh` builds the frontend and serves the SPA and API on `127.0.0.1:9000` by default. Override with `REMIQORA_HOST` / `REMIQORA_PORT`. To opt in to LAN access, run `REMIQORA_HOST=0.0.0.0 ./prod_run_linux.sh` (on a loopback address the server answers only to local host names; on another address it accepts any host name unless `REMIQORA_ALLOWED_HOSTS` lists the ones it should answer to); Remiqora has no built-in authentication, so only expose it on a trusted network or behind an authenticated reverse proxy.
 
 **On macOS:** `./dev.sh` and `./prod_run.sh` are the equivalents — same
 behavior, except the backend/frontend run as background jobs of the script
@@ -528,6 +625,7 @@ CUDA_BIN_DIR=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin
 - `YUE2_DIR` — root of the cloned and patched audio.cpp (where `audiocpp_server.exe` is built and the YuE2/SheetSage2/MuScriptor GGUF weights live).
 - `DEMUCS_DIR` — root of the `demucs` uv project used for stem separation.
 - `STABLE_AUDIO_DIR` — root of the `sa3-server` uv project (a copy of `external/sa3-server` with its `.venv`). The Stable Audio 3 weights are read from the Hugging Face cache (`HF_HOME`) and downloaded from the app's Stable Audio 3 page (see *Stable Audio 3 weights* above); the main checkpoints are gated, so accept the licence on [`stabilityai/stable-audio-3-medium`](https://huggingface.co/stabilityai/stable-audio-3-medium) (and `-small-music` / `-small-sfx`) first. Optional: `STABLE_AUDIO_API_PORT` (8002), `STABLE_AUDIO_PRELOAD` (the checkpoint warmed up at start, `medium` by default), `STABLE_AUDIO_DEVICE`.
+- `SDCPP_DIR` — optional: the cover engine's folder (`bin/` with `sd-server`, `models/` with the Z-Image Turbo weights); `external/sdcpp` by default, which is where the setup scripts put it.
 - `FFMPEG_BIN_DIR` — folder containing `ffmpeg.exe`/`ffprobe.exe`.
 - `CUDA_BIN_DIR` — the `bin` folder of the installed CUDA Toolkit (needs to be on PATH for `audiocpp_server.exe`). Windows only — on macOS this is left unset, since YuE2 runs on the Metal backend instead.
 
@@ -538,7 +636,9 @@ CUDA_BIN_DIR=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin
 - The interface and installer are machine-translated into 18 languages (Russian and English are hand-written); no native speaker has reviewed them. The prompt assistant's lyrics in rarer languages are only as good as the 2B model that writes them.
 - The engines (ACE-Step, YuE2, Stable Audio 3) switch exclusively by default. On multi-GPU Linux hosts, explicitly setting every `*_DEVICE` (`ACE_STEP_DEVICE`, `YUE2_DEVICE`, `STABLE_AUDIO_DEVICE`) to different device values opts into concurrent residency and pins each engine to its own GPU.
 - Stable Audio 3 is instrumental only (no vocals), up to 380 s per task with the medium model, and its `medium` checkpoint needs a CUDA GPU with Flash Attention (prebuilt wheels are pinned for Windows and Linux; on macOS only the small models run). It cannot add a part over a mix: the arranger's "Add a part" stays with ACE-Step. Its main checkpoints are gated: a free Hugging Face account, the licence accepted once and a token are needed to download them.
-- MIDI transcription requires YuE2 specifically to be active (the MuScriptor model loads into its process).
+- MIDI transcription needs YuE2 installed: the MuScriptor model loads into its process, so *Notes to MIDI* starts YuE2 and stops the engine that held the GPU.
+- Album covers need their own model (about 10 GB) and switch the GPU to it for each cover, so a cover after a song adds an engine switch.
+- *Another one* in *Suggest a title* asks the assistant again but does not tell it which titles it already gave, so it can return the same title.
 - Windows (NVIDIA CUDA), macOS/Apple Silicon (Metal/MPS), and Linux x86_64 (NVIDIA CUDA) have setup/run paths — `.bat`/`.ps1` scripts for the first, `.sh` scripts for the other two. Linux is community-contributed: it builds audio.cpp from source and needs a CUDA development toolkit in addition to the driver, and has been verified end-to-end on Ubuntu 24.04 (via WSL2 with GPU passthrough) rather than on bare metal or other distros.
-- The desktop installers are experimental: unsigned (a SmartScreen or Gatekeeper prompt), and the first launch downloads from about 18 GB (ACE-Step only) to about 80 GB (everything, including the XL model, Stable Audio 3 and the prompt assistant with their models). The installer does not support Linux yet — Linux users run from source via `setup_linux.sh`.
+- The desktop installers are experimental: unsigned (a SmartScreen or Gatekeeper prompt), and the first launch downloads from about 18 GB (ACE-Step only) to about 90 GB (everything, including the XL model, Stable Audio 3, the prompt assistant with their models and the album covers). The installer does not support Linux yet — Linux users run from source via `setup_linux.sh`.
 - The macOS/Metal path is newer and less battle-tested than the Windows/CUDA one; expect it to be slower. By default it installs a prebuilt YuE2 binary pinned to a fixed release tag (no compiler needed); `--from-source` instead builds the same `dev` commit Windows uses, and may occasionally need that pin bumped if `dev` drifts.

@@ -139,7 +139,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6">
+  <div class="w-full">
     <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div class="max-w-2xl">
         <h1 class="text-2xl font-semibold text-text">{{ t('projectsPage.title') }}</h1>
@@ -157,7 +157,7 @@ onMounted(load)
     <p v-if="error" class="mb-4 rounded-lg border border-status-failed/40 bg-status-failed/10 px-3 py-2 text-sm text-status-failed">{{ error }}</p>
 
     <!-- loading: the cards' outlines -->
-    <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+    <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-hidden="true">
       <div v-for="i in 3" :key="i" class="h-[17rem] animate-pulse rounded-2xl border border-border bg-panel/60"></div>
     </div>
 
@@ -175,7 +175,7 @@ onMounted(load)
       </router-link>
     </div>
 
-    <ul v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <ul v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       <li v-for="p in projects" :key="p.id" class="relative flex min-w-0 flex-col rounded-2xl border border-border bg-panel p-4 transition-colors hover:border-accent1/40">
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">

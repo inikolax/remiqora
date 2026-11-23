@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useEditorStore } from '../../stores/editor'
@@ -81,9 +81,10 @@ const sfxPanelMounted = ref(false)
 const MIXER_KEY = 'remiqora_editor_mixer'
 function readMixerOpen(): boolean {
   try {
-    return localStorage.getItem(MIXER_KEY) !== 'closed'
+    // folded until opened once: the tracks get the height on a first visit
+    return localStorage.getItem(MIXER_KEY) === 'open'
   } catch {
-    return true
+    return false
   }
 }
 const mixerOpen = ref(readMixerOpen())
@@ -752,8 +753,52 @@ async function doExport(): Promise<void> {
 // (same idea as seekToken in useTimelineEngine).
 let loadToken = 0
 
+// ---- Clips whose track is in the library's trash: they still play, until the trash forgets the track (30 days) ----
+/** Trashed tracks by id: their titles, for the banner. Loaded with the project and after a restore. */
+const trashed = ref<Map<number, string>>(new Map())
+const TRACK_ID_IN_URL = /\/api\/tracks\/(\d+)\/(?:audio|stems\/)/
+function trackIdOf(url: string | undefined): number | null {
+  const m = url ? TRACK_ID_IN_URL.exec(url) : null
+  return m ? Number(m[1]) : null
+}
+/** The project's trashed sources: the track ids and their titles, once each. */
+const trashedSources = computed(() => {
+  const ids = new Set<number>()
+  for (const c of store.project.lanes.flatMap((l) => l.clips)) {
+    const id = trackIdOf(c.sourceUrl)
+    if (id != null && trashed.value.has(id)) ids.add(id)
+  }
+  return [...ids].map((id) => ({ id, title: trashed.value.get(id) || t('library.untitled') }))
+})
+const trashedClipIds = computed(() => new Set(store.project.lanes.flatMap((l) => l.clips)
+  .filter((c) => { const id = trackIdOf(c.sourceUrl); return id != null && trashed.value.has(id) }).map((c) => c.id)))
+// the clips mark themselves (TimelineClip injects this)
+provide('editor:trashedClipIds', trashedClipIds)
+async function loadTrashed(): Promise<void> {
+  try {
+    trashed.value = new Map((await tracksApi.listTrash()).map((x) => [x.id, x.title]))
+  } catch {
+    trashed.value = new Map() // no banner rather than a wrong one
+  }
+}
+const restoring = ref(false)
+const restoreError = ref('')
+async function restoreTrashed(): Promise<void> {
+  restoring.value = true
+  restoreError.value = ''
+  try {
+    await tracksApi.bulkTracks(trashedSources.value.map((x) => x.id), 'restore')
+    await loadTrashed()
+  } catch (e) {
+    restoreError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    restoring.value = false
+  }
+}
+
 async function load(): Promise<void> {
   const token = ++loadToken
+  void loadTrashed()
   pause()
   engine.teardown()
   loadingAudio.value = true
@@ -1432,6 +1477,19 @@ onBeforeRouteLeave((_to, _from, next) => {
       <div ref="workAreaEl" class="relative flex min-h-0 flex-1 gap-3">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <div id="editor-dock-top" class="contents"></div>
+          <!-- some clips play tracks that are in the library's trash: one click puts them back -->
+          <div
+            v-if="trashedSources.length"
+            class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-status-queued/40 bg-status-queued/10 px-3 py-2 text-xs text-text"
+            role="status"
+          >
+            <span class="min-w-0 flex-1">{{ t('editor.trashedSources', { n: trashedClipIds.size, names: trashedSources.map((x) => `«${x.title}»`).join(', ') }, trashedClipIds.size) }}</span>
+            <span v-if="restoreError" class="text-status-failed" role="alert">{{ restoreError }}</span>
+            <button
+              type="button" class="shrink-0 rounded-md border border-status-queued/60 px-2.5 py-1 font-medium hover:bg-status-queued/15 disabled:opacity-50"
+              :disabled="restoring" @click="restoreTrashed"
+            >{{ t('editor.restoreFromTrash') }}</button>
+          </div>
           <!-- Timeline Container -->
           <div 
             ref="timelineScrollEl"
@@ -1443,7 +1501,11 @@ onBeforeRouteLeave((_to, _from, next) => {
               <!-- Timeline Ruler -->
               <div class="flex border-b border-border/60 bg-panel/60 backdrop-blur-md sticky top-0 z-20">
                 <!-- Left empty corner (above track headers) -->
-                <div class="w-56 shrink-0 border-r border-border/60 bg-panel-2/90 sticky left-0 z-30 flex items-center justify-center gap-1.5 px-2">
+                <!-- the selected track's colours; with none selected the corner stays quiet (the hint is its tooltip) -->
+                <div
+                  class="w-56 shrink-0 border-r border-border/60 bg-panel-2/90 sticky left-0 z-30 flex items-center justify-center gap-1.5 px-2"
+                  :title="selectedLane ? undefined : t('editor.selectTrackToPickColor')"
+                >
                   <template v-if="selectedLane">
                     <button
                       v-for="c in TRACK_COLORS"
@@ -1457,7 +1519,6 @@ onBeforeRouteLeave((_to, _from, next) => {
                       @click="store.updateLaneColor(selectedLane!.id, c.id)"
                     ></button>
                   </template>
-                  <div v-else class="text-[11px] text-text-dim/70">{{ t('editor.selectTrackToPickColor') }}</div>
                 </div>
                 <!-- Ruler Area -->
                 <div

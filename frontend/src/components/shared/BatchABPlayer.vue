@@ -184,6 +184,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full accent-gradient text-white transition hover:opacity-90"
+        :aria-label="playing ? t('editor.pause') : t('editor.play')"
         @click="togglePlay"
       >
         <PlayIcon v-if="!playing" class="w-[13px] h-[13px]" />

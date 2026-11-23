@@ -10,6 +10,8 @@ const props = defineProps<{
   editable?: boolean
   /** Shown instead of modelValue (e.g. a shortened title); editing still works on the full modelValue. */
   displayText?: string
+  /** Up to two lines instead of one truncated line (a narrow column). */
+  wrap?: boolean
 }>()
 
 const emit = defineEmits<{ rename: [title: string] }>()
@@ -52,7 +54,7 @@ function cancel(): void {
       @click.stop
     />
     <template v-else>
-      <p class="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-text" :title="modelValue">{{ displayText || modelValue || placeholder }}</p>
+      <p class="min-w-0 flex-1 text-base font-semibold tracking-tight text-text" :class="wrap ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'truncate'" :title="modelValue">{{ displayText || modelValue || placeholder }}</p>
       <button
         v-if="editable"
         type="button"

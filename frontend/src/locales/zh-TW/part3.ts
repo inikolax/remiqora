@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: '從音訊提取旋律（SheetSage2）',
     unloadSheetSage: '提取後解除安裝 SheetSage2',
     extract: '提取 ABC',
-    extracting: '提取中…',
     randomSeed: '隨機 seed',
     cfgScale: 'CFG scale',
     defaultValuePlaceholder: '預設 {value}',

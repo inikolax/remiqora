@@ -1,7 +1,8 @@
 import { useRouter } from 'vue-router'
 import { useOrchestratorStore } from '../stores/orchestrator'
 import { useFeaturesStore, type FeatureId } from '../stores/features'
-import type { ModelId } from '../types'
+import { i18n } from '../i18n'
+import type { GpuModelId, ModelId } from '../types'
 
 export const MODEL_ROUTES: Record<ModelId, string> = {
   ace_step: 'ace-step',
@@ -9,10 +10,12 @@ export const MODEL_ROUTES: Record<ModelId, string> = {
   stable_audio: 'stable-audio',
 }
 
-export const MODEL_LABELS: Record<ModelId, string> = {
+export const MODEL_LABELS: Record<GpuModelId, string> = {
   ace_step: 'ACE-Step 1.5',
   yue2: 'YuE2-3B',
   stable_audio: 'Stable Audio 3',
+  // the cover maker is no brand a user knows: its label says what it does, in the interface's language
+  get cover() { return i18n.global.t('covers.engine') },
 }
 
 /** The installer part an engine needs; null when it is always there. */

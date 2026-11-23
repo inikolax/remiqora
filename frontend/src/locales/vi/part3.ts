@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'Trích giai điệu từ âm thanh (SheetSage2)',
     unloadSheetSage: 'Gỡ SheetSage2 khỏi bộ nhớ sau khi trích',
     extract: 'Trích ABC',
-    extracting: 'Đang trích…',
     randomSeed: 'Seed ngẫu nhiên',
     cfgScale: 'CFG scale',
     defaultValuePlaceholder: 'mặc định {value}',

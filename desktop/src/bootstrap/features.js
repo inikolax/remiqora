@@ -6,7 +6,9 @@
 //   aceXl   - ACE-Step's XL base model (about 20 GB): better parts, but it wants a 16 GB card or more;
 //   stableAudio - the Stable Audio 3 server environment, and the checkpoints picked with it (sa3Models). They are
 //             gated on Hugging Face: the first-run screen takes the user's token and checks it before the download;
-//   assistant - the prompt assistant's environment; its model comes from the app's Models page.
+//   assistant - the prompt assistant's environment; its model comes from the app's Models page;
+//   cover   - album covers: stable-diffusion.cpp's sd-server and the Z-Image Turbo weights (about 10 GB), in the
+//             layout the backend reads (backend/app/engine_parts.py), so its Models page shows them installed.
 // ACE-Step itself and the tools are always installed. Nothing already on disk is ever unselected or removed:
 // the selection is widened by what is installed, so a later run can only add.
 const fs = require('node:fs');
@@ -18,13 +20,27 @@ const PRECISIONS = ['q8_0', 'q4_0', 'bf16'];
 // what installs from before the picker had: bf16 is only ever added by choice (it is the largest file)
 const LEGACY_PRECISIONS = ['q8_0', 'q4_0'];
 const SA3_MODELS = ['medium', 'small-music', 'small-sfx'];
-const FEATURE_IDS = ['yue2', 'demucs', 'aceBase', 'aceXl', 'stableAudio', 'assistant'];
+const FEATURE_IDS = ['yue2', 'demucs', 'aceBase', 'aceXl', 'stableAudio', 'assistant', 'cover'];
 
 /** Which components each feature brings. */
-const FEATURE_COMPONENTS = { yue2: ['engine', 'weights'], demucs: ['demucs'], aceBase: ['ace-base-model'], aceXl: ['ace-xl-model'], stableAudio: ['stable-audio', 'sa3-models'], assistant: ['prompt-assistant'] };
+const FEATURE_COMPONENTS = { yue2: ['engine', 'weights'], demucs: ['demucs'], aceBase: ['ace-base-model'], aceXl: ['ace-xl-model'], stableAudio: ['stable-audio', 'sa3-models'], assistant: ['prompt-assistant'], cover: ['cover-server', 'cover-models'] };
 
-/** First-run defaults: everything but the arranger's base models and Stable Audio 3, YuE2 in q8_0 only. */
-const DEFAULT_SELECTION = Object.freeze({ yue2: true, yue2Precisions: ['q8_0'], demucs: true, aceBase: false, aceXl: false, stableAudio: false, sa3Models: [], assistant: false });
+/**
+ * First-run defaults: everything but the arranger's base models and Stable Audio 3, YuE2 in q8_0 only. Covers start
+ * off here; the first-run screen ticks them on a card with enough memory (8 GB) and on Apple Silicon.
+ */
+const DEFAULT_SELECTION = Object.freeze({ yue2: true, yue2Precisions: ['q8_0'], demucs: true, aceBase: false, aceXl: false, stableAudio: false, sa3Models: [], assistant: false, cover: false });
+
+/** Covers need a pinned sd.cpp build for the platform. */
+const coverOffered = (manifest, platform) => !!(manifest.cover && manifest.cover.assets[platform]);
+
+/** The cover engine's server binary, where the backend looks for it (config.SDCPP_BIN). */
+const sdServerPath = (L) => path.join(L.sdcpp, 'bin', IS_WINDOWS ? 'sd-server.exe' : 'sd-server');
+
+/** A weight file is there when it has the pinned size: the backend checks it the same way (engine_parts._cover_file_ok). */
+function coverModelInstalled(L, model) {
+  try { return fs.statSync(path.join(L.sdcpp, 'models', model.name)).size === model.bytes; } catch { return false; }
+}
 
 /** The Stable Audio 3 checkpoints a platform can run: `medium` needs CUDA, so a Mac gets the small ones. */
 function sa3Offered(manifest, platform) {
@@ -59,6 +75,7 @@ function detectInstalled(L, manifest = MANIFEST) {
     stableAudio: fs.existsSync(path.join(L.stableAudio, '.venv')),
     sa3Models: SA3_MODELS.filter((m) => sa3ModelInstalled(L, manifest, m)),
     assistant: fs.existsSync(path.join(L.promptAssistant, '.venv')),
+    cover: fs.existsSync(sdServerPath(L)) && manifest.cover.models.every((m) => coverModelInstalled(L, m)),
   };
 }
 
@@ -69,7 +86,7 @@ function detectInstalled(L, manifest = MANIFEST) {
 function resolveSelection(saved, installed, { legacyInstall = false } = {}) {
   const base = saved && typeof saved === 'object'
     ? saved
-    : legacyInstall ? { yue2: true, yue2Precisions: [...LEGACY_PRECISIONS], demucs: true, aceBase: installed.aceBase, aceXl: installed.aceXl, stableAudio: installed.stableAudio, assistant: installed.assistant } : DEFAULT_SELECTION;
+    : legacyInstall ? { yue2: true, yue2Precisions: [...LEGACY_PRECISIONS], demucs: true, aceBase: installed.aceBase, aceXl: installed.aceXl, stableAudio: installed.stableAudio, assistant: installed.assistant, cover: !!installed.cover } : DEFAULT_SELECTION;
   const precisions = new Set([...(Array.isArray(base.yue2Precisions) ? base.yue2Precisions : []), ...installed.yue2Precisions]);
   // the checkpoints count only with Stable Audio itself picked; the ones on disk always do
   const sa3 = new Set([...(base.stableAudio && Array.isArray(base.sa3Models) ? base.sa3Models : []), ...(installed.sa3Models || [])]);
@@ -82,6 +99,8 @@ function resolveSelection(saved, installed, { legacyInstall = false } = {}) {
     stableAudio: !!base.stableAudio || installed.stableAudio,
     sa3Models: SA3_MODELS.filter((m) => sa3.has(m)),
     assistant: !!base.assistant || installed.assistant,
+    // a saved pick from before covers existed has no such key: not picked, unless on disk (no surprise 10 GB)
+    cover: !!base.cover || !!installed.cover,
   };
   // YuE2 without a precision cannot run: fall back to q8_0.
   if (sel.yue2 && sel.yue2Precisions.length === 0) sel.yue2Precisions = ['q8_0'];
@@ -109,7 +128,14 @@ function featureSizes(manifest, platform, selection) {
     stableAudio: manifest.stableAudio.approxBytes + sa3Bytes(manifest, selection.sa3Models),
     sa3Models: Object.fromEntries(SA3_MODELS.map((m) => [m, manifest.stableAudio.models[m].bytes])),
     assistant: manifest.promptAssistant.approxBytes,
+    cover: coverBytes(manifest, platform),
   };
+}
+
+/** The cover engine's download for the platform plus its weights; 0 where it is not offered. */
+function coverBytes(manifest, platform) {
+  if (!coverOffered(manifest, platform)) return 0;
+  return manifest.cover.assets[platform].files.reduce((a, f) => a + f.bytes, 0) + manifest.cover.models.reduce((a, m) => a + m.bytes, 0);
 }
 
 const sa3Bytes = (manifest, models) => (models || []).reduce((a, m) => a + manifest.stableAudio.models[m].bytes, 0);
@@ -123,6 +149,6 @@ function excludedComponents(selection) {
 
 module.exports = {
   PRECISIONS, LEGACY_PRECISIONS, SA3_MODELS, FEATURE_IDS, FEATURE_COMPONENTS, DEFAULT_SELECTION,
-  sa3Offered, sa3Defaults, sa3ModelInstalled, sa3Bytes,
+  sa3Offered, sa3Defaults, sa3ModelInstalled, sa3Bytes, coverOffered, coverBytes, coverModelInstalled, sdServerPath,
   detectInstalled, resolveSelection, weightPackages, featureSizes, excludedComponents,
 };

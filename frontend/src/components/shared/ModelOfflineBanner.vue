@@ -21,7 +21,8 @@ async function start() {
   <div class="rounded-lg border border-border bg-panel px-4 py-2.5 text-sm">
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <p v-if="status === 'starting'" class="flex items-center gap-2 text-text-dim">
-        <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent1 border-t-transparent"></span>
+        <!-- a still ring when the system asks for less motion: the text already says it is starting -->
+        <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent1 border-t-transparent motion-reduce:animate-none" aria-hidden="true"></span>
         {{ t('offlineBanner.starting', { model: MODEL_LABELS[modelId] }) }}
       </p>
       <p v-else-if="status === 'stopping'" class="text-text-dim">{{ t('offlineBanner.stopping', { model: MODEL_LABELS[modelId] }) }}</p>

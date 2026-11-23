@@ -1,25 +1,34 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
+import { useOrchestratorStore } from './orchestrator'
 import * as api from '../api/yue2'
 import type { CotMode, GenerateOptions } from '../api/yue2'
 import * as tracksApi from '../api/tracks'
+import type { SavedTrack } from '../api/tracks'
+import { jobTime } from '../api/jobs'
+import type { JobBatchEntry, ServerJob } from '../api/jobs'
 import type { JobStatus } from '../types'
-import { i18n } from '../i18n'
-
-const t = i18n.global.t
+import { useGenQueueStore } from './genQueue'
+import { useCoversStore } from './covers'
 
 const HEALTH_MS = 5000
+
+type Precision = 'q8_0' | 'q4_0' | 'bf16'
 
 export interface Yue2Job {
   id: string
   status: JobStatus
   createdAt: number
+  /** When the backend began making it (a take of the queue), for the time it has run. */
+  startedAt?: number | null
+  /** The backend queue's job this row stands for while it has no saved track. */
+  serverJobId?: number | null
   /** The name shown on the card and stored as the track title; the user can rename it. */
   title: string
   /** The style tags the track was generated with. Never overwritten by a rename. */
   style: string
   lyrics: string
   cot: CotMode
-  precision: 'q8_0' | 'q4_0' | 'bf16'
+  precision: Precision
   seed: number
   error?: string
   audioUrl?: string
@@ -33,6 +42,53 @@ export interface Yue2Job {
   params?: Record<string, any>
 }
 
+/** A saved track as a row of the session. */
+function fromTrack(t: SavedTrack): Yue2Job {
+  return {
+    id: `saved_${t.id}`,
+    status: 'done',
+    createdAt: new Date(t.created_at).getTime() || Date.now(),
+    title: t.title,
+    // The tags live in the saved params; the title is only a fallback for tracks saved before they were recorded.
+    style: (t.params.style as string) || t.title,
+    lyrics: t.lyrics,
+    cot: (t.params.cot as CotMode) || 'off',
+    precision: (t.params.precision as Precision) || 'q8_0',
+    seed: t.seed ?? 0,
+    audioUrl: t.audio_url,
+    abcPlan: t.abc_url ? '' : null,
+    durationSec: t.duration_ms ? t.duration_ms / 1000 : null,
+    wallSec: t.wall_ms ? t.wall_ms / 1000 : null,
+    savedFilename: t.filename,
+    dbId: t.id,
+    finalized: true,
+    params: t.params,
+  }
+}
+
+/** A queue job that has no saved track (yet): waiting, being made, failed or stopped. */
+function fromServerJob(j: ServerJob): Yue2Job {
+  const req = j.request || {}
+  const save = j.save || ({} as ServerJob['save'])
+  const params = (save.params || {}) as Record<string, any>
+  return {
+    id: `job_${j.id}`,
+    serverJobId: j.id,
+    status: j.status,
+    createdAt: jobTime(j.created_at) ?? Date.now(),
+    startedAt: jobTime(j.started_at),
+    title: save.title || j.title || '',
+    style: save.style || params.style || '',
+    lyrics: save.lyrics ?? req.lyrics ?? '',
+    cot: (req.options?.cot as CotMode) || params.cot || 'off',
+    precision: (req.precision as Precision) || params.precision || 'q8_0',
+    seed: typeof req.seed === 'number' ? req.seed : 0,
+    error: j.error ?? undefined,
+    finalized: j.status !== 'queued' && j.status !== 'running',
+    params,
+  }
+}
+
 export const useYue2Store = defineStore('yue2', {
   state: () => ({
     jobs: [] as Yue2Job[],
@@ -43,47 +99,75 @@ export const useYue2Store = defineStore('yue2', {
     // this and copies it into its own local ABC textarea state.
     pendingAbcInsert: null as string | null,
     pendingParamsInsert: null as Record<string, any> | null,
-    _aborters: {} as Record<string, AbortController>,
+    /** The pending insert asks for an undo snapshot / a flash on the fields it changes (the idea line). */
+    pendingUndoable: false,
+    pendingFlash: false,
+    /** What the last undoable insert overwrote, as params: requestInsertParams(insertUndo) puts it back. */
+    insertUndo: null as Record<string, any> | null,
+    /** Kept by the form: it holds text an idea insert would replace. */
+    formHasText: false,
     _healthTimer: null as ReturnType<typeof setTimeout> | null,
+    /** Saved takes by row id: the library's tracks plus those the queue saved since. */
+    _saved: {} as Record<string, Yue2Job>,
+    /** Rows of queue jobs that have no saved track. */
+    _pending: [] as Yue2Job[],
+    /** Tracks deleted here: a recently finished job still lists them until the backend drops them. */
+    _deleted: [] as number[],
   }),
   actions: {
-    requestInsertParams(params: Record<string, any>) {
+    requestInsertParams(params: Record<string, any>, opts?: { undoable?: boolean; flash?: boolean }) {
+      this.pendingUndoable = !!opts?.undoable
+      this.pendingFlash = !!opts?.flash
       this.pendingParamsInsert = { ...params }
     },
     clearPendingParamsInsert() {
       this.pendingParamsInsert = null
+      this.pendingUndoable = false
+      this.pendingFlash = false
+    },
+    clearInsertUndo() {
+      this.insertUndo = null
+    },
+    _rebuild() {
+      this.jobs = [...this._pending, ...Object.values(this._saved)].sort((a, b) => b.createdAt - a.createdAt)
     },
     async loadHistory() {
       try {
         const tracks = await tracksApi.listTracks('yue2')
-        const savedJobs: Yue2Job[] = tracks.map((t) => ({
-          id: `saved_${t.id}`,
-          status: 'done',
-          createdAt: new Date(t.created_at).getTime() || Date.now(),
-          title: t.title,
-          // The tags live in the saved params; the title is only a fallback for tracks saved before they were recorded.
-          style: (t.params.style as string) || t.title,
-          lyrics: t.lyrics,
-          cot: (t.params.cot as CotMode) || 'off',
-          precision: (t.params.precision as 'q8_0' | 'q4_0' | 'bf16') || 'q8_0',
-          seed: t.seed ?? 0,
-          audioUrl: t.audio_url,
-          abcPlan: t.abc_url ? '' : null,
-          durationSec: t.duration_ms ? t.duration_ms / 1000 : null,
-          wallSec: t.wall_ms ? t.wall_ms / 1000 : null,
-          savedFilename: t.filename,
-          dbId: t.id,
-          finalized: true,
-          params: t.params,
-        }))
-        // Keep any jobs still in-flight this session (not yet in the saved list).
-        const inFlightIds = new Set(this.jobs.filter((j) => !j.finalized).map((j) => j.id))
-        this.jobs = [...this.jobs.filter((j) => inFlightIds.has(j.id)), ...savedJobs].sort((a, b) => b.createdAt - a.createdAt)
+        const saved: Record<string, Yue2Job> = {}
+        for (const t of tracks) {
+          if (this._deleted.includes(t.id)) continue
+          saved[`saved_${t.id}`] = fromTrack(t)
+        }
+        // the list is the truth: names changed and tracks deleted elsewhere (the library) show here
+        this._saved = saved
+        // the queue's finished jobs may hold tracks saved after the list above was read
+        this.syncServerJobs(useGenQueueStore().jobsOf('yue2'))
       } finally {
         this.historyLoaded = true
       }
     },
+    /** The queue's YuE2 jobs: a finished one is shown through its saved track, the rest as rows of their own. */
+    syncServerJobs(list: ServerJob[]) {
+      const pending: Yue2Job[] = []
+      for (const j of list) {
+        for (const t of j.tracks || []) {
+          if (this._deleted.includes(t.id) || this._saved[`saved_${t.id}`]) continue
+          this._saved[`saved_${t.id}`] = fromTrack(t)
+        }
+        if (j.status !== 'done' && !(j.tracks || []).length) pending.push(fromServerJob(j))
+      }
+      this._pending = pending
+      this._rebuild()
+    },
     async refreshHealth() {
+      // a stopped engine answers 503 through the proxy: no request (it only filled the console) until it runs
+      const status = useOrchestratorStore().statuses.yue2?.status
+      if (status && status !== 'running') {
+        this.health = null
+        this.healthError = false
+        return
+      }
       try {
         this.health = await api.health()
         this.healthError = false
@@ -103,92 +187,31 @@ export const useYue2Store = defineStore('yue2', {
       if (this._healthTimer) clearTimeout(this._healthTimer)
       this._healthTimer = null
     },
-    /** `title` names the cards and tracks (the style when not given; "From an idea" passes the idea). */
-    async generateBatch(params: { lyrics: string; style: string; cot: CotMode; precision: 'q8_0' | 'q4_0' | 'bf16'; baseSeed: number; randomSeed: boolean; batchSize: number; options: GenerateOptions; title?: string }) {
-      const newJobs: Yue2Job[] = []
+    /**
+     * Queues the takes on the backend, one job a seed; the backend starts YuE2, makes them one after another and
+     * saves each into the library. `title` names the takes (the style when not given; "From an idea" passes the idea).
+     */
+    async generateBatch(params: { lyrics: string; style: string; cot: CotMode; precision: Precision; baseSeed: number; randomSeed: boolean; batchSize: number; options: GenerateOptions; title?: string }) {
+      const batch: JobBatchEntry[] = []
+      const makeCover = useCoversStore().wantsCover
       for (let i = 0; i < params.batchSize; i++) {
         const seed = params.randomSeed ? Math.floor(Math.random() * 2147483647) : params.baseSeed + i
-        newJobs.push({
-          id: `g_${Date.now()}_${i}`,
-          status: 'queued',
-          createdAt: Date.now(),
-          title: params.title || params.style,
-          style: params.style,
-          lyrics: params.lyrics,
-          cot: params.cot,
-          precision: params.precision,
-          seed,
-          finalized: false,
-          params: { ...params.options, cot: params.cot, precision: params.precision, style: params.style, lyrics: params.lyrics },
+        batch.push({
+          request: { lyrics: params.lyrics, seed, options: params.options, precision: params.precision, ...(makeCover ? { make_cover: true } : {}) },
+          takes: 1,
+          save: {
+            title: params.title || params.style,
+            lyrics: params.lyrics,
+            style: params.style,
+            params: { ...params.options, cot: params.cot, precision: params.precision, style: params.style, lyrics: params.lyrics },
+          },
         })
       }
-      this.jobs.unshift(...newJobs)
-      for (const { id } of newJobs) {
-        // Look the job back up through the reactive `jobs` array instead of
-        // mutating the raw object still held in `newJobs`: Pinia/Vue only
-        // tracks changes made through the reactive proxy, so mutating the
-        // original (pre-unshift) reference never triggers a re-render even
-        // though the same data ends up saved to the server correctly.
-        const job = this.jobs.find((j) => j.id === id)
-        if (job) await this._generateOne(job, params.options)
-      }
+      await useGenQueueStore().submit('yue2', batch)
     },
-    async _generateOne(job: Yue2Job, options: GenerateOptions) {
-      job.status = 'running'
-      const aborter = new AbortController()
-      this._aborters[job.id] = aborter
-      try {
-        const started = performance.now()
-        const result = await api.generateTrack(job.lyrics, job.seed, options, job.precision, aborter.signal)
-        const wallMs = result.timing?.wall_ms ?? performance.now() - started
-        const durationMs = result.timing?.audio_duration_ms
-        if (typeof result.audio !== 'string') throw new Error(t('storeErrors.serverNoAudio'))
-        const blob = api.base64AudioBlob(result.audio)
-        const abcPlan = api.abcFromResult(result)
-        job.audioUrl = URL.createObjectURL(blob)
-        job.wallSec = wallMs / 1000
-        job.durationSec = durationMs ? durationMs / 1000 : null
-        job.abcPlan = abcPlan || null
-        job.status = 'done'
-        job.finalized = true
-
-        try {
-          const saved = await tracksApi.saveTrack(
-            {
-              model: 'yue2',
-              title: job.title,
-              lyrics: job.lyrics,
-              seed: job.seed,
-              duration_ms: durationMs,
-              wall_ms: wallMs,
-              params: job.params || { cot: job.cot, precision: job.precision },
-            },
-            blob,
-            'wav',
-            abcPlan || null,
-          )
-          job.savedFilename = saved.filename
-          job.saveError = null
-          job.dbId = saved.id
-        } catch (err) {
-          job.savedFilename = null
-          job.saveError = err instanceof Error ? err.message : String(err)
-          job.dbId = null
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          job.status = 'cancelled'
-        } else {
-          job.status = 'failed'
-          job.error = err instanceof Error ? err.message : String(err)
-        }
-        job.finalized = true
-      } finally {
-        delete this._aborters[job.id]
-      }
-    },
-    cancel(jobId: string) {
-      this._aborters[jobId]?.abort()
+    async cancel(jobId: string) {
+      const job = this.jobs.find((j) => j.id === jobId)
+      if (job?.serverJobId != null) await useGenQueueStore().cancel(job.serverJobId)
     },
     requestInsertAbc(abc: string) {
       this.pendingAbcInsert = abc
@@ -196,15 +219,20 @@ export const useYue2Store = defineStore('yue2', {
     clearPendingAbcInsert() {
       this.pendingAbcInsert = null
     },
+    /** A saved take deletes its track; a failed or stopped one is taken off the queue's list. */
     async deleteJob(job: Yue2Job) {
       if (job.dbId != null) {
+        this._deleted.push(job.dbId)
         try {
           await tracksApi.deleteTrack(job.dbId)
         } catch {
           // ignore - still remove locally so the UI doesn't get stuck
         }
+        delete this._saved[job.id]
+        this._rebuild()
+      } else if (job.serverJobId != null) {
+        await useGenQueueStore().dismiss(job.serverJobId)
       }
-      this.jobs = this.jobs.filter((j) => j.id !== job.id)
     },
     async renameJob(job: Yue2Job, title: string) {
       if (job.dbId == null) return

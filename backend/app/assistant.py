@@ -21,6 +21,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Literal, Optional
 
+from . import aproc, bg
 from . import db, features
 from .config import IS_WINDOWS, LOG_DIR, PROMPT_ASSISTANT_DIR, PROMPT_ASSISTANT_PORT, ProcessSpec
 from .orchestrator.process import ManagedProcess, StartCancelled
@@ -40,6 +41,10 @@ DEFAULT_MODEL = "Qwen/Qwen3.5-2B"
 DEVICES = ("auto", "cpu", "cuda")
 
 Status = Literal["stopped", "starting", "running", "error"]
+
+
+class GpuBusy(RuntimeError):
+    """The assistant would have to unload the engine a queued take is being generated with."""
 
 
 def _python() -> str:
@@ -147,7 +152,7 @@ async def start_download(model: str) -> None:
         raise FileNotFoundError("the prompt assistant is not installed")
     d = Download(model=model, total=MODELS[model])
     _downloads[model] = d
-    asyncio.create_task(_run_download(d))
+    bg.spawn(_run_download(d), name=f"assistant-download-{model}")
 
 
 async def cancel_download(model: str) -> None:
@@ -172,7 +177,7 @@ async def delete_model(model: str) -> None:
 
 async def _kill_tree(proc: asyncio.subprocess.Process) -> None:
     if IS_WINDOWS:
-        killer = await asyncio.create_subprocess_exec("taskkill", "/PID", str(proc.pid), "/T", "/F",
+        killer = await aproc.create_subprocess_exec("taskkill", "/PID", str(proc.pid), "/T", "/F",
                                                       stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         await killer.wait()
     else:
@@ -187,7 +192,7 @@ async def _run_download(d: Download) -> None:
     log_path = LOG_DIR / "assistant_download.log"
     env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "HF_HUB_DISABLE_SYMLINKS_WARNING": "1"}
     try:
-        proc = await asyncio.create_subprocess_exec(
+        proc = await aproc.create_subprocess_exec(
             _python(), "-m", "prompt_assistant.download", d.model, "--json", cwd=str(PROMPT_ASSISTANT_DIR), env=env,
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     except OSError as exc:
@@ -368,7 +373,13 @@ class Assistant:
         from .config import ALLOW_CONCURRENT_MODELS
         from .orchestrator.manager import manager
 
-        if ALLOW_CONCURRENT_MODELS or manager.state.active_model is None:
+        if ALLOW_CONCURRENT_MODELS:
+            return
+        from .gen_queue import queue as gen_queue
+
+        if gen_queue.running_engine() is not None:
+            raise GpuBusy("a take is being generated on the GPU: wait for it or cancel it, or run the assistant on the CPU")
+        if manager.state.active_model is None:
             return
         log.info("the prompt assistant runs on the GPU: unloading %s first", manager.state.active_model)
         self.unloaded_engine = manager.state.active_model

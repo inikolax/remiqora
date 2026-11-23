@@ -89,6 +89,16 @@ function detectInitialLocale(): LocaleCode {
   return systemLocale()
 }
 
+/** The form of a count in a "one | few | many" message: 1, 21 → one; 2-4, 22 → few; 5-20, 11-14 → many. */
+function slavicPlural(choice: number, choicesLength: number): number {
+  if (choicesLength < 3) return choice === 1 ? 0 : 1
+  const n = Math.abs(choice) % 100
+  const last = n % 10
+  if (n > 10 && n < 20) return 2
+  if (last === 1) return 0
+  return last >= 2 && last <= 4 ? 1 : 2
+}
+
 const initialLocale = detectInitialLocale()
 applyDocumentLocale(initialLocale)
 
@@ -98,6 +108,8 @@ export const i18n = createI18n({
   // A language that is only partly translated shows English for the rest; Traditional Chinese tries Simplified first.
   fallbackLocale: { 'zh-TW': ['zh-CN', 'en'], default: ['en'] },
   messages: { ru, en },
+  // Russian counts take three forms: 1 трек, 2 трека, 5 треков ("one | few | many" in a message)
+  pluralRules: { ru: slavicPlural },
 })
 
 /** Loads a language's messages the first time it is needed. */

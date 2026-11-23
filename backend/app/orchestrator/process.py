@@ -134,12 +134,49 @@ def _windows_terminate(pid: int) -> bool:
         k32.CloseHandle(handle)
 
 
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9  # JOBOBJECTINFOCLASS JobObjectExtendedLimitInformation
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+
+
+def _job_extended_limits():
+    """An empty JOBOBJECT_EXTENDED_LIMIT_INFORMATION (the layout of winnt.h, 144 bytes on 64-bit Windows)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class BasicLimits(ctypes.Structure):  # JOBOBJECT_BASIC_LIMIT_INFORMATION
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class IoCounters(ctypes.Structure):  # IO_COUNTERS
+        _fields_ = [(n, ctypes.c_uint64) for n in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class ExtendedLimits(ctypes.Structure):  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        _fields_ = [
+            ("BasicLimitInformation", BasicLimits), ("IoInfo", IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    return ExtendedLimits()
+
+
 class _WindowsJob:
     """A job object holding a process and everything it starts, whoever their parents are.
 
     The parent links the tree snapshot follows break as soon as a process in the middle exits
     (uv -> launcher -> Python: with the first two gone the Python is found by nobody); a job keeps
-    counting and can end every process in it at once."""
+    counting and can end every process in it at once.
+
+    The job is created with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: when its last handle closes - the backend exits,
+    crashes or is killed, or uvicorn --reload replaces its worker - Windows ends every process in it, so no engine
+    outlives the server holding the GPU and the port. Each ManagedProcess has its own job, so stopping one model
+    never touches the processes of another."""
 
     def __init__(self, process_handle: int):
         import ctypes
@@ -150,9 +187,19 @@ class _WindowsJob:
         self._k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
         self._k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
         self._k32.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p]
+        self._k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
         self._k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        self.kill_on_close = False
         self._handle = self._k32.CreateJobObjectW(None, None)
-        if self._handle and not self._k32.AssignProcessToJobObject(self._handle, wintypes.HANDLE(process_handle)):
+        if not self._handle:
+            return
+        info = _job_extended_limits()
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if self._k32.SetInformationJobObject(self._handle, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(info), ctypes.sizeof(info)):
+            self.kill_on_close = True
+        else:
+            logger.warning("job object: KILL_ON_JOB_CLOSE could not be set (error %s)", ctypes.GetLastError())
+        if not self._k32.AssignProcessToJobObject(self._handle, wintypes.HANDLE(process_handle)):
             self.close()
 
     @property
@@ -209,14 +256,19 @@ class ManagedProcess:
         log_path = LOG_DIR / f"{self.spec.name}.log"
         self._log_file = open(log_path, "w", encoding="utf-8", errors="replace")
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if IS_WINDOWS else 0
-        self._proc = subprocess.Popen(
-            self.spec.cmd,
-            cwd=str(self.spec.cwd),
-            env=_build_env(self.spec),
-            stdout=self._log_file,
-            stderr=subprocess.STDOUT,
-            creationflags=creationflags,
-        )
+        try:
+            self._proc = subprocess.Popen(
+                self.spec.cmd,
+                cwd=str(self.spec.cwd),
+                env=_build_env(self.spec),
+                stdout=self._log_file,
+                stderr=subprocess.STDOUT,
+                creationflags=creationflags,
+            )
+        except BaseException:
+            # e.g. the executable is missing: the log file must not stay open (on Windows it would stay locked)
+            self._close_log()
+            raise
         if IS_WINDOWS:
             try:
                 self._job = _WindowsJob(int(self._proc._handle))

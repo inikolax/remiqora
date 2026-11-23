@@ -173,6 +173,19 @@ class Engine:
         }
         if req.get("chunked_decode") is not None:
             kwargs["chunked_decode"] = bool(req["chunked_decode"])
+        # The sampler and the guidance, when set; generate() hands the last three to the model's forward().
+        if req.get("sampler_type"):
+            kwargs["sampler_type"] = req["sampler_type"]
+        if req.get("apg_scale") is not None:
+            kwargs["apg_scale"] = float(req["apg_scale"])
+        if req.get("duration_padding") is not None:
+            kwargs["duration_padding_sec"] = float(req["duration_padding"])
+        if req.get("cfg_interval") is not None:
+            kwargs["cfg_interval"] = tuple(float(x) for x in req["cfg_interval"])
+        if req.get("scale_phi") is not None:
+            kwargs["scale_phi"] = float(req["scale_phi"])
+        if req.get("cfg_norm_threshold") is not None:
+            kwargs["cfg_norm_threshold"] = float(req["cfg_norm_threshold"])
 
         task = req["task"]
         if task == "a2a":

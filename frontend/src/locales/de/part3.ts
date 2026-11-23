@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'Melodie aus Audio extrahieren (SheetSage2)',
     unloadSheetSage: 'SheetSage2 nach der Extraktion entladen',
     extract: 'ABC extrahieren',
-    extracting: 'Wird extrahiert…',
     randomSeed: 'Zufälliger Seed',
     cfgScale: 'CFG-Skala',
     defaultValuePlaceholder: 'Standard {value}',

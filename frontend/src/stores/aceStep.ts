@@ -1,20 +1,26 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
+import { useOrchestratorStore } from './orchestrator'
 import * as api from '../api/aceStep'
 import type { GenerateMusicRequest } from '../api/aceStep'
 import * as tracksApi from '../api/tracks'
+import type { SavedTrack } from '../api/tracks'
+import { jobTime } from '../api/jobs'
+import type { JobLora, ServerJob } from '../api/jobs'
 import type { JobStatus } from '../types'
-import { i18n } from '../i18n'
+import { useGenQueueStore } from './genQueue'
+import { useCoversStore } from './covers'
+import { stripMetaHints } from '../utils/aceHints'
 
-const t = i18n.global.t
-
-const POLL_MS = 3000
 const HEALTH_MS = 15000
-const STALE_JOB_MS = 5 * 60_000
 
 export interface AceJob {
   id: string
   status: JobStatus
   createdAt: number
+  /** When the backend began making it (a job of the queue). */
+  startedAt?: number | null
+  /** The backend queue's job this row stands for while its takes are not saved. */
+  serverJobId?: number | null
   title: string
   lyrics: string
   model?: string
@@ -30,12 +36,49 @@ export interface AceJob {
   params?: Record<string, any>
 }
 
-interface RawResultEntry {
-  file?: string
-  stage?: string
-  progress?: number
-  error?: string | null
-  metas?: { duration?: number }
+/** A saved track as a row of the session (a take a track). */
+function fromTrack(t: SavedTrack): AceJob {
+  return {
+    id: `saved_${t.id}`,
+    status: 'done',
+    createdAt: new Date(t.created_at).getTime() || Date.now(),
+    title: t.title,
+    lyrics: t.lyrics,
+    model: (t.params.model as string) || undefined,
+    audioFormat: (t.params.audio_format as string) || 'mp3',
+    batchSize: 1,
+    progress: 100,
+    audioUrls: [t.audio_url],
+    dbIds: [t.id],
+    finalized: true,
+    durationSec: t.duration_ms ? t.duration_ms / 1000 : null,
+    params: t.params,
+  }
+}
+
+/** A queue job whose takes are not (all) saved: one row for the batch, as ACE-Step reports it. */
+function fromServerJob(j: ServerJob, remaining: number): AceJob {
+  const req = (j.request || {}) as GenerateMusicRequest
+  const save = j.save || ({} as ServerJob['save'])
+  return {
+    id: `job_${j.id}`,
+    serverJobId: j.id,
+    status: j.status,
+    createdAt: jobTime(j.created_at) ?? Date.now(),
+    startedAt: jobTime(j.started_at),
+    title: save.title || j.title || '',
+    lyrics: save.lyrics ?? req.lyrics ?? '',
+    model: req.model,
+    audioFormat: req.audio_format || 'mp3',
+    batchSize: remaining,
+    error: j.error ?? undefined,
+    progress: Math.round((j.progress ?? 0) * 100),
+    stage: j.stage ?? undefined,
+    audioUrls: [],
+    dbIds: [],
+    finalized: j.status !== 'queued' && j.status !== 'running',
+    params: (save.params as Record<string, any>) || { ...req },
+  }
 }
 
 export const useAceStepStore = defineStore('aceStep', {
@@ -46,8 +89,20 @@ export const useAceStepStore = defineStore('aceStep', {
     health: null as api.HealthResponse | null,
     healthError: false,
     pendingParamsInsert: null as Record<string, any> | null,
-    _pollTimer: null as ReturnType<typeof setTimeout> | null,
+    /** The pending insert asks for an undo snapshot / a flash on the fields it changes (the idea line). */
+    pendingUndoable: false,
+    pendingFlash: false,
+    /** What the last undoable insert overwrote, as params: requestInsertParams(insertUndo) puts it back. */
+    insertUndo: null as Record<string, any> | null,
+    /** Kept by the form: it holds text an idea insert would replace. */
+    formHasText: false,
     _healthTimer: null as ReturnType<typeof setTimeout> | null,
+    /** Saved takes by row id: the library's tracks plus those the queue saved since. */
+    _saved: {} as Record<string, AceJob>,
+    /** Rows of queue jobs whose takes are not saved. */
+    _pending: [] as AceJob[],
+    /** Tracks deleted here: a recently finished job still lists them until the backend drops them. */
+    _deleted: [] as number[],
   }),
   getters: {
     activeJobs(state): AceJob[] {
@@ -55,37 +110,52 @@ export const useAceStepStore = defineStore('aceStep', {
     },
   },
   actions: {
-    requestInsertParams(params: Record<string, any>) {
+    requestInsertParams(params: Record<string, any>, opts?: { undoable?: boolean; flash?: boolean }) {
+      this.pendingUndoable = !!opts?.undoable
+      this.pendingFlash = !!opts?.flash
       this.pendingParamsInsert = { ...params }
     },
     clearPendingParamsInsert() {
       this.pendingParamsInsert = null
+      this.pendingUndoable = false
+      this.pendingFlash = false
+    },
+    clearInsertUndo() {
+      this.insertUndo = null
+    },
+    _rebuild() {
+      this.jobs = [...this._pending, ...Object.values(this._saved)].sort((a, b) => b.createdAt - a.createdAt)
     },
     async loadHistory() {
       try {
         const tracks = await tracksApi.listTracks('ace_step')
-        const savedJobs: AceJob[] = tracks.map((t) => ({
-          id: `saved_${t.id}`,
-          status: 'done',
-          createdAt: new Date(t.created_at).getTime() || Date.now(),
-          title: t.title,
-          lyrics: t.lyrics,
-          model: (t.params.model as string) || undefined,
-          audioFormat: (t.params.audio_format as string) || 'mp3',
-          batchSize: 1,
-          progress: 100,
-          audioUrls: [t.audio_url],
-          dbIds: [t.id],
-          finalized: true,
-          durationSec: t.duration_ms ? t.duration_ms / 1000 : null,
-          params: t.params,
-        }))
-        // Keep any jobs still in-flight this session (not yet reflected in the saved list).
-        const inFlightIds = new Set(this.jobs.filter((j) => !j.finalized).map((j) => j.id))
-        this.jobs = [...this.jobs.filter((j) => inFlightIds.has(j.id)), ...savedJobs].sort((a, b) => b.createdAt - a.createdAt)
+        const saved: Record<string, AceJob> = {}
+        for (const t of tracks) {
+          if (this._deleted.includes(t.id)) continue
+          saved[`saved_${t.id}`] = fromTrack(t)
+        }
+        // the list is the truth: names changed and tracks deleted elsewhere (the library) show here
+        this._saved = saved
+        // the queue's finished jobs may hold tracks saved after the list above was read
+        this.syncServerJobs(useGenQueueStore().jobsOf('ace_step'))
       } finally {
         this.historyLoaded = true
       }
+    },
+    /** The queue's ACE-Step jobs: saved takes as tracks, the takes still to come as one row of the batch. */
+    syncServerJobs(list: ServerJob[]) {
+      const pending: AceJob[] = []
+      for (const j of list) {
+        const tracks = j.tracks || []
+        for (const t of tracks) {
+          if (this._deleted.includes(t.id) || this._saved[`saved_${t.id}`]) continue
+          this._saved[`saved_${t.id}`] = fromTrack(t)
+        }
+        const remaining = Math.max(0, (j.takes || 1) - tracks.length)
+        if (j.status !== 'done' && remaining > 0) pending.push(fromServerJob(j, remaining))
+      }
+      this._pending = pending
+      this._rebuild()
     },
     async loadInventory() {
       try {
@@ -95,6 +165,13 @@ export const useAceStepStore = defineStore('aceStep', {
       }
     },
     async refreshHealth() {
+      // a stopped engine answers 503 through the proxy: no request (it only filled the console) until it runs
+      const status = useOrchestratorStore().statuses.ace_step?.status
+      if (status && status !== 'running') {
+        this.health = null
+        this.healthError = false
+        return
+      }
       try {
         this.health = await api.health()
         this.healthError = false
@@ -103,165 +180,53 @@ export const useAceStepStore = defineStore('aceStep', {
       }
     },
     startBackgroundTasks() {
-      if (!this._healthTimer) {
-        const healthTick = async () => {
-          await this.refreshHealth()
-          this._healthTimer = setTimeout(healthTick, HEALTH_MS)
-        }
-        void healthTick()
+      if (this._healthTimer) return
+      const healthTick = async () => {
+        await this.refreshHealth()
+        this._healthTimer = setTimeout(healthTick, HEALTH_MS)
       }
-      this._ensurePolling()
+      void healthTick()
     },
     stopBackgroundTasks() {
       if (this._healthTimer) clearTimeout(this._healthTimer)
       this._healthTimer = null
-      if (this._pollTimer) clearTimeout(this._pollTimer)
-      this._pollTimer = null
     },
-    _ensurePolling() {
-      if (this._pollTimer || this.activeJobs.length === 0) return
-      const tick = async () => {
-        await this._pollActive()
-        this._pollTimer = this.activeJobs.length > 0 ? setTimeout(tick, POLL_MS) : null
-      }
-      this._pollTimer = setTimeout(tick, POLL_MS)
-    },
-    async _pollActive() {
-      const ids = this.activeJobs.map((j) => j.id)
-      if (ids.length === 0) return
-      let results
-      try {
-        results = await api.queryResult(ids)
-      } catch {
-        return
-      }
-      for (const entry of results) {
-        const job = this.jobs.find((j) => j.id === entry.task_id)
-        if (job) this._applyResult(job, entry)
-      }
-    },
-    _applyResult(job: AceJob, entry: api.QueryResultEntry) {
-      let parsed: RawResultEntry[]
-      try {
-        parsed = JSON.parse(entry.result)
-      } catch {
-        parsed = []
-      }
-      const first = parsed[0] || {}
-      if (entry.status === 1) {
-        job.status = 'done'
-        job.progress = 100
-        job.audioUrls = parsed.filter((p) => p.file).map((p) => `/api/ace${p.file}`)
-        job.durationSec = first.metas?.duration ?? null
-        job.finalized = true
-        void this._persistJob(job)
-      } else if (entry.status === 2) {
-        job.status = first.error === 'Cancelled by user' ? 'cancelled' : 'failed'
-        job.error = first.error || t('storeErrors.unknownError')
-        job.finalized = true
-      } else if (!first.stage && Date.now() - job.createdAt > STALE_JOB_MS) {
-        // No stage at all after several minutes means the server no longer
-        // knows this task_id (its in-memory job store doesn't survive a
-        // process restart), not that it's still queued.
-        job.status = 'failed'
-        job.error = t('storeErrors.taskNotFound')
-        job.finalized = true
-      } else {
-        job.status = first.stage === 'queued' ? 'queued' : 'running'
-        job.progress = Math.round((first.progress || 0) * 100)
-        job.stage = first.stage
-      }
-    },
-    // Copies each finished audio candidate from ACE-Step's own (ephemeral,
-    // temp-dir-backed) storage into our shared DB/files store, then repoints
-    // the job at the persisted copy so playback/download survive a reload
-    // and a server restart.
-    async _persistJob(job: AceJob) {
-      const persistedUrls: string[] = []
-      const dbIds: number[] = []
-      for (const url of job.audioUrls) {
-        try {
-          const resp = await fetch(url)
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-          const blob = await resp.blob()
-          const saved = await tracksApi.saveTrack(
-            {
-              model: 'ace_step',
-              title: job.title,
-              lyrics: job.lyrics,
-              duration_ms: job.durationSec != null ? job.durationSec * 1000 : undefined,
-              params: job.params || { model: job.model, audio_format: job.audioFormat },
-            },
-            blob,
-            job.audioFormat,
-          )
-          persistedUrls.push(saved.audio_url)
-          dbIds.push(saved.id)
-        } catch {
-          // Saving failed (e.g. model already stopped) - keep serving from
-          // the original (still-working for now) URL instead of losing it.
-          persistedUrls.push(url)
-        }
-      }
-      job.audioUrls = persistedUrls
-      job.dbIds = dbIds
-    },
-    async submit(req: GenerateMusicRequest, refAudioFile: File | null, title: string): Promise<AceJob> {
-      const res = await api.releaseTask(req, refAudioFile)
-      const job: AceJob = {
-        id: res.task_id,
-        status: 'queued',
-        createdAt: Date.now(),
+    /**
+     * Queues one ACE-Step job (a batch of batch_size takes) on the backend, which starts ACE-Step, puts the LoRA on
+     * it (null takes it off; left out, the engine keeps what it has) and saves each take into the library.
+     */
+    async submit(req: GenerateMusicRequest, refAudioFile: File | null, title: string, lora?: JobLora | null): Promise<void> {
+      const save = {
         title,
         lyrics: req.lyrics || '',
-        model: req.model,
-        audioFormat: req.audio_format || 'mp3',
-        batchSize: req.batch_size || 1,
-        progress: 0,
-        audioUrls: [],
-        dbIds: [],
-        finalized: false,
-        params: { ...req },
+        style: String(req.prompt || stripMetaHints(String(req.sample_query || ''))),
+        params: { ...req } as Record<string, unknown>,
+        ...(lora !== undefined ? { lora } : {}),
       }
-      this.jobs.unshift(job)
-      this._ensurePolling()
-      return job
+      await useGenQueueStore().submit('ace_step', [{ request: { ...req, ...(useCoversStore().wantsCover ? { make_cover: true } : {}) }, takes: req.batch_size || 1, save }], refAudioFile, refAudioFile?.name)
     },
     async cancel(jobId: string) {
       const job = this.jobs.find((j) => j.id === jobId)
-      try {
-        await api.cancelTask(jobId)
-      } catch {
-        // Server may have already finished the job - local update below still applies.
-      }
-      if (job && !job.finalized) {
-        job.status = 'cancelled'
-        job.finalized = true
-      }
+      if (job?.serverJobId != null) await useGenQueueStore().cancel(job.serverJobId)
     },
-    async cancelAll() {
-      try {
-        await api.cancelAllTasks()
-      } catch {
-        // ignore
-      }
-      for (const job of this.activeJobs) {
-        job.status = 'cancelled'
-        job.finalized = true
-      }
-    },
+    /** A saved take deletes its track; a failed or stopped batch is taken off the queue's list. */
     async removeJob(jobId: string) {
       const job = this.jobs.find((j) => j.id === jobId)
-      if (job) {
+      if (!job) return
+      if (job.dbIds.length) {
         for (const id of job.dbIds) {
+          this._deleted.push(id)
           try {
             await tracksApi.deleteTrack(id)
           } catch {
             // ignore - still remove locally so the UI doesn't get stuck
           }
         }
+        delete this._saved[job.id]
+        this._rebuild()
+      } else if (job.serverJobId != null) {
+        await useGenQueueStore().dismiss(job.serverJobId)
       }
-      this.jobs = this.jobs.filter((j) => j.id !== jobId)
     },
     async renameJob(jobId: string, title: string) {
       const job = this.jobs.find((j) => j.id === jobId)

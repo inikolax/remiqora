@@ -1,12 +1,12 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import * as api from '../api/orchestrator'
-import type { ModelId, ModelRuntimeStatus, OrchestratorStatus } from '../types'
+import type { GpuModelId, ModelRuntimeStatus, OrchestratorStatus } from '../types'
 
 const FAST_POLL_MS = 1500
 const SLOW_POLL_MS = 8000
 
 interface StatusEntry {
-  id: ModelId
+  id: GpuModelId
   label: string
   status: ModelRuntimeStatus
   error: string | null
@@ -14,7 +14,7 @@ interface StatusEntry {
 
 export const useOrchestratorStore = defineStore('orchestrator', {
   state: () => ({
-    activeModel: null as ModelId | null,
+    activeModel: null as GpuModelId | null,
     statuses: {} as Record<string, StatusEntry>,
     switching: false,
     switchError: null as string | null,
@@ -28,7 +28,7 @@ export const useOrchestratorStore = defineStore('orchestrator', {
   actions: {
     _applySnapshot(snapshot: OrchestratorStatus) {
       this.activeModel = snapshot.active_model
-      this.statuses = snapshot.models
+      this.statuses = snapshot.models as Record<string, StatusEntry>
     },
     async refresh() {
       try {
@@ -50,7 +50,7 @@ export const useOrchestratorStore = defineStore('orchestrator', {
       if (this._timer) clearTimeout(this._timer)
       this._timer = null
     },
-    async switchModel(model: ModelId) {
+    async switchModel(model: GpuModelId) {
       this.switching = true
       this.switchError = null
       try {

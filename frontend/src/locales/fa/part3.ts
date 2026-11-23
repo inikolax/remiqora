@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'استخراج ملودی از صدا (SheetSage2)',
     unloadSheetSage: 'آزاد کردن SheetSage2 پس از استخراج',
     extract: 'استخراج ABC',
-    extracting: 'در حال استخراج…',
     randomSeed: 'Seed تصادفی',
     cfgScale: 'CFG scale',
     defaultValuePlaceholder: 'پیش‌فرض {value}',

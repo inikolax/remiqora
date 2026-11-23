@@ -10,18 +10,11 @@ import part6 from './ar/part6'
 import part7 from './ar/part7'
 import part8 from './ar/part8'
 import part9 from './ar/part9'
-
-type Messages = { [key: string]: Messages | string | Messages[] | string[] }
-
-/** The translation is split into parts (one per area of the interface); the namespaces they share are merged. */
-function merge(target: Messages, source: Messages): Messages {
-  for (const [key, value] of Object.entries(source)) {
-    const current = target[key]
-    const bothObjects = (v: unknown): v is Messages => typeof v === 'object' && v !== null && !Array.isArray(v)
-    target[key] = bothObjects(current) && bothObjects(value) ? merge(current, value) : value
-  }
-  return target
-}
+import part10 from './ar/part10'
+import part11 from './ar/part11'
+import part12 from './ar/part12'
+import part13 from './ar/part13'
+import { mergeParts } from './mergeParts'
 
 const base = {
   common: {
@@ -188,7 +181,6 @@ const base = {
     submitting: 'جارٍ الإرسال…',
     enterDescription: 'أدخل وصفًا للمقطع.',
     enterStyle: 'حدّد الأسلوب/النوع.',
-    selectRefFile: 'اختر ملفًا صوتيًا مرجعيًا.',
     presetPlaceholder: 'إعداد مسبق…',
     addPreset: '+ إعداد مسبق',
     savePresetTitle: 'حفظ المعاملات الحالية كإعداد مسبق',
@@ -209,7 +201,6 @@ const base = {
     repaintEnd: 'النهاية (ث)',
     trackPart: 'الجزء',
     trackPartsToAdd: 'الأجزاء المراد إضافتها',
-    coverStrength: 'قوة الحفاظ على الأصل: {value}',
     duration: 'المدة: {value}',
     variantCount: 'عدد النسخ',
     advancedSettings: 'إعدادات متقدمة',
@@ -248,7 +239,4 @@ const base = {
   },
 }
 
-export default [part1, part2, part3, part4, part5, part6, part7, part8, part9].reduce(
-  (all, part) => merge(all, part as Messages),
-  base as Messages,
-)
+export default mergeParts(base, part1, part2, part3, part4, part5, part6, part7, part8, part9, part10, part11, part12, part13)

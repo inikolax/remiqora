@@ -2,7 +2,7 @@
 // Models and settings: a list of engines on the left (with their state and what their models take on disk) and the
 // chosen one on the right: its settings first, then the weights it can download or delete. Engine settings apply
 // on the engine's next start; the page says when a running engine still has the old ones and offers a restart.
-// The chosen engine is the URL hash (#ace-step, #yue2, #stable-audio, #samples-cpu, #demucs), so the panels can
+// The chosen engine is the URL hash (#ace-step, #yue2, #stable-audio, #samples-cpu, #demucs, #covers), so the panels can
 // link straight to a section.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -14,38 +14,49 @@ import { MODEL_LABELS } from '../../composables/useModelSwitch'
 import { useEnginesStore } from '../../stores/engines'
 import { useOrchestratorStore } from '../../stores/orchestrator'
 import { useSa3WeightsStore } from '../../stores/sa3Weights'
+import { useCoversStore } from '../../stores/covers'
+import type { GpuModelId } from '../../types'
 import { gb } from '../../utils/bytes'
 import HfTokenField from '../../components/shared/HfTokenField.vue'
 import NotInstalled from '../../components/shared/NotInstalled.vue'
 import PartRow from '../../components/shared/PartRow.vue'
 import AssistantSection from './AssistantSection.vue'
+import GeneralSection from './GeneralSection.vue'
+import GearIcon from '../../components/shared/icons/GearIcon.vue'
 import SparklesIcon from '../../components/shared/icons/SparklesIcon.vue'
 import MicIcon from '../../components/shared/icons/MicIcon.vue'
 import PulseIcon from '../../components/shared/icons/PulseIcon.vue'
 import SampleIcon from '../../components/shared/icons/SampleIcon.vue'
 import SplitStemsIcon from '../../components/shared/icons/SplitStemsIcon.vue'
 import WaveIcon from '../../components/shared/icons/WaveIcon.vue'
+import ImageIcon from '../../components/shared/icons/ImageIcon.vue'
 
 const { t, locale } = useI18n()
 const store = useEnginesStore()
 const sa3 = useSa3WeightsStore()
 const orchestrator = useOrchestratorStore()
+const covers = useCoversStore()
 const route = useRoute()
 const router = useRouter()
 
-type SectionId = 'ace-step' | 'yue2' | 'stable-audio' | 'samples-cpu' | 'demucs' | 'assistant'
+type SectionId = 'general' | 'ace-step' | 'yue2' | 'stable-audio' | 'samples-cpu' | 'demucs' | 'covers' | 'assistant'
 /** The same icons as the header's engine tabs, so the list reads as the same things. Colours: the disk bar. */
-const SECTIONS: { id: SectionId; engine: EngineId; icon: Component; bar: string; sub?: boolean }[] = [
-  { id: 'ace-step', engine: 'ace_step', icon: WaveIcon, bar: 'bg-accent1' },
+/** `settings`: no engine and nothing on disk (General). The engines in the app's one order: YuE2, ACE-Step, Stable Audio. */
+const SECTIONS: { id: SectionId; engine: EngineId; icon: Component; bar: string; sub?: boolean; settings?: boolean }[] = [
+  // the app's own settings: the artist, covers after a song, the download format, the language
+  { id: 'general', engine: 'demucs', icon: GearIcon, bar: '', settings: true },
   { id: 'yue2', engine: 'yue2', icon: MicIcon, bar: 'bg-accent2' },
+  { id: 'ace-step', engine: 'ace_step', icon: WaveIcon, bar: 'bg-accent1' },
   { id: 'stable-audio', engine: 'stable_audio', icon: PulseIcon, bar: 'bg-accent' },
   { id: 'samples-cpu', engine: 'stable_audio', icon: SampleIcon, bar: '', sub: true },
   { id: 'demucs', engine: 'demucs', icon: SplitStemsIcon, bar: 'bg-text-dim' },
+  // album covers (Z-Image Turbo): an engine on the GPU like the others, but it makes pictures, not tracks
+  { id: 'covers', engine: 'cover', icon: ImageIcon, bar: 'bg-pink-500' },
   // not an engine: the prompt assistant; its own component and state (store.assistant)
   { id: 'assistant', engine: 'demucs', icon: SparklesIcon, bar: 'bg-status-queued' },
 ]
 const isSection = (s: string): s is SectionId => SECTIONS.some((x) => x.id === s)
-const current = ref<SectionId>(isSection(route.hash.slice(1)) ? (route.hash.slice(1) as SectionId) : 'ace-step')
+const current = ref<SectionId>(isSection(route.hash.slice(1)) ? (route.hash.slice(1) as SectionId) : 'general')
 watch(() => route.hash, (h) => { if (isSection(h.slice(1))) current.value = h.slice(1) as SectionId })
 function select(id: SectionId) {
   current.value = id
@@ -58,7 +69,7 @@ const engine = computed(() => engines.value?.[engineId.value] ?? null)
 function titleOf(id: SectionId): string {
   if (id === 'samples-cpu') return t('models.cpu.title')
   if (id === 'demucs') return t('models.demucs.title')
-  return MODEL_LABELS[SECTIONS.find((s) => s.id === id)!.engine as 'ace_step' | 'yue2' | 'stable_audio']
+  return MODEL_LABELS[SECTIONS.find((s) => s.id === id)!.engine as GpuModelId]
 }
 const sectionTitle = computed(() => titleOf(current.value))
 
@@ -66,7 +77,7 @@ const sectionTitle = computed(() => titleOf(current.value))
 const assistantBytes = computed(() => store.assistant?.on_disk ?? 0)
 const totalBytes = computed(() => Object.values(engines.value ?? {}).reduce((a, e) => a + (e.on_disk ?? 0), 0) + assistantBytes.value)
 /** Shares of the disk bar, one per engine; the smallest still shows as a sliver. */
-const diskShares = computed(() => SECTIONS.filter((s) => !s.sub).map((s) => {
+const diskShares = computed(() => SECTIONS.filter((s) => !s.sub && !s.settings).map((s) => {
   const bytes = s.id === 'assistant' ? assistantBytes.value : engines.value?.[s.engine]?.on_disk ?? 0
   return { id: s.id, bar: s.bar, bytes, percent: totalBytes.value ? Math.max(bytes ? 0.6 : 0, (bytes / totalBytes.value) * 100) : 0 }
 }))
@@ -86,23 +97,27 @@ const status = computed(() => engine.value?.status ?? null)
 const STATUS_DOT: Record<string, string> = { running: 'bg-status-done', starting: 'bg-status-queued', stopping: 'bg-status-queued', error: 'bg-status-failed', stopped: 'bg-text-dim/50' }
 const STATUS_PILL: Record<string, string> = { running: 'bg-status-done/15 text-status-done', starting: 'bg-status-queued/15 text-status-queued', stopping: 'bg-status-queued/15 text-status-queued', error: 'bg-status-failed/15 text-status-failed', stopped: 'bg-panel-2 text-text-dim' }
 function dotFor(id: EngineId, section?: SectionId): string {
+  if (section === 'general') return ''
   if (section === 'assistant') return STATUS_DOT[store.assistant?.status ?? 'stopped']
   if (id === 'demucs') return ''
   return STATUS_DOT[engines.value?.[id]?.status ?? 'stopped']
 }
 function bytesFor(s: { id: SectionId; engine: EngineId }): number {
+  if (s.id === 'general') return 0
   return s.id === 'assistant' ? assistantBytes.value : engines.value?.[s.engine]?.on_disk ?? 0
 }
 function navTitle(s: { id: SectionId; engine: EngineId }): string {
   if (s.id === 'samples-cpu') return t('models.cpu.navTitle')
   if (s.id === 'demucs') return t('models.demucs.navTitle')
   if (s.id === 'assistant') return t('models.assistant.navTitle')
+  if (s.id === 'general') return t('models.general.nav')
+  if (s.id === 'covers') return t('covers.title')
   return MODEL_LABELS[s.engine as 'ace_step' | 'yue2' | 'stable_audio']
 }
 async function startEngine() {
   if (engineId.value === 'demucs') return
   await run(async () => {
-    await orchestrator.switchModel(engineId.value as 'ace_step' | 'yue2' | 'stable_audio')
+    await orchestrator.switchModel(engineId.value as GpuModelId)
     await store.load()
   })
 }
@@ -125,7 +140,7 @@ async function setSetting(key: string, value: string) {
 async function restart() {
   await run(async () => {
     await orchestrator.stopActive()
-    await orchestrator.switchModel(engineId.value as 'ace_step' | 'yue2' | 'stable_audio')
+    await orchestrator.switchModel(engineId.value as GpuModelId)
     await store.load()
   })
 }
@@ -140,6 +155,8 @@ const parts = computed(() => engine.value?.parts ?? [])
 const isSecondary = (p: EnginePart) => SECONDARY.has(p.id) && !p.installed && !p.download
 const visibleParts = computed(() => showAll.value ? parts.value : parts.value.filter((p) => !isSecondary(p)))
 const hiddenCount = computed(() => parts.value.filter(isSecondary).length)
+/** What "more" would show: the folded parts by name (installed XL models stay in the list and are not counted). */
+const hiddenNames = computed(() => parts.value.filter(isSecondary).map((p) => t(`models.parts.${partKey(p.id)}.name`)).join(', '))
 /** What the last check of a part says, in words. */
 function checkText(id: string): { text: string; bad: boolean } | null {
   const c = store.checks[id]
@@ -163,6 +180,13 @@ const pageUrl = (m: Sa3WeightModel) => `https://huggingface.co/${m.repo}`
 const optionLabel = (key: string, value: string) => (key === 'preload' && value === '' ? t('models.sa3.preloadNone') : value)
 watch(current, () => { showAll.value = false })
 
+// ---- covers ----
+const coverParts = computed(() => engines.value?.cover?.parts ?? [])
+/** The model's size: its weights (the image server is counted with it on disk, not here). */
+const coverModelBytes = computed(() => coverParts.value.find((p) => p.kind === 'main')?.bytes ?? 0)
+const coverInstalled = computed(() => !!engines.value?.cover?.ready && coverParts.value.length > 0 && coverParts.value.every((p) => p.installed))
+const coverPartName = (p: EnginePart) => t(p.kind === 'server' ? 'covers.parts.server' : 'covers.parts.main')
+
 // ---- samples on the CPU ----
 const cpuForm = ref<CpuSamplerSettings | null>(null)
 watch(() => store.cpu?.settings, (s) => { if (s) cpuForm.value = { ...s } }, { immediate: true })
@@ -183,7 +207,7 @@ onBeforeUnmount(() => store.unwatch())
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl">
+  <div class="w-full">
     <!-- title, and the disk: the total with a bar of each engine's share -->
     <header class="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
       <div class="min-w-0">
@@ -206,7 +230,7 @@ onBeforeUnmount(() => store.unwatch())
 
     <div v-if="engines" class="mt-5 grid gap-5 lg:grid-cols-[16rem_minmax(0,1fr)]">
       <!-- the engines: a column on a wide screen, a row of chips on a narrow one -->
-      <nav :aria-label="t('models.nav')" class="-mx-4 flex gap-1 overflow-x-auto px-4 lg:sticky lg:top-20 lg:mx-0 lg:flex-col lg:self-start lg:overflow-visible lg:rounded-xl lg:border lg:border-border lg:bg-panel lg:p-1.5">
+      <nav :aria-label="t('models.nav')" class="-mx-4 flex gap-1 overflow-x-auto px-4 lg:sticky lg:top-[calc(var(--header-h,4rem)+1rem)] lg:mx-0 lg:flex-col lg:self-start lg:overflow-visible lg:rounded-xl lg:border lg:border-border lg:bg-panel lg:p-1.5">
         <button
           v-for="s in SECTIONS"
           :key="s.id"
@@ -227,7 +251,8 @@ onBeforeUnmount(() => store.unwatch())
         </button>
       </nav>
 
-      <AssistantSection v-if="current === 'assistant'" />
+      <GeneralSection v-if="current === 'general'" />
+      <AssistantSection v-else-if="current === 'assistant'" />
       <!-- the chosen engine: one card with a header strip and sections inside -->
       <section v-else class="min-w-0 overflow-hidden rounded-xl border border-border bg-panel">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-panel-2/60 px-4 py-3">
@@ -251,7 +276,63 @@ onBeforeUnmount(() => store.unwatch())
           <p v-if="status === 'error' && engine && orchestrator.statuses[engineId]?.error" class="mt-4 whitespace-pre-line rounded-lg bg-status-failed/10 p-3 text-xs text-status-failed">{{ orchestrator.statuses[engineId]?.error }}</p>
           <p v-if="actionError" class="mt-4 rounded-lg bg-status-failed/10 p-3 text-xs text-status-failed" role="alert">{{ actionError }}</p>
 
-          <NotInstalled v-if="engine && !engine.ready" :feature="engineId === 'ace_step' ? 'aceBase' : engineId === 'yue2' ? 'yue2' : engineId === 'demucs' ? 'demucs' : 'stableAudio'" compact class="mt-4" />
+          <!-- ================= covers ================= -->
+          <template v-if="current === 'covers'">
+            <div class="mt-4 flex items-start gap-3 rounded-lg border border-border bg-panel-2/60 px-3 py-3">
+              <div class="min-w-0 flex-1">
+                <p id="covers-enable" class="text-sm font-medium text-text">{{ t('covers.enable') }}</p>
+                <p class="mt-0.5 text-xs leading-relaxed text-text-dim">{{ t('covers.enableHint') }}</p>
+              </div>
+              <button
+                type="button" role="switch" :aria-checked="covers.enabled" aria-labelledby="covers-enable" :disabled="covers.saving"
+                class="inline-flex h-7 shrink-0 items-center rounded-full px-0.5 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent1"
+                @click="covers.setEnabled(!covers.enabled)"
+              ><span class="relative block h-6 w-11 rounded-full transition-colors" :class="covers.enabled ? 'bg-accent1' : 'bg-slider-track/60'"><span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[inset-inline-start] motion-reduce:transition-none" :class="covers.enabled ? 'start-[22px]' : 'start-0.5'"></span></span></button>
+            </div>
+            <p v-if="covers.error" class="mt-3 rounded-lg bg-status-failed/10 p-3 text-xs text-status-failed" role="alert">{{ covers.error }}</p>
+            <p class="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text">
+              <span>{{ t('covers.model', { gb: gb(coverModelBytes, locale) }) }}</span>
+              <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs" :class="coverInstalled ? 'bg-status-done/15 text-status-done' : 'bg-status-queued/15 text-status-queued'">
+                {{ t(coverInstalled ? 'covers.installed' : 'covers.notInstalled') }}
+              </span>
+            </p>
+            <p v-if="!coverInstalled" class="mt-2 text-xs leading-relaxed text-status-queued">{{ t('covers.notInstalledHint') }}</p>
+            <p class="mt-2 max-w-3xl text-xs leading-relaxed text-text-dim">{{ t('covers.onButton') }}</p>
+            <template v-if="coverParts.length">
+              <div class="mt-5 flex items-baseline justify-between gap-3 border-t border-border pt-4">
+                <h3 class="text-[11px] font-semibold tracking-wider text-text-dim uppercase">{{ t('models.weights') }}</h3>
+                <span v-if="store.state?.downloading" class="text-xs text-status-queued">{{ t('models.downloadingNow') }}</span>
+              </div>
+              <ul class="mt-1">
+                <PartRow
+                  v-for="p in coverParts"
+                  :key="p.id"
+                  :name="coverPartName(p)"
+                  :bytes="p.bytes"
+                  :on-disk="p.on_disk"
+                  :installed="p.installed"
+                  :download="p.download"
+                  :required="p.required"
+                  :deletable="p.deletable"
+                  :verifiable="p.verifiable"
+                  :checking="store.checking === p.id"
+                  :check-note="checkText(p.id)?.text"
+                  :check-bad="checkText(p.id)?.bad"
+                  :blocked="!!store.state?.downloading"
+                  :blocked-title="blockedTitle"
+                  @verify="run(() => store.verify(p.id))"
+                  @reinstall="run(() => store.reinstall(p.id))"
+                  @download="run(() => store.download(p.id))"
+                  @cancel="run(() => store.cancel(p.id))"
+                  @delete="run(() => store.remove(p.id))"
+                >
+                  <template v-if="p.required" #note>{{ t('models.required') }}</template>
+                </PartRow>
+              </ul>
+            </template>
+          </template>
+
+          <NotInstalled v-else-if="engine && !engine.ready" :feature="engineId === 'ace_step' ? 'aceBase' : engineId === 'yue2' ? 'yue2' : engineId === 'demucs' ? 'demucs' : 'stableAudio'" compact class="mt-4" />
 
           <!-- ================= ACE-Step / YuE2 ================= -->
           <template v-else-if="engine && (engineId === 'ace_step' || engineId === 'yue2') && !section.sub">
@@ -303,7 +384,7 @@ onBeforeUnmount(() => store.unwatch())
               </PartRow>
             </ul>
             <button v-if="hiddenCount" type="button" class="mt-2 rounded-lg px-2 py-1 text-xs text-text-dim hover:bg-panel-2 hover:text-text" :aria-expanded="showAll" @click="showAll = !showAll">
-              {{ t(showAll ? 'models.showLess' : 'models.showMore', { n: hiddenCount }) }}
+              {{ t(showAll ? 'models.showLess' : 'models.showMore', { n: hiddenCount, names: hiddenNames }) }}
             </button>
           </template>
 

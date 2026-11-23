@@ -23,6 +23,8 @@ log = logging.getLogger("sa3")
 
 MAX_BATCH = 4
 MAX_STEPS = 200
+# The samplers of Stable Audio 3's rectified-flow checkpoints; pingpong is the package's default for them.
+SAMPLERS = ("pingpong", "euler", "rk4", "dpmpp")
 
 
 # Module level on purpose: with postponed annotations FastAPI resolves a handler's type hints
@@ -109,6 +111,14 @@ def build_app(engine: Engine, preload: str | None) -> FastAPI:
         mask_end: Annotated[list[float], Form()] = [],
         chunked_decode: Annotated[str | None, Form()] = None,
         trim_silence: Annotated[str | None, Form()] = None,
+        # The sampler and the guidance: left out, each is the package's own default.
+        sampler_type: Annotated[str | None, Form()] = None,
+        apg_scale: Annotated[float | None, Form()] = None,
+        cfg_interval_min: Annotated[float | None, Form()] = None,
+        cfg_interval_max: Annotated[float | None, Form()] = None,
+        scale_phi: Annotated[float | None, Form()] = None,
+        cfg_norm_threshold: Annotated[float | None, Form()] = None,
+        duration_padding: Annotated[float | None, Form()] = None,
         audio: Annotated[UploadFile | None, File()] = None,
     ) -> dict[str, Any]:
         # One prompt for the batch, or one per variant.
@@ -134,6 +144,16 @@ def build_app(engine: Engine, preload: str | None) -> FastAPI:
             raise HTTPException(400, "inpaint needs matching mask_start/mask_end lists")
         if not (0.0 <= init_noise_level <= 1.0):
             raise HTTPException(400, "init_noise_level must be within 0..1")
+        if sampler_type is not None and sampler_type not in SAMPLERS:
+            raise HTTPException(400, f"sampler_type must be one of {SAMPLERS}")
+        for name, value, low, high in (
+            ("apg_scale", apg_scale, 0.0, 1.0), ("cfg_interval_min", cfg_interval_min, 0.0, 1.0), ("cfg_interval_max", cfg_interval_max, 0.0, 1.0),
+            ("scale_phi", scale_phi, 0.0, 1.0), ("cfg_norm_threshold", cfg_norm_threshold, 0.0, 100.0), ("duration_padding", duration_padding, 0.0, 30.0),
+        ):
+            if value is not None and not (low <= value <= high):
+                raise HTTPException(400, f"{name} must be within {low:g}..{high:g}")
+        if (cfg_interval_min or 0.0) > (1.0 if cfg_interval_max is None else cfg_interval_max):
+            raise HTTPException(400, "cfg_interval_min must not be above cfg_interval_max")
 
         decoded = None
         if audio is not None:
@@ -170,6 +190,12 @@ def build_app(engine: Engine, preload: str | None) -> FastAPI:
             "mask_start": mask_start,
             "mask_end": mask_end,
             "chunked_decode": None if not flag else flag in ("1", "true", "yes"),
+            "sampler_type": sampler_type,
+            "apg_scale": apg_scale,
+            "cfg_interval": None if cfg_interval_min is None and cfg_interval_max is None else (cfg_interval_min or 0.0, 1.0 if cfg_interval_max is None else cfg_interval_max),
+            "scale_phi": scale_phi,
+            "cfg_norm_threshold": cfg_norm_threshold,
+            "duration_padding": duration_padding,
         }
         job, position = jobs.submit(request, decoded)
         return {"job_id": job.id, "queue_position": position, "status": job.status}

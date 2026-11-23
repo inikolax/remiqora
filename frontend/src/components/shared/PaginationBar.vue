@@ -14,6 +14,8 @@ const props = defineProps<{
   rangeTo: number
   /** No page-size control: for the bar above the list, where the control would be a second copy. */
   compact?: boolean
+  /** No box of its own: for a pager that sits in a heading row. */
+  bare?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -44,7 +46,7 @@ function onSize(e: Event) {
 </script>
 
 <template>
-  <nav v-if="visible" :aria-label="t('pagination.label')" class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-panel-2/50 px-3 py-2 text-xs">
+  <nav v-if="visible" :aria-label="t('pagination.label')" class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs" :class="bare ? '' : 'rounded-lg border border-border bg-panel-2/50 px-3 py-2'">
     <span class="text-text-dim">{{ t('pagination.range', { from: rangeFrom, to: rangeTo, total }) }}</span>
 
     <div class="ms-auto flex flex-wrap items-center gap-1">

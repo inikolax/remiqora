@@ -25,114 +25,121 @@ function readVarLen(data: Uint8Array, offset: { val: number }): number {
   return value
 }
 
+/**
+ * A Standard MIDI File (also one wrapped in RIFF, as Windows saves some .mid/.rmi files) to notes in seconds.
+ * Tempo changes from every track go into one tempo map, so the notes of a format-1 file's later tracks and the notes
+ * after a tempo change are timed right; `tempoBpm` is the tempo where the music starts.
+ */
 export function parseMidiBytes(bytes: ArrayBuffer): MidiParsed {
   const data = new Uint8Array(bytes)
-  if (data.length < 14) return { durationSec: 0, notes: [], tempoBpm: 120 }
+  const empty: MidiParsed = { durationSec: 0, notes: [], tempoBpm: 120 }
+  const isTag = (at: number, tag: string): boolean =>
+    at + 4 <= data.length && [...tag].every((c, i) => data[at + i] === c.charCodeAt(0))
+  // MThd at the start, or a little further in a RIFF (RMID) wrapper
+  let head = -1
+  for (let i = 0; i + 14 <= data.length && i <= 64; i++) if (isTag(i, 'MThd')) { head = i; break }
+  if (head < 0) return empty
+  const division = (data[head + 12] << 8) | data[head + 13]
+  // SMPTE timing (high bit set): frames per second times ticks per frame, the tempo does not apply
+  const smpteSecPerTick = division & 0x8000
+    ? 1 / ((256 - (division >> 8) === 29 ? 29.97 : 256 - (division >> 8)) * Math.max(1, division & 0xff))
+    : 0
+  const ppq = Math.max(1, division)
 
-  // Check MThd
-  if (data[0] !== 0x4d || data[1] !== 0x54 || data[2] !== 0x68 || data[3] !== 0x64) {
-    return { durationSec: 0, notes: [], tempoBpm: 120 }
+  type Raw = { tick: number; note: number; vel: number; channel: number }
+  const tracks: Raw[][] = []
+  const tempos: { tick: number; uspb: number }[] = []
+  let offset = head + 8 + ((data[head + 4] << 24) | (data[head + 5] << 16) | (data[head + 6] << 8) | data[head + 7])
+  while (offset + 8 <= data.length) {
+    if (!isTag(offset, 'MTrk')) { offset++; continue }
+    const trkLength = ((data[offset + 4] << 24) | (data[offset + 5] << 16) | (data[offset + 6] << 8) | data[offset + 7]) >>> 0
+    offset += 8
+    const trkEnd = Math.min(data.length, offset + trkLength)
+    const pos = { val: offset }
+    const events: Raw[] = []
+    let tick = 0
+    let runningStatus = 0
+    while (pos.val < trkEnd) {
+      tick += readVarLen(data, pos)
+      let status = data[pos.val]
+      if (status >= 0x80) pos.val++
+      else if (runningStatus) status = runningStatus
+      else { pos.val++; continue } // a data byte with no status to run on: skip it
+      if (status === 0xff) {
+        const metaType = data[pos.val++]
+        const metaLen = readVarLen(data, pos)
+        if (metaType === 0x51 && metaLen === 3) {
+          const uspb = (data[pos.val] << 16) | (data[pos.val + 1] << 8) | data[pos.val + 2]
+          if (uspb > 0) tempos.push({ tick, uspb })
+        }
+        pos.val += metaLen
+        if (metaType === 0x2f) break // end of track
+        continue
+      }
+      if (status === 0xf0 || status === 0xf7) {
+        pos.val += readVarLen(data, pos)
+        continue
+      }
+      // meta and sysex events above leave the running status of the channel messages alone
+      runningStatus = status
+      const msgType = status & 0xf0
+      const channel = status & 0x0f
+      if (msgType === 0x90 || msgType === 0x80) {
+        const note = data[pos.val++]
+        const vel = data[pos.val++]
+        events.push({ tick, note, vel: msgType === 0x90 ? vel : 0, channel })
+      } else if (msgType === 0xa0 || msgType === 0xb0 || msgType === 0xe0) {
+        pos.val += 2
+      } else if (msgType === 0xc0 || msgType === 0xd0) {
+        pos.val += 1
+      }
+    }
+    tracks.push(events)
+    offset = trkEnd
   }
 
-  const division = (data[12] << 8) | data[13]
-  let currentTempoBpm = 120
-  let microsecondsPerBeat = 500000
+  // the tempo map: where each tempo starts, in ticks and in seconds (120 BPM until the first tempo event)
+  tempos.sort((a, b) => a.tick - b.tick)
+  const segments: { tick: number; sec: number; uspb: number }[] = [{ tick: 0, sec: 0, uspb: 500000 }]
+  for (const t of tempos) {
+    const last = segments[segments.length - 1]
+    const sec = last.sec + ((t.tick - last.tick) * last.uspb) / 1e6 / ppq
+    if (t.tick === last.tick) segments[segments.length - 1] = { tick: t.tick, sec: last.sec, uspb: t.uspb }
+    else segments.push({ tick: t.tick, sec, uspb: t.uspb })
+  }
+  const segmentAt = (tick: number): { tick: number; sec: number; uspb: number } => {
+    let i = segments.length - 1
+    while (i > 0 && segments[i].tick > tick) i--
+    return segments[i]
+  }
+  const toSec = (tick: number): number => {
+    if (smpteSecPerTick) return tick * smpteSecPerTick
+    const s = segmentAt(tick)
+    return s.sec + ((tick - s.tick) * s.uspb) / 1e6 / ppq
+  }
 
-  let offset = 14
   const allNotes: MidiNote[] = []
   let maxTimeSec = 0
-
-  while (offset + 8 <= data.length) {
-    // Check MTrk
-    if (data[offset] === 0x4d && data[offset + 1] === 0x54 && data[offset + 2] === 0x72 && data[offset + 3] === 0x6b) {
-      const trkLength =
-        (data[offset + 4] << 24) |
-        (data[offset + 5] << 16) |
-        (data[offset + 6] << 8) |
-        data[offset + 7]
-      offset += 8
-      const trkEnd = Math.min(data.length, offset + trkLength)
-      const offObj = { val: offset }
-
-      let currentTicks = 0
-      let runningStatus = 0
-      const activeNotes = new Map<number, { note: number; startSec: number; velocity: number; channel: number }>()
-
-      while (offObj.val < trkEnd) {
-        const deltaTicks = readVarLen(data, offObj)
-        currentTicks += deltaTicks
-        const secPerTick = microsecondsPerBeat / 1000000 / Math.max(1, division)
-        const currentSec = currentTicks * secPerTick
-
-        let status = data[offObj.val]
-        if (status >= 0x80) {
-          offObj.val++
-          runningStatus = status
-        } else {
-          status = runningStatus
-        }
-
-        const msgType = status & 0xf0
-        const channel = status & 0x0f
-
-        if (status === 0xff) {
-          // Meta event
-          const metaType = data[offObj.val++]
-          const metaLen = readVarLen(data, offObj)
-          if (metaType === 0x51 && metaLen === 3) {
-            // Set Tempo
-            microsecondsPerBeat =
-              (data[offObj.val] << 16) | (data[offObj.val + 1] << 8) | data[offObj.val + 2]
-            currentTempoBpm = Math.round(60000000 / microsecondsPerBeat)
-          }
-          offObj.val += metaLen
-        } else if (status === 0xf0 || status === 0xf7) {
-          // SysEx
-          const sysLen = readVarLen(data, offObj)
-          offObj.val += sysLen
-        } else if (msgType === 0x90) {
-          // Note On
-          const note = data[offObj.val++]
-          const vel = data[offObj.val++]
-          const key = (channel << 8) | note
-          if (vel > 0) {
-            activeNotes.set(key, { note, startSec: currentSec, velocity: vel / 127, channel })
-          } else {
-            const existing = activeNotes.get(key)
-            if (existing) {
-              const dur = Math.max(0.05, currentSec - existing.startSec)
-              allNotes.push({ ...existing, durationSec: dur })
-              activeNotes.delete(key)
-              if (currentSec > maxTimeSec) maxTimeSec = currentSec
-            }
-          }
-        } else if (msgType === 0x80) {
-          // Note Off
-          const note = data[offObj.val++]
-          offObj.val++ // ignore release velocity
-          const key = (channel << 8) | note
-          const existing = activeNotes.get(key)
-          if (existing) {
-            const dur = Math.max(0.05, currentSec - existing.startSec)
-            allNotes.push({ ...existing, durationSec: dur })
-            activeNotes.delete(key)
-            if (currentSec > maxTimeSec) maxTimeSec = currentSec
-          }
-        } else if (msgType === 0xa0 || msgType === 0xb0 || msgType === 0xe0) {
-          offObj.val += 2
-        } else if (msgType === 0xc0 || msgType === 0xd0) {
-          offObj.val += 1
-        }
-      }
-
-      // Close dangling notes
-      for (const [, dangling] of activeNotes) {
-        allNotes.push({ ...dangling, durationSec: 0.25 })
-      }
-
-      offset = trkEnd
-    } else {
-      offset++
+  let firstTick = Infinity
+  for (const events of tracks) {
+    const active = new Map<number, Raw>()
+    const close = (on: Raw, endTick: number): void => {
+      const startSec = toSec(on.tick)
+      const endSec = toSec(endTick)
+      allNotes.push({ note: on.note, startSec, durationSec: Math.max(0.05, endSec - startSec), velocity: on.vel / 127, channel: on.channel })
+      maxTimeSec = Math.max(maxTimeSec, endSec)
+      firstTick = Math.min(firstTick, on.tick)
+    }
+    for (const ev of events) {
+      const key = (ev.channel << 8) | ev.note
+      const open = active.get(key)
+      if (open) { close(open, ev.tick); active.delete(key) } // a note off, or the same key struck again
+      if (ev.vel > 0) active.set(key, ev)
+    }
+    // notes never released
+    for (const on of active.values()) {
+      allNotes.push({ note: on.note, startSec: toSec(on.tick), durationSec: 0.25, velocity: on.vel / 127, channel: on.channel })
+      firstTick = Math.min(firstTick, on.tick)
     }
   }
 
@@ -140,7 +147,7 @@ export function parseMidiBytes(bytes: ArrayBuffer): MidiParsed {
   return {
     durationSec: Math.max(1, maxTimeSec),
     notes: allNotes,
-    tempoBpm: currentTempoBpm,
+    tempoBpm: Math.round(60000000 / segmentAt(Number.isFinite(firstTick) ? firstTick : 0).uspb),
   }
 }
 

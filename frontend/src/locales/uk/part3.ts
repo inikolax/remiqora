@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'Виділити мелодію з аудіо (SheetSage2)',
     unloadSheetSage: 'Вивантажити SheetSage2 після виділення',
     extract: 'Виділити ABC',
-    extracting: 'Виділення…',
     randomSeed: 'Випадковий seed',
     cfgScale: 'CFG scale',
     defaultValuePlaceholder: 'за замовчуванням {value}',

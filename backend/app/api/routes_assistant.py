@@ -44,7 +44,7 @@ async def put_settings(body: SettingsBody) -> dict:
 async def start() -> dict:
     try:
         await server.ensure_running()
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, assistant.GpuBusy) as exc:
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - the page shows why it did not start
         raise HTTPException(500, str(exc)) from exc
@@ -90,7 +90,7 @@ async def proxy(request: Request, path: str = "") -> Response:
     """The assistant's own API; it is started first when it is not running (that takes a few seconds)."""
     try:
         await server.ensure_running()
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, assistant.GpuBusy) as exc:
         return JSONResponse({"error": str(exc)}, status_code=409)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": f"the prompt assistant did not start: {exc}"}, status_code=503)

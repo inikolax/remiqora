@@ -30,6 +30,7 @@ from typing import Literal, Optional
 
 import httpx
 
+from . import aproc
 from . import db
 from .config import (
     FFMPEG_BIN_DIR,
@@ -105,7 +106,7 @@ async def _to_mono_wav(src: Path) -> Path:
     os.close(fd)
     env = os.environ.copy()
     env["PATH"] = f"{FFMPEG_BIN_DIR}{os.pathsep}{env.get('PATH', '')}"
-    proc = await asyncio.create_subprocess_exec(
+    proc = await aproc.create_subprocess_exec(
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-i", str(src), "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", out_path,
         env=env,

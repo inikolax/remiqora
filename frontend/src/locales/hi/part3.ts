@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'ऑडियो से धुन निकालें (SheetSage2)',
     unloadSheetSage: 'निकालने के बाद SheetSage2 अनलोड करें',
     extract: 'ABC निकालें',
-    extracting: 'निकाला जा रहा है…',
     randomSeed: 'रैंडम seed',
     cfgScale: 'CFG स्केल',
     defaultValuePlaceholder: 'डिफ़ॉल्ट {value}',

@@ -145,6 +145,7 @@
         ${pickRow({ id: 'demucs', checked: sel.demucs, fixed: inst.demucs && 'installed', size: f.sizes.demucs, title: t('pick.demucs'), text: t('pick.demucs.text') })}
         ${pickRow({ id: 'stableAudio', checked: sel.stableAudio, fixed: inst.stableAudio && 'installed', size: f.sizes.stableAudio, title: t('pick.stableAudio'), text: t('pick.stableAudio.text'), children: sa3Block() })}
         ${pickRow({ id: 'assistant', checked: sel.assistant, fixed: inst.assistant && 'installed', size: f.sizes.assistant, title: t('pick.assistant'), text: t('pick.assistant.text') })}
+        ${f.coverOffered ? pickRow({ id: 'cover', checked: sel.cover, fixed: inst.cover && 'installed', size: f.sizes.cover, title: t('pick.cover'), text: t('pick.cover.text') }) : ''}
         ${pickRow({ id: 'aceBase', checked: sel.aceBase, fixed: inst.aceBase && 'installed', size: f.sizes.aceBase, title: t('pick.aceBase'), text: t('pick.aceBase.text') })}
         ${pickRow({ id: 'aceXl', checked: sel.aceXl, fixed: inst.aceXl && 'installed', size: f.sizes.aceXl, title: t('pick.aceXl'), text: t('pick.aceXl.text'), children: xlWarning() })}
       </ul>
@@ -228,14 +229,21 @@
 
   /**
    * Before anything is picked by hand: on a card under 10 GB YuE2's q8_0 does not fit (it peaks near 9 GB and fails
-   * with "bad allocation"), so the default becomes q4_0.
+   * with "bad allocation"), so the default becomes q4_0. Album covers are ticked on an NVIDIA card with 8 GB or more
+   * and on Apple Silicon; elsewhere they stay off.
    */
   async function fitDefaultsToCard() {
     const gpu = checkResult.items.find((i) => i.id === 'gpu');
     const f = ctx.features;
-    if (!f.untouched || ctx.platform !== 'win32-x64' || !gpu || !gpu.vramMiB || gpu.vramMiB >= 10000) return;
-    if (f.installed.yue2Precisions.length || f.selection.yue2Precisions.join() !== 'q8_0') return;
-    await api.setFeatures({ ...f.selection, yue2Precisions: ['q4_0'] });
+    if (!f.untouched) return;
+    const next = { ...f.selection };
+    const vram = gpu && gpu.vramMiB ? gpu.vramMiB : 0;
+    if (ctx.platform === 'win32-x64' && vram && vram < 10000 && !f.installed.yue2Precisions.length && f.selection.yue2Precisions.join() === 'q8_0') next.yue2Precisions = ['q4_0'];
+    const coverFits = ctx.platform === 'darwin-arm64' || (!ctx.platform.startsWith('darwin') && vram >= f.coverVramMiB);
+    // only on a first run: an install from before the choice is not handed a 10 GB download
+    if (f.fresh && f.coverOffered && coverFits && !f.selection.cover) next.cover = true;
+    if (next.yue2Precisions === f.selection.yue2Precisions && next.cover === f.selection.cover) return;
+    await api.setFeatures(next);
     ctx = await api.context();
   }
 

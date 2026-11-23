@@ -17,6 +17,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
+from .. import aproc
 from ..config import FFMPEG_BIN_DIR, MODELS
 from ..orchestrator.manager import manager
 from ..orchestrator.state import ModelStatus
@@ -51,10 +52,10 @@ async def _to_wav(data: bytes) -> bytes:
     fd, out_path = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
     try:
-        proc = await asyncio.create_subprocess_exec(
+        proc = await aproc.create_subprocess_exec(
             ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-y",
             "-i", "pipe:0", "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", out_path,
-            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            stdin=aproc.PIPE, stdout=aproc.PIPE, stderr=aproc.PIPE, stream_stdout=False,
         )
         _, stderr = await proc.communicate(input=data)
         if proc.returncode != 0:

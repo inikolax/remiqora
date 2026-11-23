@@ -25,7 +25,7 @@ const { t } = useI18n()
           :class="[mono && 'font-mono whitespace-pre-line', pickable && 'transition-colors hover:border-accent1/50 hover:bg-accent1/[0.06]']"
           @click="pickable && emit('pick', i)"
         >
-          <span v-if="x.label" class="me-1.5 rounded border border-border px-1 font-sans text-[10px] text-text-dim">{{ x.label }}</span>{{ x.text }}
+          <span v-if="x.label" class="me-1.5 rounded border border-border px-1 font-sans text-xs text-text-dim">{{ x.label }}</span>{{ x.text }}
         </component>
       </li>
     </ul>

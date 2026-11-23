@@ -12,12 +12,20 @@ defineProps<{
 
 const { t } = useI18n()
 const listId = useId()
+const needTonicId = `${listId}-need-tonic`
 
 const parsed = computed(() => parseKeyScale(model.value))
 const tonic = computed(() => parsed.value?.tonic ?? '')
 const modeId = computed(() => parsed.value?.mode.id ?? 'major')
 const modes = computed(() => SCALE_MODES.map((m) => ({ id: m.id, en: m.en, label: t(`keyScale.modes.${modeKey(m.id)}`) })))
 const modeLabel = computed(() => modes.value.find((m) => m.id === modeId.value)?.label ?? '')
+
+/** "C major" shown in the interface language ("C мажор"); text that does not parse passes through. */
+const aceKeyLabel = computed(() => {
+  const k = aceKeyScale(model.value)
+  const m = /^(\S+) (major|minor)$/.exec(k)
+  return m ? `${m[1]} ${t(`score.chips.${m[2]}`)}` : k
+})
 
 function setTonic(value: string): void {
   model.value = formatKeyScale(value, modeId.value)
@@ -64,7 +72,7 @@ function openList(): void {
 function pick(id: string): void {
   model.value = formatKeyScale(tonic.value, id)
   open.value = false
-  inputEl.value?.blur()
+  // the focus stays in the field (a blur dropped it to <body>); the list opens again with the arrows
 }
 
 function onInput(e: Event): void {
@@ -88,7 +96,6 @@ function onKeydown(e: KeyboardEvent): void {
     e.preventDefault()
     e.stopPropagation()
     open.value = false
-    inputEl.value?.blur()
   }
 }
 </script>
@@ -115,15 +122,17 @@ function onKeydown(e: KeyboardEvent): void {
           spellcheck="false"
           class="w-full min-w-[10rem] rounded-lg border border-border bg-panel-2 px-2 py-1.5 text-sm text-text disabled:opacity-50"
           :value="open ? query : tonic ? modeLabel : ''"
-          :placeholder="open ? t('keyScale.search') : t('keyScale.mode')"
+          :placeholder="open ? t('keyScale.search') : tonic ? t('keyScale.mode') : t('keyScale.needTonic')"
           :disabled="!tonic"
           :aria-label="t('keyScale.mode')"
-          :title="t('keyScale.mode')"
+          :title="tonic ? t('keyScale.mode') : t('keyScale.needTonic')"
+          :aria-describedby="tonic ? undefined : needTonicId"
           :aria-expanded="open"
           :aria-controls="listId"
           aria-autocomplete="list"
           :aria-activedescendant="open && filtered[active] ? `${listId}-${active}` : undefined"
           @focus="openList"
+          @click="!open && openList()"
           @blur="open = false"
           @input="onInput"
           @keydown="onKeydown"
@@ -132,7 +141,7 @@ function onKeydown(e: KeyboardEvent): void {
           v-show="open"
           :id="listId"
           role="listbox"
-          class="absolute left-0 right-0 z-50 max-h-56 overflow-y-auto rounded-lg border border-border bg-panel-2 py-1 text-sm shadow-xl"
+          class="absolute end-0 z-50 max-h-56 w-max min-w-full max-w-[min(20rem,calc(100vw-2rem))] overflow-y-auto overflow-x-hidden rounded-lg border border-border bg-panel-2 py-1 text-sm shadow-xl"
           :class="dropUp ? 'bottom-full mb-1' : 'top-full mt-1'"
         >
           <li
@@ -150,6 +159,8 @@ function onKeydown(e: KeyboardEvent): void {
         </ul>
       </div>
     </div>
-    <p v-if="!isPlainKey(model)" class="max-w-md text-[11px] leading-snug text-text-dim">{{ t('keyScale.hint', { key: aceKeyScale(model) }) }}</p>
+    <!-- why the scale field is off: said in its placeholder and tooltip, and here for screen readers -->
+    <span v-if="!tonic" :id="needTonicId" class="sr-only">{{ t('keyScale.needTonic') }}</span>
+    <p v-if="!isPlainKey(model)" class="max-w-md text-xs leading-snug text-text-dim">{{ t('keyScale.hint', { key: aceKeyLabel }) }}</p>
   </div>
 </template>

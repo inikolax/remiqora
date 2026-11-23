@@ -2,7 +2,7 @@
 // engine's prompt. It runs next to the GPU engines and starts on the first request.
 import { apiFetch, apiJson } from './http'
 
-export type AssistantTask = 'sa3' | 'yue2-song' | 'ace-song' | 'ace-instrumental' | 'ace-part'
+export type AssistantTask = 'sa3' | 'yue2-song' | 'ace-song' | 'ace-instrumental' | 'ace-part' | 'translate' | 'title' | 'cover'
 
 export interface AssistantSettings {
   model: string
@@ -37,7 +37,7 @@ export interface AssistantState {
   loaded: boolean
   restart_pending: boolean
   /** The engine unloaded so the assistant could take the GPU (device "GPU"); cleared when an engine starts. */
-  unloaded_engine: 'ace_step' | 'yue2' | 'stable_audio' | null
+  unloaded_engine: 'ace_step' | 'yue2' | 'stable_audio' | 'cover' | null
 }
 
 export interface AssistantResult {

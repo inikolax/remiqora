@@ -1,7 +1,8 @@
 /**
  * Vocal languages, by their native self-names (not translated). Matches constants.VALID_LANGUAGES in the
  * ACE-Step API (external/ACE-Step-1.5/acestep/constants.py), plus Kazakh: ACE-Step does not list it, but with
- * vocal_language "kk" it sings Kazakh as well as with "ru" (measured on nine seeds each, 2026-10-27).
+ * vocal_language "kk" it sings Kazakh as well as with "ru" (measured on nine seeds each, 2026-10-27), and the
+ * engine passes the code through without checking it against its list. So the ACE-Step form keeps offering it.
  */
 export const VOCAL_LANGUAGES: { code: string; label: string }[] = [
   { code: 'en', label: 'English' },
@@ -56,6 +57,14 @@ export const VOCAL_LANGUAGES: { code: string; label: string }[] = [
   { code: 'yue', label: '廣東話' },
   { code: 'kk', label: 'Қазақша' },
 ]
+
+/** The languages ACE-Step's form offers: its VALID_LANGUAGES plus Kazakh, which was measured to work. */
+export const ACE_VOCAL_LANGUAGES = VOCAL_LANGUAGES
+
+/** A language picked or stored for ACE-Step in its vocabulary: '' (auto) when it has none. */
+export function aceVocalLanguage(code: string): string {
+  return ACE_VOCAL_LANGUAGES.some((l) => l.code === code) ? code : ''
+}
 
 // Common function words of the Latin-script languages, to tell them apart when no letter gives the language away.
 const STOPWORDS: Record<string, string> = {

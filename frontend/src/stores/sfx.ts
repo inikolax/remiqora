@@ -102,9 +102,11 @@ export const useSfxStore = defineStore('sfx', {
       const job = this.jobs[0] // the reactive proxy, so later writes re-render
       try {
         const ref = audio ? request.reference : null
+        // the post-trained checkpoints are tuned for 8 steps without CFG; a -base one needs about 50 and CFG 7
+        const isBase = request.model.endsWith('-base')
         const res = await sa3Api.submitJob({
           task: ref ? 'a2a' : 'text', model: request.model, prompt: sfxPrompt(request), duration: request.duration,
-          steps: 8, cfg_scale: 1, seed: -1, batch_size: request.count, trim_silence: request.trimSilence || undefined,
+          steps: isBase ? 50 : 8, cfg_scale: isBase ? 7 : 1, seed: -1, batch_size: request.count, trim_silence: request.trimSilence || undefined,
           // Stable Audio's noise level is the opposite of closeness.
           init_noise_level: ref ? Math.min(1, Math.max(0, 1 - ref.closeness)) : undefined,
         }, ref ? audio : null, SA3_BASES[device])

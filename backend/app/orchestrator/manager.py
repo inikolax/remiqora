@@ -109,7 +109,13 @@ class OrchestratorManager:
                 return
             current = self.state.active_model
             if not ALLOW_CONCURRENT_MODELS and current is not None and current != model_id:
-                await self._stop_model(current)
+                if not await self._stop_model(current):
+                    # The old model's processes survived: they still hold the GPU memory (and maybe the port), so
+                    # starting the next one now would only fail on them (or run both on one card).
+                    raise StopFailed(
+                        f"could not stop '{current}' before starting '{model_id}': "
+                        f"{self.state.models[current].error_message or 'its processes are still running'}"
+                    )
             # the prompt assistant may hold the GPU (device "auto" while it was free): it steps aside
             from ..assistant import server as assistant_server
 
@@ -166,6 +172,19 @@ class OrchestratorManager:
             rs.status = ModelStatus.ERROR
             rs.error_message = str(exc)
             raise
+        except BaseException:
+            # The task was cancelled (or the process is going down) half way through the start: the processes
+            # started so far must not be left running unknown to the manager, nor the model stuck at "starting".
+            logger.warning("start of model %s interrupted", model_id)
+            rs.status = ModelStatus.STOPPING
+            try:
+                for proc in reversed(started):
+                    await proc.stop()
+                rs.status = ModelStatus.STOPPED
+            except BaseException as exc:  # noqa: BLE001 - interrupted again: say so, then re-raise the first one
+                rs.status = ModelStatus.ERROR
+                rs.error_message = f"start interrupted and its processes may still run: {exc!r}"
+            raise
         finally:
             self._cancel_start.pop(model_id, None)
 
@@ -183,7 +202,8 @@ class OrchestratorManager:
         if self._processes.get(model_id) is procs:
             del self._processes[model_id]
 
-    async def _stop_model(self, model_id: str) -> None:
+    async def _stop_model(self, model_id: str) -> bool:
+        """True when the model's processes are gone; False (status ERROR with the reason) when some survived."""
         rs = self.state.models[model_id]
         rs.status = ModelStatus.STOPPING
         try:
@@ -195,12 +215,13 @@ class OrchestratorManager:
             rs.error_message = str(exc)
             if self.state.active_model == model_id:
                 self.state.active_model = None
-            return
+            return False
         self.started_settings.pop(model_id, None)
         rs.status = ModelStatus.STOPPED
         rs.error_message = None
         if self.state.active_model == model_id:
             self.state.active_model = None
+        return True
 
 
 manager = OrchestratorManager()

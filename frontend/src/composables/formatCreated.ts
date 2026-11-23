@@ -16,6 +16,12 @@ const RU_MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', '
 /** When a track was made, in words people use: "Today, 17:54", "Yesterday, 09:10", "30 Sep, 21:33", with the
  *  year added only for an older year. `full` is the exact timestamp for a tooltip. */
 export function formatCreated(timestamp: number): { label: string; full: string } {
+  const { day, time, full } = formatDayTime(timestamp)
+  return { label: `${day}, ${time}`, full }
+}
+
+/** The same in parts: the day ("Today", "30 Sep") and the clock, for lists grouped by day. */
+export function formatDayTime(timestamp: number): { day: string; time: string; full: string } {
   const lang = dateLocaleTag(String(i18n.global.locale.value))
   const when = new Date(timestamp)
   const now = new Date()
@@ -31,5 +37,5 @@ export function formatCreated(timestamp: number): { label: string; full: string 
   } else {
     day = when.toLocaleDateString(lang, when.getFullYear() === now.getFullYear() ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' })
   }
-  return { label: `${day}, ${time}`, full: when.toLocaleString(lang) }
+  return { day, time, full: when.toLocaleString(lang) }
 }

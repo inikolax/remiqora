@@ -42,7 +42,8 @@ def ace_checkpoint_ready(name: str) -> bool:
     return not any(folder.rglob("*.incomplete"))
 
 
-def get(engine: str) -> dict[str, str]:
+def _stored(engine: str) -> dict[str, str]:
+    """The defaults overridden by what the user saved (only known choices)."""
     values = dict(DEFAULTS[engine])
     try:
         saved = json.loads(db.get_setting(f"engine.{engine}", "") or "{}")
@@ -55,10 +56,23 @@ def get(engine: str) -> dict[str, str]:
     return values
 
 
+def get(engine: str) -> dict[str, str]:
+    """The settings in effect. A saved ACE-Step checkpoint whose folder is gone (deleted by hand) gives way to the
+    default: started with it, ACE-Step would download it again (up to ~20 GB) or fail. The saved choice is kept, so
+    it is back in effect once the checkpoint is downloaded again."""
+    values = _stored(engine)
+    if engine == "ace_step":
+        for key, value in values.items():
+            if value != DEFAULTS[engine][key] and not ace_checkpoint_ready(value):
+                values[key] = DEFAULTS[engine][key]
+    return values
+
+
 def save(engine: str, values: dict) -> dict[str, str]:
     if engine not in DEFAULTS:
         raise KeyError(engine)
-    current = get(engine)
+    # from what is stored, not get(): saving one key must not rewrite another that only falls back for now
+    current = _stored(engine)
     for key, value in values.items():
         allowed = CHOICES[engine].get(key)
         if allowed is None:

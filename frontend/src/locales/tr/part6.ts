@@ -300,7 +300,7 @@ export default {
     recreate: 'Yeniden oluştur',
     recognize: 'Tanı',
     cancelled: 'iptal edildi',
-    pianoRoll: 'Mini Piano Roll',
+    pianoRoll: 'Mini piyano roll',
     notesCount: 'Nota: {count} · Tempo: {bpm} BPM',
     deleteAll: 'Tüm MIDI’yi sil',
     confirmDeleteAll: 'Bu parçanın tüm MIDI’si silinsin mi? Dosyalar diskten kaldırılacak.',

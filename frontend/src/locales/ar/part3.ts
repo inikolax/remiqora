@@ -16,7 +16,6 @@ export default {
     extractSectionTitle: 'استخراج اللحن من الصوت (SheetSage2)',
     unloadSheetSage: 'تفريغ SheetSage2 بعد الاستخراج',
     extract: 'استخراج ABC',
-    extracting: 'جارٍ الاستخراج…',
     randomSeed: 'seed عشوائي',
     cfgScale: 'CFG scale',
     defaultValuePlaceholder: 'الافتراضي {value}',

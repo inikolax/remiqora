@@ -24,6 +24,22 @@ export interface Sa3Model {
   device: string
 }
 
+/** The checkpoints as sa3-server's specs.py describes them: what the forms show while the engine is stopped and reports none. */
+const SA3_POST_TRAINED: Record<'medium' | 'small-music' | 'small-sfx', Pick<Sa3Model, 'label' | 'params' | 'max_seconds' | 'kinds'>> = {
+  medium: { label: 'Medium', params: '1.4B', max_seconds: 380, kinds: ['music', 'sfx'] },
+  'small-music': { label: 'Small Music', params: '433M', max_seconds: 120, kinds: ['music'] },
+  'small-sfx': { label: 'Small SFX', params: '433M', max_seconds: 120, kinds: ['sfx'] },
+}
+/** An installed checkpoint as the engine would list it; not loaded, and assumed runnable (the queue reports it if not). */
+export function offlineModel(id: Sa3ModelId): Sa3Model {
+  const base = id.endsWith('-base')
+  const spec = SA3_POST_TRAINED[id.replace(/-base$/, '') as keyof typeof SA3_POST_TRAINED]
+  return {
+    id, ...spec, label: base ? `${spec.label} Base` : spec.label, repo: '', tasks: ['text', 'a2a', 'inpaint'],
+    base, installed: true, loaded: false, loading: false, available: true, device: '',
+  }
+}
+
 export interface Sa3Health {
   ok: boolean
   loaded: Sa3ModelId[]
@@ -52,6 +68,19 @@ export interface Sa3JobRequest {
   chunked_decode?: boolean
   /** text only: drop leading silence below -60 dBFS (one-shots). */
   trim_silence?: boolean
+  // ---- the sampler and the guidance; left out = the package's default ----
+  sampler_type?: 'pingpong' | 'euler' | 'rk4' | 'dpmpp'
+  /** 1 = adaptive projected guidance, 0 = plain CFG. */
+  apg_scale?: number
+  /** The part of the denoising (0..1) where guidance acts. */
+  cfg_interval_min?: number
+  cfg_interval_max?: number
+  /** Rescales the guided output toward the unguided one's spread (0 = off). */
+  scale_phi?: number
+  /** Caps the guidance step's size (0 = off). */
+  cfg_norm_threshold?: number
+  /** Seconds of headroom past the length the model plans for. */
+  duration_padding?: number
 }
 
 export interface Sa3JobCreated {
